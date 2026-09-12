@@ -661,8 +661,9 @@ FAIL** 처리함 — `validate_complete_adb_mapping()`이 나머지 8개는
 ### 커밋 해시
 
 - 이전(QA FAIL 대상): `c5b8961` / `ffaa3ec` (TP-002 stage 3, QA report `356e730`이 지목)
-- 이번 교정 커밋: 커밋 직후 확정되는 해시를 아래 갱신 커밋 및 사용자
-  응답에 정확히 기록함(플레이스홀더 미사용 원칙 유지).
+- 이번 교정 커밋: `5ea24e3` — "TP-002-RW-01: reject empty/whitespace-only
+  serials in mapping validator" (브랜치 `kpj0526/Code`). 본 문서의 해시
+  기록 갱신은 그 뒤의 후속 커밋.
 
 ### 한계 (Limitations)
 
