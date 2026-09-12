@@ -147,6 +147,62 @@ def test_subprocess_adb_runner_run_invokes_scoped_argv(monkeypatch):
     assert result.stdout == "ok\n"
 
 
+def test_subprocess_adb_runner_capture_binary_invokes_scoped_argv(monkeypatch):
+    captured = {}
+
+    class _FakeCompleted:
+        stdout = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
+        stderr = b""
+        returncode = 0
+
+    def fake_run(args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return _FakeCompleted()
+
+    monkeypatch.setattr("ldmanager.adb.subprocess.run", fake_run)
+
+    runner = SubprocessAdbRunner(adb_path="adb")
+    result = runner.capture_binary("127.0.0.1:5555", ["exec-out", "screencap", "-p"])
+
+    assert captured["args"] == ["adb", "-s", "127.0.0.1:5555", "exec-out", "screencap", "-p"]
+    assert captured["kwargs"]["text"] is False  # binary mode: bytes, no decoding
+    assert result.ok
+    assert result.stdout_bytes.startswith(b"\x89PNG")
+
+
+def test_subprocess_adb_runner_capture_binary_requires_serial_before_spawning(monkeypatch):
+    def fail_if_called(*args, **kwargs):  # pragma: no cover
+        raise AssertionError("subprocess.run must not be called for an empty serial")
+
+    monkeypatch.setattr("ldmanager.adb.subprocess.run", fail_if_called)
+
+    runner = SubprocessAdbRunner(adb_path="adb")
+    with pytest.raises(ValueError):
+        runner.capture_binary("", ["exec-out", "screencap", "-p"])
+
+
+def test_capture_binary_argv_for_two_serials_does_not_overlap():
+    cmd1 = build_adb_command("adb", "SERIAL-A", ["exec-out", "screencap", "-p"])
+    cmd2 = build_adb_command("adb", "SERIAL-B", ["exec-out", "screencap", "-p"])
+    assert cmd1 != cmd2
+    assert "SERIAL-A" in cmd1 and "SERIAL-A" not in cmd2
+    assert "SERIAL-B" in cmd2 and "SERIAL-B" not in cmd1
+
+
+def test_fake_runner_capture_calls_are_scoped_per_serial_and_separate_from_run_calls():
+    runner = FakeAdbRunner()
+    runner.run("SERIAL-A", ["shell", "input", "tap", "1", "2"])
+    runner.capture_binary("SERIAL-A", ["exec-out", "screencap", "-p"])
+    runner.capture_binary("SERIAL-B", ["exec-out", "screencap", "-p"])
+
+    assert runner.calls == [("SERIAL-A", ("shell", "input", "tap", "1", "2"))]
+    assert runner.capture_calls == [
+        ("SERIAL-A", ("exec-out", "screencap", "-p")),
+        ("SERIAL-B", ("exec-out", "screencap", "-p")),
+    ]
+
+
 def test_subprocess_adb_runner_run_requires_serial_before_spawning(monkeypatch):
     def fail_if_called(*args, **kwargs):  # pragma: no cover
         raise AssertionError("subprocess.run must not be called for an empty serial")
