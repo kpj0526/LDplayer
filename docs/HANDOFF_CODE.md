@@ -598,3 +598,110 @@ monkeypatch로 대체해 실제 `adb` 바이너리를 호출하지 않음).
       HANDOFF 양쪽에 정확히 반영되어 있는지, 과장된 표현이 없는지 확인
 - [ ] 금지 항목(신규 에이전트/worktree/역할 생성, Manager 문서 수정,
       실제 게임 자동화, 병합)이 이번 단계에도 없는지 diff 재확인
+
+---
+
+## TP-002-RW-01 (Stage 3 교정): 빈/공백 시리얼 미거부 결함 수정
+
+**Manager corrective packet**: TP-002-RW-01. QA report 커밋 `356e730`이
+Code 대상 `c5b8961`/`ffaa3ec`(TP-002 stage 3 결과물)를 **Major 결함으로
+FAIL** 처리함 — `validate_complete_adb_mapping()`이 나머지 8개는
+정상이고 `LD1`만 빈 문자열(`""`)인 9키 매핑을 아무 이슈 없이 통과시켰고,
+그 결과 `ensure_complete_adb_mapping()`도 예외를 던지지 않음. 기대
+동작: 빈 문자열/공백만 있는 시리얼 값은 이후 연결/명령 경로가 그 값에
+의존하기 전에 "완전한 매핑" 검증 단계에서 반드시 거부되어야 함.
+
+**상태: 이번 교정 항목만 구현. 프로젝트 AC PASS 선언하지 않음. 병합하지
+않음.**
+
+### 근본 원인
+
+`validate_complete_adb_mapping()`의 누락 검사가 `serial is None`만
+확인했다. config 레이어(`config.py`)는 빈 문자열을 애초에 허용하지
+않지만(`validate_adb_mapping()`이 `""`.strip()이 falsy면 거부), 이
+함수는 `dict`를 직접 받는 독립 함수라서 config를 거치지 않고 호출되는
+경로(테스트, 향후 다른 호출자)에서는 `""`나 `"   "`가 `None`이 아니라는
+이유만으로 "설정된 시리얼"로 오인되어 그대로 통과했다.
+
+### 구현 AC / 트레이서빌리티
+
+| # | 지시 항목 | 구현 여부 | 비고 |
+|---|---|---|---|
+| 1 | `validate_complete_adb_mapping()`이 빈 문자열/공백만 있는 시리얼을 거부하도록 매퍼 검증기 수정 | **구현** | `discovery.py`: 누락 판정을 `serial is None or (isinstance(serial, str) and serial.strip() == "")`로 확장. 빈/공백 값은 `MappingIssue.MISSING_ACCOUNT`로 분류(어떤 값이었는지 detail에 `repr()`로 표시 — 값 자체가 공백/빈 문자열이므로 노출해도 안전) |
+| 2 | 빈/공백 시리얼에 대한 집중 테스트 추가(`ensure_complete_adb_mapping`이 예외를 던지는 것 포함) | **구현** | `tests/test_discovery.py`에 7개 추가: 빈 문자열(`test_empty_string_serial_is_rejected`), 공백만(`test_whitespace_only_serial_is_rejected`), 탭/개행만(`test_tab_and_newline_only_serial_is_rejected`), `ensure_complete_adb_mapping`이 빈 문자열/공백에 대해 각각 예외를 던지는지(`test_ensure_complete_adb_mapping_raises_for_empty_string_serial`, `..._for_whitespace_only_serial`), 두 계정이 모두 빈 값이어도 `DUPLICATE_SERIAL`로 오분류되지 않고 각각 `MISSING_ACCOUNT`로 집계되는지(`test_blank_serial_does_not_count_as_a_valid_distinct_serial`), 정상적인 9개 distinct non-blank 매핑은 여전히 통과하는지(`test_nine_distinct_nonblank_serials_are_still_accepted`) |
+| 3 | 기존 stage 3 동작 전부 보존, 테스트 약화/삭제 금지 | **구현** | `test_adb.py`/기존 `test_discovery.py` 테스트는 한 줄도 수정/삭제하지 않음. 전체 스위트 재실행으로 무회귀 확인 |
+| 4 | 전체 테스트 실행, 커밋, HANDOFF 갱신 | **구현** | 아래 각 절 참고 |
+| — | 포트/장치 추측, 실제 ADB/LDPlayer/touch/screenshot/게임 제어 추가, Manager 문서 수정 | **수행하지 않음** | 지시대로 순수 검증 로직 수정 + 테스트만 추가 |
+| — | 프로젝트 AC PASS 선언 / 병합 | — | **선언하지 않음 / 수행하지 않음** |
+
+### 실제 변경 파일
+
+```
+ src/ldmanager/discovery.py   (수정 — 빈/공백 시리얼을 MISSING_ACCOUNT로 판정)
+ tests/test_discovery.py      (수정 — 회귀 테스트 7개 추가, 기존 테스트 무변경)
+ docs/HANDOFF_CODE.md         (수정 — 본 절 추가)
+```
+
+건드리지 않은 것(회귀 보존 확인): `adb.py`, `config.py`, `logs.py`,
+`redaction.py`, `paths.py`, `diagnostics.py`, `.gitignore`, `cli.py`,
+`tests/fakes.py`, `tests/test_adb.py` — 코드 변경 없음.
+
+### 테스트 명령 / 결과
+
+```
+.venv\Scripts\python.exe -m pytest -v
+```
+
+결과: **105 passed**, 0 failed, 0 skipped (이전 98 + 이번 교정 7개
+신규). QA가 보고한 정확한 재현(나머지 8개는 정상 + `LD1`만 `""`)을
+자체 재현한 결과, `validate_complete_adb_mapping()`이
+`MappingIssue.MISSING_ACCOUNT`를 반환하고 `ensure_complete_adb_mapping()`
+이 `InvalidAdbMappingError`를 던짐을 확인함.
+
+### 커밋 해시
+
+- 이전(QA FAIL 대상): `c5b8961` / `ffaa3ec` (TP-002 stage 3, QA report `356e730`이 지목)
+- 이번 교정 커밋: 커밋 직후 확정되는 해시를 아래 갱신 커밋 및 사용자
+  응답에 정확히 기록함(플레이스홀더 미사용 원칙 유지).
+
+### 한계 (Limitations)
+
+1. **`build_account_connection_statuses()`는 별도로 blank 체크하지
+   않음**: 이번 수정은 지시된 범위인 "complete-mapping 검증 경계"
+   (`validate_complete_adb_mapping`/`ensure_complete_adb_mapping`)에
+   한정했다. `build_account_connection_statuses()`는 여전히 `serial is
+   None`만으로 `UNMAPPED`를 판정하므로, `ensure_complete_adb_mapping()`을
+   거치지 않고 빈 문자열이 섞인 매핑을 이 함수에 직접 전달하면 그
+   계정은 `UNMAPPED`가 아니라 `DEVICE_NOT_FOUND`로 보고된다(빈 문자열
+   시리얼이 discovery 결과에 없을 것이므로). "완전한 매핑" 요구를
+   먼저 통과시키는 것이 여전히 호출자의 책임이며, 이 경계를 생략하면
+   이런 형태로 노출된다.
+2. **config 레이어와의 이중 방어**: `config.py`의
+   `validate_adb_mapping()`은 이미 빈 문자열을 거부하므로(stage 1부터
+   존재), `load_config()`를 통해 로드된 정상 경로에서는 애초에 이
+   결함이 재현되지 않았다. 이번 결함은 `config.py`를 우회해 dict를
+   직접 구성/전달하는 경로(테스트, 향후 다른 호출자)에서만 실제로
+   발생했다 — 두 레이어 모두에서 방어하는 현재 구조를 유지한다.
+3. Stage 1/2/RW-02/RW-03/Stage 3에서 이미 기록된 한계는 그대로 유효하며
+   본 교정과 무관하게 남아 있다.
+
+### QA 중점사항 (요청)
+
+- [ ] QA가 보고한 정확한 재현 절차(나머지 8개 정상 + `LD1=""`)로
+      `validate_complete_adb_mapping()`/`ensure_complete_adb_mapping()`
+      재검증
+- [ ] 공백 종류 변형(스페이스만, 탭만, 개행만, 혼합)도 모두 거부되는지
+      QA 자체 케이스로 추가 확인
+- [ ] 두 계정이 모두 빈 값일 때 `DUPLICATE_SERIAL`로 잘못 집계되지
+      않고 각각 `MISSING_ACCOUNT`로 보고되는지 재확인
+- [ ] 정상적인 9개 distinct non-blank 매핑에 대해 오탐(false positive)이
+      생기지 않았는지(회귀) 확인
+- [ ] 한계 1번에서 언급한 `build_account_connection_statuses()`의 별도
+      blank 처리 여부를 이후 단계에서 다룰지 Manager와 협의 필요한지
+      판단
+- [ ] Stage 3 전체(파싱 안전성, 명령 스코핑, discovery 상태 구분,
+      미배정 원칙) 및 Stage 1/2/RW-02/RW-03 전체가 이번 커밋에서도
+      회귀 없이 통과하는지 전체 스위트 재실행 확인
+- [ ] 금지 항목(신규 에이전트/worktree/역할 생성, Manager 문서 수정,
+      포트/장치 추측, 실제 게임 자동화, 병합)이 이번 교정에도 없는지
+      diff 재확인
