@@ -10,6 +10,16 @@
 # Never put real credentials here.
 #
 # adb_mapping: LD1..LD9 -> "host:port" string, or null while unassigned.
+#
+# This mapping is always explicit and user-supplied — ldmanager never
+# guesses a port and `adb devices` discovery never auto-assigns a serial
+# to an account on your behalf; discovery only reports what's currently
+# visible so a configured serial can be cross-checked against it.
+#
+# To actually run the LD1..LD9 discovery/connection-status flow (stage
+# 3), all nine entries below must be filled in with distinct serials —
+# a missing entry, a duplicate serial, or anything other than exactly
+# LD1..LD9 is rejected before any ADB call is made.
 adb_mapping:
   LD1: null
   LD2: null
