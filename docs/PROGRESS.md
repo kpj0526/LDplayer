@@ -1,5 +1,14 @@
 # PROGRESS
 
+## REL-0.1.0-PKG-01: published ZIP first-run packaging defect (2026-09-12)
+
+- Current phase: `REWORK`.
+- Verified defect: the first published ZIP contained `ldmanager.exe`/runtime files but omitted the required `configs/config.yaml` and `configs/bounty.yaml`; a customer could not simply extract and launch it.
+- Containment: the GitHub prerelease notes now explicitly tell users not to use the first asset while it is corrected. The release remains a prerelease; no final-delivery claim applies.
+- Code packet: existing Code must produce a distribution containing safe default local config files (null mappings/no credentials), preserve any user config, build it, and launch the built EXE with null mappings to prove the GUI opens.
+- QA gate: existing QA must independently verify the corrected archive contains the required files and that the extracted built EXE launches before the release asset is replaced.
+- Next: Code submits corrective commit/build evidence; QA re-verifies; Manager replaces the GitHub release asset only after `MVP_SMOKE_PASS`.
+
 ## GitHub `v0.1.0` MVP prerelease published (2026-09-12)
 
 - Current phase: `NEEDS_REAL_TEST`.

@@ -1,5 +1,12 @@
 # WORK LOG
 
+## 2026-09-12 | REL-0.1.0-PKG-01 release packaging defect | Manager
+
+- Performed: inspected the first uploaded release ZIP after the customer asked how to run it.
+- Evidence: archive listing contained `ldmanager.exe` but no `configs/config.yaml` or `configs/bounty.yaml`, which the application requires to open normally.
+- Result: classified as a release packaging defect; release notes updated to tell users not to use the asset; existing Code received corrective build/first-run packet.
+- Next handoff: Code repair, then existing QA archive/executable launch verification before replacement upload.
+
 ## 2026-09-12 | REL-0.1.0 GitHub MVP prerelease publication | Manager
 
 - Performed: after QA `MVP_SMOKE_PASS`, created release ZIP from Code's verified Windows distribution, pushed existing QA-integrated target to remote branch `mvp/v0.1.0`, created tag/release `v0.1.0`, and verified remote asset metadata.

@@ -1,5 +1,16 @@
 # CURRENT TASK
 
+## REL-0.1.0-PKG-01 — first-run release packaging repair (2026-09-12)
+
+- Task ID: `REL-0.1.0-PKG-01`
+- Status: `REWORK`.
+- Purpose: ensure an extracted Windows release contains safe default configs and opens its GUI without terminal/YAML setup.
+- Owner: existing `code` repairs; existing `qa` independently validates corrected archive and built-EXE launch.
+- Defect evidence: Manager inspected the first uploaded ZIP: it listed `ldmanager.exe` but no `configs/` or initial config files.
+- Containment: GitHub release notes flag the first asset as unusable; it must not be downloaded until replacement.
+- Completion: corrected build contains null-mapped/no-credential config and bounty config, preserves existing user configs, full tests pass, built EXE launch passes, QA commits `MVP_SMOKE_PASS`, then Manager replaces asset.
+- Next action: Code repair/build/handoff.
+
 ## `v0.1.0` MVP prerelease publication (2026-09-12)
 
 - Task ID: `REL-0.1.0`
