@@ -1,0 +1,132 @@
+# TASK PACKET — TP-001 (통합본)
+
+## 1. WHO
+
+사용자는 Windows의 십이지천2M 다계정 사용자다. Manager는 조정·문서·최종 판단, code는 코드·테스트 구현, qa는 독립 검증을 담당한다. LD1~LD9의 9개 계정과 계정별 5개 토벌임무가 대상이다.
+
+## 2. WHAT
+
+LD1~LD9 독립 제어, 계정/전체 시작·정지, GUI 상태·오류·로그·설정 관리를 제공한다. 계정마다 5개 임무의 목표 문구를 확정하고 200마리 완료·보상·초기화·반복을 수행한다.
+
+## 3. WHERE
+
+Windows 데스크톱의 LD플레이어 인스턴스와 각 인스턴스의 개별 ADB 장치다. 화면 위치가 아닌 인스턴스 이름·ID·ADB 장치/포트 또는 사용자 매핑으로 식별한다.
+
+## 4. WHEN
+
+개별/전체 명령은 해당 범위의 자동 입력만 제어한다. 재시작 전 현재 화면을 판별하고 불명확하면 오류 처리한다. 2부 수신으로 구현이 허가됐으며, 단계별 `Manager 전달 → code 구현·자체 테스트·커밋 → Manager 확인 → qa 검증`을 적용한다.
+
+## 5. WHY
+
+단순 반복 클릭이 아닌, 게임의 현재 상태를 검증하고 정확한 조건에서만 임무 변경·완료·보상·초기화를 반복하기 위함이다.
+
+## 6. HOW
+
+Python·OpenCV·필요 시 OCR·ADB 캡처/터치·개별 Worker/상태 머신·GUI/Worker 분리·설정/로그·Windows 패키징을 사용한다. 클릭 전후 화면 상태와 신뢰도를 확인하고 대상 ADB의 내부 상대좌표만 사용한다. 이미지·ROI·좌표·임계값은 설정 파일로 분리한다.
+
+## 7. CONSTRAINTS
+
+웹 DOM·전역 고정좌표·메모리/패킷/보안 우회·자동 로그인/재접속/사냥터 이동을 금지한다. 낮은 신뢰도나 예상 밖 화면에서 클릭하지 않고, 모든 반복은 타임아웃·최대 재시도를 갖는다. 계정 오류·입력은 서로 격리한다. 신규 에이전트·하위 에이전트·worktree·역할 생성 금지, 민감정보 저장 금지, QA PASS 전 완료 선언 금지다.
+
+## 8. ACCEPTANCE CRITERIA
+
+AC-01~AC-30을 적용한다. 명세·진행 상태는 `docs/ACCEPTANCE_STATUS.md`, 검증 방법은 `docs/TEST_PLAN.md`에 기록한다.
+
+## 9. OWNER
+
+현재 Manager는 단계 1 작업 전달과 진행 문서, code는 단계 1 구현, qa는 code 커밋 후 독립 검증을 담당한다.
+
+## 10. NEXT ACTION
+
+## MVP-001-CV: customer-video free-bounty mission-cycle extension
+
+1. **WHO**: Customer operates nine LDPlayer accounts and supplies real game assets/environment; existing `code` implements; existing `qa` independently smoke-tests; Manager coordinates. No new agents, subagents, roles, or worktrees.
+2. **WHAT**: Merge the customer-video behavior into the MVP: five mission slots; status inspection; popup-verified refresh; phrase-plus-200 target acceptance; bounded rerolls; selected target preservation; completion/reward/result/close/list-return/re-refresh/reaccept/repeat cycle.
+3. **WHERE**: Existing Code worktree after its current MVP-001 safe-unit commit. Use per-account ADB capture/guarded relative touch only. Recognition assets, ROI, coordinates, thresholds/retries/timeouts must be external configuration/placeholders; no guessed live values.
+4. **WHEN**: Code begins this extension only after safely committing current MVP-001 work. QA performs abbreviated mock/safety smoke after Code's new committed handoff. Actual customer device/video validation follows only when the user supplies the needed assets/environment.
+5. **WHY**: Customer video defines the operational mission loop; a draft that stops at generic mission states is insufficient.
+6. **HOW**: Add/merge states `SELECTING_MISSION_SLOT`, `CHECKING_MISSION_STATUS`, `OPENING_REFRESH_CONFIRM`, `CONFIRMING_REFRESH`, `CHECKING_NEW_MISSION`, `ACCEPTING_TARGET_MISSION`, `REJECTING_NON_TARGET_MISSION`, `WAITING_KILL_PROGRESS`, `MISSION_COMPLETED`, `CLICKING_COMPLETE`, `OPENING_REWARD`, `CLAIMING_REWARD`, `CLOSING_REWARD_RESULT`, `RETURNING_TO_MISSION_LIST`, `ERROR`. Before every action: capture and recognize expected state; then conditionally make one serial-scoped touch; require state change before advancing. Refresh uses verified popup structure/title/buttons rather than any fixed cost. Target needs both phrase and 200. Incomplete 0-199 never clicks complete/reward. Use fakes/fixtures for state sequence and configurable placeholder recognition adapter.
+7. **CONSTRAINTS**: Current MVP work is retained. No DOM/global mouse/fixed desktop coordinate/guessed serial or port/credentials/login/reconnect/automatic hunting movement/security bypass. All loops bounded. Unknown/low-confidence/stalled/disconnected/ended screen yields account-local error and no arbitrary click. Do not treat a placeholder or a single OCR reading as real-game verification. No feature is PASS without evidence.
+8. **ACCEPTANCE CRITERIA**: New continuous AC-31..AC-60. Mandatory smoke priority: serial isolation; verified-popup-only confirmation independent of cost; joint phrase+200 condition; target/non-target behavior; 0-199 no completion/reward; bounded repeat; account fault containment; GUI/controller startup. AC-58..AC-60 remain `BLOCKED_REAL_ENVIRONMENT` pending customer LD/video proof.
+9. **OWNER**: `code` implements/tests/commits and updates `HANDOFF_CODE.md`; `qa` checks the exact submitted hash, reports MVP smoke outcome, and preserves real-environment gaps; Manager tracks new ACs and routes failures back to Code.
+10. **NEXT ACTION**: Manager queues this packet to existing Code after current MVP-001 safe unit. Code submits its exact extension hash; QA then smoke-tests mock video cycle and logs needed real customer captures.
+
+## MVP-001: connected executable MVP draft Task Packet
+
+1. **WHO**: Windows user runs LDPlayer LD1-LD9; existing `code` implements the MVP; existing `qa` runs a post-commit smoke/safety suite; Manager coordinates. Existing roles/worktrees only—no agent, subagent, role, or worktree creation.
+2. **WHAT**: Deliver one runnable, configurable Python MVP linking: LD1-LD9 explicit mapping; per-account independent Workers; individual start/stop and global start/stop; capture; target phrase recognition interface; five mission slots with reroll-or-keep logic; kill-complete/reward/reset/repeat state transitions; account status/error/log display; basic GUI; start and Windows build scripts.
+3. **WHERE**: Existing Code worktree. Program/test/config/script/docs changes are allowed there. Manager does not edit production code; QA does not edit production code. Actual user credentials, real game accounts, or secret mappings must never be committed.
+4. **WHEN**: Start immediately after Stage 4 scope PASS `d69bc0b`. Code makes one connected MVP submission; QA then uses abbreviated MVP smoke testing rather than full AC certification.
+5. **WHY**: Produce a usable draft that can be launched now and calibrated with actual screen templates/ROIs on the customer's LDPlayer environment instead of waiting for full final validation.
+6. **HOW**: Reuse the explicit-serial ADB, capture, guarded touch, config, diagnostics and logging foundations. Implement a controller with one cancellable Worker per account; an explicit bounded state machine for five slots and the mission cycle; a recognizer abstraction that calls configured template/OCR adapters and returns confidence/unknown safely; configurable image-template paths, ROIs, relative coordinates, thresholds, retry/timeouts; a simple native Python GUI that displays per-account status, slot, targets, error and recent log and offers individual/global start/stop; CLI/start script; PyInstaller build script or equivalent. Use placeholder config/template assets where real game inputs are missing and document them. Build tests with mocks/fakes.
+7. **CONSTRAINTS**: Never use DOM/global mouse/external fixed coordinates/guessed device ports. Every command has exactly one explicit serial. Do not automate login/reconnect/hunting-ground movement or circumvent game security. Keep every repeat bounded; recognition/capture/unknown-screen failures must safely stop/error the affected account with logs/diagnostics. One Worker fault must not end others. Global stop must cancel all automatic input. Avoid fake hard-coded image recognition success. Do not claim real-environment success.
+8. **ACCEPTANCE CRITERIA**: MVP code traceability targets core requested areas, especially AC-03..AC-08, AC-10..AC-27, AC-28 and AC-29. Mandatory MVP smoke: (a) LD1 command cannot reach another account and each argv has the selected serial; (b) individual stop is local; (c) global stop leaves no automatic touch; (d) retry/timeouts work; (e) recognition failure cannot loop click; (f) one Worker exception is contained; (g) application/GUI starts; (h) mock cycle enters each core mission state once. Results use only `MVP_IMPLEMENTED`, `MVP_SMOKE_PASS`, or `NEEDS_REAL_TEST`; actual LD/game checks remain `NOT_TESTED`/`BLOCKED_REAL_ENVIRONMENT`.
+9. **OWNER**: `code` implements, tests, commits and updates `docs/HANDOFF_CODE.md`. `qa` independently runs required smoke/safety tests and commits `reports/QA_REPORT.md` with `MVP_SMOKE_PASS`, `MVP_SMOKE_FAIL`, or `BLOCKED_REAL_ENVIRONMENT`. Manager documents/gates and does not alter program code.
+10. **NEXT ACTION**: Send this packet to existing Code now. On committed submission, send exact hash to existing QA for abbreviated smoke testing; then report runnable MVP scope and real-environment gaps.
+
+## TP-003: per-instance screenshot and guarded relative-touch Task Packet
+
+1. **WHO**: Windows user ultimately operates LD1-LD9; existing `code` implements; existing `qa` independently verifies; Manager coordinates. No agents, subagents, new roles, or worktrees may be created.
+2. **WHAT**: Implement a safe foundation to capture the screen of one explicitly mapped ADB device and send a guarded relative-coordinate touch only to that same device.
+3. **WHERE**: Existing Code worktree. Scope covers injectable ADB/capture/control interfaces, models/configuration as needed, automated fakes/tests, and Code handoff. It excludes live game navigation, mission actions, global mouse, GUI, OCR/template matching, login/reconnect, and real device testing.
+4. **WHEN**: Start after Stage 3 scope PASS (`a3eb77f`). QA receives the exact Code hash only after Code self-tests and commits.
+5. **WHY**: Later mission automation must capture, verify, and act within exactly one LD instance without cross-account clicks or uncontrolled clicking.
+6. **HOW**: Use only parameterized `adb -s <explicit-serial>` commands through an injectable binary-capable runner. Provide safe screenshot capture with failure/invalid-image handling and diagnostic metadata. Provide relative device-coordinate validation and a guarded-touch operation requiring a caller-supplied precondition on a fresh capture and a postcondition after touch; if either condition is low-confidence/false, fails, or times out, send no further action and return an account-local controlled failure. Bound retries/timeouts; do not infer ports, serials, device defaults, or external screen coordinates. Use fakes to prove exact argv targeting, capture byte validation, precondition rejection/no touch, postcondition timeout, and cross-account isolation.
+7. **CONSTRAINTS**: No web DOM, global mouse, fixed desktop coordinates, automatic login/reconnect/movement, credentials, game-memory/packet manipulation, unbounded loops, or real-device activity in tests. Each action must be restricted to a nonblank explicitly supplied serial. Keep templates/ROI/threshold values out of code where configuration is needed. Preserve prior Stage 1-3 behavior and security regressions.
+8. **ACCEPTANCE CRITERIA**: Primary implementation traceability AC-09; foundations for AC-23, AC-24, AC-28, and later AC-10..AC-20. Automated evidence must show one target serial only, capture failure safety, invalid image safety, no touch when precondition fails, no repeated input after postcondition failure/timeout, account-local error containment, and preserved regression suite. No global AC PASS or AC-30 PASS is allowed without actual user-PC verification.
+9. **OWNER**: `code` implements/tests/commits and updates `docs/HANDOFF_CODE.md`; `qa` validates the exact Code hash, performs independent probes and regression runs, and commits `reports/QA_REPORT.md`; Manager records/gates results and does not modify production code.
+10. **NEXT ACTION**: Send TP-003 to existing Code. After committed handoff, send exact hash to existing QA for full TP-003 verification.
+
+## TP-002-RW-01: blank ADB serial validation corrective Task Packet
+
+1. **WHO**: Manager coordinates; existing `code` repairs; existing `qa` independently re-verifies. No agent, subagent, role, or worktree may be created.
+2. **WHAT**: Repair the Major Stage 3 defect where a nine-account mapping with `LD1: ""` passes complete ADB-mapping validation.
+3. **WHERE**: Existing Code worktree only. Scope is the complete-mapping validation API, its tests, and the Code handoff document. No real ADB, LDPlayer, screenshot, touch, or game action is authorized in this repair.
+4. **WHEN**: Begin now. QA runs full TP-002 re-verification only after Code submits a committed exact hash.
+5. **WHY**: QA report `356e730` reproduced `validate_complete_adb_mapping(mapping) == []` after setting `mapping["LD1"] = ""`. This violates the explicit nonblank serial mapping contract and is a Major safety defect.
+6. **HOW**: Make `validate_complete_adb_mapping()` report an error for empty and whitespace-only serial values; ensure `ensure_complete_adb_mapping()` consequently raises. Preserve valid nine-distinct mappings and the already safe command builder. Add focused regression tests for empty and whitespace-only values, then run the complete suite.
+7. **CONSTRAINTS**: Do not infer ports, default devices, or mappings; do not weaken/remove tests; do not bypass validation; do not introduce touch/global mouse/DOM/login/reconnect behavior; do not expose credentials; do not create agents/worktrees; do not modify unrelated production behavior.
+8. **ACCEPTANCE CRITERIA**: Stage scope traceability AC-02 and foundational AC-09: (a) direct empty and whitespace-only mapping probes yield validation errors and `ensure_complete_adb_mapping()` raises; (b) nine distinct nonblank mappings remain accepted; (c) full regression passes; (d) QA repeats parser, mapping, no-auto-assignment, account-local-status, serial-argv, and prior regression checks. Global ACs remain `NOT_TESTED` until actual project-level evidence exists.
+9. **OWNER**: `code` implements/tests/commits and updates `HANDOFF_CODE.md`; `qa` independently verifies the exact Code hash and updates `reports/QA_REPORT.md`; Manager records results and makes no program-code change.
+10. **NEXT ACTION**: Send this packet to existing Code. After a committed submission, send its exact hash to existing QA for full Stage 3 re-verification.
+
+## TP-001-RW-02: Stage 2 corrective Task Packet
+
+## TP-001-RW-03: traceback secret-leak corrective Task Packet
+
+## TP-002: Stage 3 LD1-LD9 discovery and ADB mapping
+
+1. **WHO**: Windows user operates LDPlayer instances LD1-LD9; existing `code` implements; existing `qa` independently verifies; Manager coordinates.
+2. **WHAT**: Build the safe discovery and explicit mapping foundation for exactly nine LDPlayer accounts and their distinct ADB devices.
+3. **WHERE**: Code worktree: configuration/model/service/tests/docs only. No actual game automation, screenshots, touch commands, or GUI interaction is in this stage.
+4. **WHEN**: Start after Stage 2 scope PASS (QA report `2529a1a`). Actual user-PC integration remains a later QA gate.
+5. **WHY**: Every later capture/touch command must target one verified device only; no ADB port may be guessed or shared across accounts.
+6. **HOW**: Query available ADB devices through an injectable runner; parse safe `adb devices` results; require an explicit LD1-LD9-to-serial mapping in validated configuration; reject missing, duplicate, offline, unauthorized, unknown, or non-nine mappings; expose mapping connection status and structured diagnostic errors without logging secrets. Use fakes/mocks for automated tests. Do not connect or issue control commands to real devices during tests.
+7. **CONSTRAINTS**: No fixed/guessed ports, global mouse, web DOM, game control, login/reconnect, credentials, or destructive operations. ADB command execution must remain parameterized and scoped to a selected serial. One account mapping failure must be representable without affecting valid mappings. No new agents/worktrees.
+8. **ACCEPTANCE CRITERIA**: Implement-stage traceability: AC-01 (LD1-LD9 identification), AC-02 (exact ADB mapping), and foundational isolation evidence for AC-09. Automated evidence must cover nine valid mappings, duplicate/missing mappings, offline/unauthorized/unknown serials, malformed discovery output, and command target separation. Actual LD1-LD9 user-PC validation remains AC-30 `NOT_TESTED`.
+9. **OWNER**: `code` implements, self-tests, commits, and updates `HANDOFF_CODE.md`; `qa` validates exact commit independently and reports scope PASS/FAIL. Manager does not change program code.
+10. **NEXT ACTION**: Deliver TP-002 to Code. After Code commit, QA completes the Stage 3 verification before Stage 4 begins.
+
+1. **WHO**: Manager coordinates; existing `code` repairs; existing `qa` independently re-verifies. No agents, subagents, roles, or worktrees may be created.
+2. **WHAT**: Correct the Critical Stage 2 failure in which `logger.exception()` emits a controlled password-like marker in formatted traceback text to `error.log`.
+3. **WHERE**: Existing Code worktree only. Scope: logging/redaction boundary, regression tests, and Code handoff document.
+4. **WHEN**: Start immediately. QA re-verifies the full Stage 2 scope only after a committed Code submission.
+5. **WHY**: QA report commit `179a679252cda5adb4002b0ed341ea9089ed4881` reproduced `traceback_sensitive_marker_absent=False` for Code target `1305ba5a8b629e77664566702fb3ffe04eb8ac5e`.
+6. **HOW**: Ensure sensitive values are redacted or exception output is safely prevented before any file handler writes formatted `exc_info`/traceback text. Do not retain originals. Add direct regression coverage using `logger.exception()` with a controlled marker and verify the marker is absent from `error.log`. Preserve previously passing ordinary, percent-argument, ignore, isolation, rotation, retention, config-validation, path-safety, and diagnostics behavior.
+7. **CONSTRAINTS**: Mandatory no credential/password/authentication logging applies to message, arguments, exception text, and traceback output. Do not weaken tests, delete user data, bypass error logging without a documented safe behavior, or create agents/worktrees. Run complete tests, commit, and update Code handoff.
+8. **ACCEPTANCE CRITERIA**: Mandatory security gate associated with AC-26 logging. Exact QA reproduction must return `traceback_sensitive_marker_absent=True`; complete tests pass; all prior Stage 2 checks are rerun independently by QA. No global project AC is marked PASS based solely on this stage.
+9. **OWNER**: `code` implements/self-tests/commits; `qa` independently validates exact Code hash and writes `reports/QA_REPORT.md`; Manager records and gates Stage 3.
+10. **NEXT ACTION**: Manager sends this packet to `code`; Code provides a committed handoff; QA performs full Stage 2 re-verification.
+
+1. **WHO**: Manager coordinates; existing `code` repairs; existing `qa` independently re-verifies. No new agent or worktree is permitted.
+2. **WHAT**: Correct Stage 2 security failures found for Code commit `ba0e3da1228b70cd34a40e74a0f262212ed8310a`.
+3. **WHERE**: Code worktree only: logging implementation, tests, and `.gitignore`.
+4. **WHEN**: Begin immediately; QA fully re-verifies Stage 2 after Code submits a new commit.
+5. **WHY**: A controlled `password=...` marker persisted unredacted in an account log; generated log and diagnostic artifacts were not ignored.
+6. **HOW**: Redact or reject sensitive content before any handler emits a record. Cover password, token, API key, authorization, and cookie-style values. Ignore generated `logs/` and `diagnostics/`. Add regression tests proving task/error logs contain no literal marker and those outputs are ignored.
+7. **CONSTRAINTS**: Do not log credentials. Do not delete user data, weaken tests, bypass failure, create agents/worktrees, or claim an AC PASS. Run complete tests and commit; QA independently runs all Stage 2 checks.
+8. **ACCEPTANCE CRITERIA**: Primary traceability AC-26; security constraints are mandatory gates. Expected: no literal marker in task/error logs; the generated test paths are ignored; full regression passes. All project ACs remain globally `NOT_TESTED` until relevant implementation and evidence exist.
+9. **OWNER**: `code` implements/self-tests; `qa` validates exact submitted commit; Manager records and decides progression.
+10. **NEXT ACTION**: Send this packet to `code`; send its exact repair hash to `qa` for full Stage 2 re-verification.
+
+code가 1단계 프로젝트 기본 구조를 구현·테스트·커밋·인수인계한 뒤, Manager가 증거를 확인하고 qa에 해당 커밋의 독립 검증을 전달한다.
