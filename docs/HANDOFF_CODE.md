@@ -1318,3 +1318,174 @@ status --short` confirmed no stray files after the run.
 As with MVP-001, `BLOCKED_REAL_ENVIRONMENT` is the expected/acceptable
 outcome for anything requiring real `adb`/a display/a real game screen
 in the QA environment — steps 1 and 5 should be possible anywhere.
+
+---
+
+## UI-ADB-001: GUI-driven LD1..LD9 ADB registration
+
+**User-approved packet UI-ADB-001.** Queued after REL-0.1.0 release
+prep (build/test verification only, no code changes — see that
+section). Implemented in the same Code worktree, on top of clean
+`c42289c`, without discarding prior work. Goal: the customer registers
+LD1..LD9 ADB serials **from the GUI**, never by hand-editing YAML or
+using a terminal.
+
+**Status: implemented and self-tested only. Not merged, not
+tagged/pushed/published** (per REL-0.1.0's note that Manager handles
+release integration — unchanged by this packet).
+
+### What was built
+
+| Requirement (packet) | Delivered as |
+|---|---|
+| Global "Refresh ADB devices" | `LDManagerApp._on_refresh_devices()` — calls `discovery.discover_devices(runner)` (read-only `adb devices`), never `runner.run()` |
+| Each LD panel shows mapping status | `AccountPanel.set_mapping_status()` — persisted serial + live `ConnectionStatus` + detail text |
+| Select a discovered serial OR enter one explicitly | `ttk.Combobox` (editable, not read-only) populated from the last refresh's device list |
+| Save / Clear | `AccountPanel` Save/Clear buttons → `LDManagerApp._on_save_mapping()`/`_on_clear_mapping()` → `config_mapping.save_account_serial()` |
+| Persist valid mapping to ignored local config, reload panel state | `config_mapping.py` reads/writes `configs/config.yaml` (already git-ignored); every save/clear ends with `_apply_current_mapping_to_panels()` re-rendering from the (freshly re-read-on-success) mapping |
+| Reuse existing explicit mapping validation | `config_mapping.save_account_serial()` calls `config.validate_adb_mapping()` (unknown-key/type checks, reused unmodified) + `adb.validate_serial()` (blank/whitespace check, reused unmodified) + an added duplicate-across-accounts check (see below) |
+| Never auto-assign discovered devices | Combobox only *suggests*; the value actually saved is always exactly what `serial_var.get()` returns (user-picked or user-typed) — no code path writes a discovered serial without that round-trip through the widget |
+| Reject blank/duplicate/malformed/unavailable visibly per account, prevent that account's start | Blank/duplicate/malformed → `MappingSaveResult(ok=False, ...)` shown via `panel.mapping_error_var` (per-panel, red text), nothing written. "Unavailable" (not found/offline/unauthorized/unknown/discovery-unavailable) → `ConnectionStatus != OK` → Start button left `disabled` (ttk-level; `.invoke()` is then a no-op) |
+| Refresh/save issue no tap, start no worker | Refresh calls only `list_devices()`; Save/Clear call only `config_mapping.save_account_serial()` (pure file I/O) — neither ever calls `runner.run()` or `controller.start_account()`/`start_all()`. Tested directly (`test_refresh_devices_updates_serial_choices_with_no_tap_or_worker`, `test_save_and_clear_never_tap_or_start_a_worker`) |
+| Preserve other accounts' mappings | `save_account_serial()` reads the full current mapping, mutates exactly one key, writes back all nine — tested (`test_save_preserves_other_accounts_mappings`, GUI-level `test_clear_removes_mapping_and_preserves_other_accounts`) |
+
+### Design notes
+
+- **`discovery.py` refactor** (no behavior change to the existing runner-driven path — see regression note below): extracted a pure `compute_account_connection_statuses(adb_mapping, devices)` from `build_account_connection_statuses(adb_mapping, runner)`, so the GUI can recompute per-account status from an **already-fetched** device list (cached from the last "Refresh ADB devices" click) without re-invoking `adb devices` on every save/clear. `build_account_connection_statuses()` now delegates to the pure function when discovery succeeds, and is otherwise unchanged.
+  - **Regression found and fixed during this refactor** (caught before it shipped, not by pre-existing tests): a first-draft version of the split accidentally reclassified an *unmapped* account as `DISCOVERY_UNAVAILABLE` whenever discovery failed, instead of keeping it `UNMAPPED` (the original, correct behavior — an unmapped account's status doesn't depend on whether discovery succeeded). Fixed to preserve the exact original branching order; added
+    `test_unmapped_account_stays_unmapped_even_when_discovery_fails` as a permanent regression guard.
+- **Start-gating default is safe**: every panel's Start button is constructed already `disabled` and only enabled by `set_mapping_status()` when status is exactly `ConnectionStatus.OK` — a freshly-saved mapping does **not** auto-enable Start; a subsequent Refresh must confirm it live.
+- **Save vs. Clear are distinct actions**: Save rejects a blank/whitespace value outright (visible per-account error); Clear is the dedicated action to remove a mapping and always succeeds (barring a write error).
+- **Duplicate check is new, minimal logic** (not present in `config.validate_adb_mapping`, which only validates individual entries/unknown keys — duplicate detection across a *complete* 9-entry mapping already existed in `discovery.validate_complete_adb_mapping`, but that requires all nine to be non-null, which doesn't hold for an incremental GUI save flow). `config_mapping.save_account_serial()` adds a straightforward "does this serial already belong to a different account key" check against the current on-disk mapping before writing.
+- **YAML round-trip re-serializes the file** (`yaml.safe_load` + `yaml.safe_dump`) — this preserves all other keys/sections (`logging`, `diagnostics`, etc.) and all nine `adb_mapping` entries, but does **not** preserve human-written comments if the user had copied the commented `config.example.yaml` and hand-edited it before ever using the GUI. Documented as a limitation (below) and in `docs/RUN_GUIDE.md`.
+
+### Actual files changed/added
+
+```
+ New source (src/ldmanager/):
+   config_mapping.py   (load_current_adb_mapping/save_account_serial;
+                        pure config file I/O + validation, no ADB)
+
+ Modified source:
+   discovery.py   (+ compute_account_connection_statuses(); refactor of
+                   build_account_connection_statuses(), same public
+                   behavior, regression caught+fixed+tested)
+   gui.py         (AccountPanel gets serial combobox + mapping status +
+                   Save/Clear + Start-gating; LDManagerApp gets Refresh
+                   ADB devices + adb_runner/config_path params +
+                   mapping state/reload wiring)
+   app.py         (main() now passes a SubprocessAdbRunner +
+                   resolve_config_path() into LDManagerApp for the
+                   Refresh button; build_controller()'s signature/
+                   contract is unchanged)
+
+ New tests:
+   test_config_mapping.py (15: load defaults, save creates file, save+
+   reload round-trip, blank/whitespace/malformed/duplicate rejection,
+   same-value-to-same-account is not a duplicate, preserves other
+   accounts' mappings, preserves unrelated config sections, clear
+   removes/no-ops harmlessly/is never subject to duplicate-check,
+   pre-existing malformed config blocks save with a clear error)
+
+ Modified tests:
+   test_discovery.py (+3: compute_* matches build_* for the same
+   devices, compute_* never takes a runner, unmapped-stays-unmapped-
+   under-discovery-failure regression guard)
+   test_gui.py (+7 net, rewritten: start-blocked-before-OK,
+   start/stop-work-once-OK [fixes an outdated assumption from before
+   Start-gating existed], refresh updates serial choices with no tap/
+   worker, save persists + Start stays blocked until next refresh, save
+   rejects blank, save rejects duplicate without overwriting, clear
+   removes + preserves other accounts, save+clear never tap or start a
+   worker) — now uses a module-scoped tmp_path-based config_path +
+   FakeAdbRunner fixture instead of a bare in-memory controller, so no
+   test ever reads/writes the real repository's config.yaml
+```
+
+Untouched (regression preserved): `config.py`, `adb.py` (both reused,
+not modified), `mission.py`/`mission_config.py`/`bounty_config.py`/
+`bounty_mission.py`, `logs.py`, `redaction.py`, `paths.py`,
+`diagnostics.py`, `screenshot.py`, `guarded_touch.py`, `coordinates.py`,
+`recognition.py`, `controller.py` (no changes needed — still
+duck-typed), `models.py`, `cli.py`, all `scripts/*`, all `configs/*`.
+
+### Commit(s)
+
+- `5b0862b` — "UI-ADB-001: GUI-driven LD1-LD9 ADB registration" (branch
+  `kpj0526/Code`, on top of clean `c42289c`). This HANDOFF hash-record
+  update is the follow-up commit immediately after it. Not tagged, not
+  pushed, not published.
+
+### Full test command / result
+
+```
+.venv\Scripts\python.exe -m pytest -v
+```
+
+Result: **266 passed**, 0 failed, 0 skipped (241 prior [MVP-001-CV +
+everything before it] + 25 new/changed this packet: 15 in
+`test_config_mapping.py` + 3 in `test_discovery.py` + 7 net in
+`test_gui.py`). Re-run 4x consecutively during development: 266/266
+each time (the module-scoped Tk fixture pattern from MVP-001 continues
+to avoid the multi-`tk.Tk()` flakiness). `git status --short` confirmed
+no stray files.
+
+### Limitations
+
+1. **Hand-written YAML comments are lost** on any GUI Save/Clear (file
+   is re-serialized via `yaml.safe_dump`) — values/sections are all
+   preserved, formatting/comments are not. Documented in
+   `docs/RUN_GUIDE.md`.
+2. **"Malformed" detection is scoped to what `adb.validate_serial()`
+   already checks** (blank or containing whitespace) — there is no
+   broader ADB-serial-format validator, since real serials have no
+   single universal shape (`host:port`, `emulator-NNNN`, USB device
+   IDs, ...). A syntactically-plausible-but-wrong serial (e.g. a typo)
+   will save successfully and only surface as `device_not_found` on the
+   next Refresh.
+3. **No automatic Refresh on save/clear or on app launch.** The user
+   must click "Refresh ADB devices" explicitly (at least once, and
+   again after any mapping change) before Start becomes available for
+   an account — by design (no ADB call happens without an explicit
+   click), but means a first-time user must remember this two-step
+   flow (Save, then Refresh) to actually enable Start.
+4. **Discovered-device list is cached client-side between Refresh
+   clicks.** If a device goes offline moments after a Refresh, the
+   panel won't reflect that until the next Refresh — there is no
+   background polling (intentional: avoids issuing ADB calls the user
+   didn't ask for).
+5. **No confirmation dialog before Clear** — clicking Clear removes
+   that account's mapping immediately (still only that one account;
+   still reversible by re-saving the same or a different serial).
+6. All limitations recorded in every prior TP-00x/RW-0x/MVP-001/
+   MVP-001-CV section of this document remain valid and are not
+   superseded by UI-ADB-001.
+
+### Known real-environment gaps (for Manager)
+
+- Registration flow (Refresh/Save/Clear/Start-gating) has only been
+  exercised against `FakeAdbRunner` — never a real `adb` binary or a
+  real LDPlayer instance. Real `adb devices` output shape/timing
+  against this project's parser (`adb.parse_adb_devices_output`) was
+  already a known gap from TP-002/TP-003 and remains unverified here.
+- No real multi-instance registration walkthrough (9 real LDPlayer
+  windows, 9 real serials, real Refresh/Save cycles) has been
+  performed.
+
+### QA focus points
+
+- Save/Clear rejection is **visible per account** and **never** writes
+  a partial/invalid mapping (blank, malformed, duplicate) — verify
+  against `configs/config.yaml` directly after an attempted bad save.
+- Start is truly gated: saving a serial alone must not enable Start;
+  only a subsequent Refresh confirming `ok` does. Stopping/clearing one
+  account must never affect another (re-verify the MVP-001/MVP-001-CV
+  controller-level guarantees still hold with the new mapping UI
+  layered on top).
+- Refresh/Save/Clear must never appear in any ADB "tap" log and must
+  never start a worker — spot-check via the same
+  `pyautogui`/`pynput`/`selenium`/socket/credential grep used in prior
+  QA smoke steps, plus confirm `FakeAdbRunner.calls` (touches) stays
+  empty across a Refresh/Save/Clear sequence in the automated suite
+  (already asserted by `test_save_and_clear_never_tap_or_start_a_worker`
+  — QA may want to reproduce manually too).

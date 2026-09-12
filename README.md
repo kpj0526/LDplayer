@@ -101,7 +101,11 @@ src/ldmanager/
   redaction.py    # 자격증명형 텍스트 레드액션(로그 전용)
   adb.py          # 주입 가능한 ADB 러너(텍스트 + 바이너리 캡처), `adb
                   # devices` 파싱, 단일 시리얼 범위 명령 구성
-  discovery.py    # LD1~LD9 매핑 검증 + 러너 기반 연결 상태 조회
+  discovery.py    # LD1~LD9 매핑 검증 + 러너 기반/순수 연결 상태 조회
+                  # (compute_account_connection_statuses: 이미 가져온
+                  # device 목록으로 재계산, ADB 재호출 없음 — GUI가 사용)
+  config_mapping.py  # GUI에서 계정별 ADB 시리얼 저장/삭제(UI-ADB-001) —
+                      # 순수 config 파일 I/O + 검증, ADB 호출 전혀 없음
   coordinates.py  # 기기-내부 상대 좌표([0,1]) 검증 + 픽셀 변환(전역
                   # 마우스/고정 외부 좌표 없음)
   screenshot.py   # 계정별 스크린샷 바이너리 캡처 + PNG 바이트 검증
@@ -121,7 +125,8 @@ src/ldmanager/
                       # 없음)→완료→보상→결과→닫기→목록 복귀→재수락
   controller.py   # 계정별 독립 취소 가능 워커 + 컨트롤러(개별/전체
                   # 시작·정지, 예외 격리)
-  gui.py          # Tkinter 기반 LD1~LD9 상태/버튼 GUI
+  gui.py          # Tkinter 기반 LD1~LD9 상태/버튼 GUI + ADB 매핑 등록
+                  # (Refresh ADB devices, 계정별 시리얼 선택/입력+저장/삭제)
   app.py          # 실행 진입점(config+bounty_config+controller+GUI 연결)
   cli.py          # 최소 CLI 진입점 (stage 1, MVP 컨트롤러와 별개)
 configs/
@@ -152,6 +157,7 @@ tests/
   test_mission.py
   test_bounty_config.py
   test_bounty_mission.py
+  test_config_mapping.py
   test_controller.py
   test_gui.py
   test_app.py
@@ -252,9 +258,11 @@ docs/
   (`templates_dir`)/ROI/좌표/label/threshold/재시도 횟수/타임아웃이 전부
   YAML 설정값입니다 — 코드에 하드코딩된 값 없음.
 - **GUI** (`gui.py`): Tkinter(표준 라이브러리, 별도 의존성 없음) 기반.
-  LD1~LD9 9개 패널 + 전체 Start All/Stop All. 각 패널은 상태(running/
-  stopped)/현재 슬롯/사이클 수·마지막 결과/마지막 오류/최근 로그
-  한 줄과 Start/Stop 버튼을 보여줍니다.
+  LD1~LD9 9개 패널 + 전체 Start All/Stop All/**Refresh ADB devices**.
+  각 패널은 상태(running/stopped)/현재 슬롯/사이클 수·마지막 결과/
+  마지막 오류/최근 로그 한 줄과 Start/Stop 버튼, 그리고(UI-ADB-001)
+  ADB 시리얼 선택/입력 콤보박스 + Save/Clear + 실시간 매핑 상태를
+  보여줍니다. 자세한 내용은 아래 "GUI에서 LD1~LD9 등록" 절 참고.
 - **실행 진입점** (`app.py`, `scripts/run.bat`, `scripts/run.ps1`):
   `python -m ldmanager.app`. 설정 파일이 없거나 잘못되면 GUI를 열지
   않고 콘솔에 에러만 출력한 뒤 종료 코드 1로 끝납니다.
@@ -308,3 +316,37 @@ docs/
 사용되지 않습니다. 자세한 AC 매핑/한계/실제 연동에 필요한 작업은
 `docs/HANDOFF_CODE.md`의 MVP-001-CV 절과
 `docs/REAL_CAPTURE_CHECKLIST.md`를 참고하세요.
+
+## GUI에서 LD1~LD9 등록 (UI-ADB-001)
+
+고객이 YAML을 직접 편집하거나 터미널을 쓸 필요 없이, GUI에서 계정별
+ADB 매핑을 등록/해제할 수 있습니다.
+
+- **전역 "Refresh ADB devices" 버튼**: `adb devices`를 읽기만 합니다
+  (탭 없음, 워커 시작 없음). 결과로 모든 패널의 시리얼 콤보박스 후보
+  목록과 각 계정의 실시간 연결 상태를 갱신합니다.
+- **계정별 패널**: 콤보박스에서 발견된 시리얼을 **선택**하거나 직접
+  **입력**할 수 있습니다 — 발견된 장치를 자동으로 배정하는 일은
+  없습니다. **Save**를 누르면 `ldmanager.discovery`의 기존 명시적
+  매핑 검증 로직을 재사용해 검증한 뒤(빈 값/공백만 있는 값/공백이
+  섞인 형식/다른 계정과 중복되는 값은 저장 없이 그 패널에 에러로
+  표시) 로컬(ignored) `configs/config.yaml`에만 저장하고 패널 상태를
+  다시 불러옵니다. **Clear**는 그 계정의 매핑만 제거하며 다른 계정의
+  매핑에는 전혀 영향을 주지 않습니다.
+- **Save/Clear는 ADB 탭을 절대 보내지 않고 워커도 시작하지 않습니다**
+  — 순수 설정 파일 I/O입니다(`ldmanager.config_mapping`).
+- **Start 버튼은 안전 기본값으로 비활성화**되어 있으며, 해당 계정의
+  매핑이 최신 Refresh 기준으로 `ok` 상태로 교차 검증되어야만
+  활성화됩니다 — 저장만 하고 아직 새로고침하지 않았거나, 장치가
+  없음/오프라인/미승인/알수없음/디스커버리 실패 상태면 시작할 수
+  없습니다.
+
+`ldmanager.discovery.compute_account_connection_statuses()`가
+이미 가져온 device 목록으로 상태를 재계산하는 순수 함수라서, Save/
+Clear 직후에도 ADB를 다시 호출하지 않고 캐시된 목록 기준으로 패널을
+갱신합니다(진짜로 "지금 온라인인지" 확인하려면 Refresh를 다시 눌러야
+합니다).
+
+**알려진 한계**: `configs/config.yaml`을 GUI로 저장/삭제하면 YAML이
+다시 직렬화되므로, 사람이 손으로 넣은 주석은 보존되지 않습니다.
+자세한 내용은 `docs/HANDOFF_CODE.md`의 UI-ADB-001 절 참고.
