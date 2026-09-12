@@ -789,3 +789,56 @@ powershell -ExecutionPolicy Bypass -File scripts\run.ps1
 Actual outcome: a visible Python window titled `ldmanager (MVP)` opened (window id `985030`, 738x600) using the documented path. It remained open for approximately 20 seconds for desktop inspection. No real ADB input, worker start, or application control action was issued.
 
 The desktop automation provider could not focus the window for `Alt+F4`, so QA delivered standard Windows `WM_CLOSE` to that exact window handle (`wm_close_sent=True`). The Python GUI process then exited and disappeared from the desktop app list. This is supplemental GUI-launch evidence only; it does not alter the MVP smoke verdict or real-environment/AC-58..60 status.
+
+---
+
+## UI-ADB-001 release-gate smoke (2026-09-12) — MVP_SMOKE_PASS
+
+### Target / integration / build evidence
+
+| Item | Verified result |
+| --- | --- |
+| Exact Code target | `817183be5a2241bb426a55942230de21dff8df98` on `kpj0526/Code` |
+| Implementation ancestry | `5b0862bb3e39a3fbc2d596e5a8c8c14e470368d8` is an ancestor |
+| Cumulative ancestry | prior MVP target `c42289c` is an ancestor |
+| Code worktree before QA | clean |
+| QA integration | explicit non-fast-forward merge `28b3d2c` |
+| Diff | `c42289c..817183be…`; `git diff --check` exit 0 |
+| Build artifact | `Code/dist/ldmanager/ldmanager.exe` present, `2,071,926` bytes; SHA-256 `511093F2304E035869E66AB427770DDA778E1AB5F5B09907364AB50C1BF5C701` |
+| Packaging path | `scripts/build_windows.ps1` invokes PyInstaller with `scripts/entrypoint.py`; project declares PyInstaller build dependency |
+
+The currently open user GUI was left untouched: no Start/Stop control, real ADB action, worker operation, close action, or artifact execution was performed by this release-gate check.
+
+### Independent execution
+
+```powershell
+& .\.venv\Scripts\python.exe -m pytest -q
+& .\.venv\Scripts\python.exe -m pytest -q tests/test_config_mapping.py tests/test_gui.py tests/test_discovery.py
+```
+
+Actual results: full suite `266 passed in 1.96s`; focused UI/config/discovery fixtures `53 passed in 0.41s`. Source import smoke of `ldmanager.app`, `ldmanager.gui`, and `ldmanager.config_mapping` passed.
+
+QA separately ran a temporary-config, no-GUI/no-runner/no-worker probe:
+
+```text
+INDEPENDENT_UI_ADB_MAPPING_PASS: nine mapping load; save/reload; blank/duplicate reject; clear preserves isolation; discovered extra never auto-assigned; unavailable LD2 does not affect LD1; no runner/touch/worker used
+```
+
+| Mandatory release-gate check | Result |
+| --- | --- |
+| Fixture GUI mapping state and LD1-LD9 controls | PASS: focused fixtures construct a panel per account and verify mapping controls/start gating without mainloop, device, or worker start. |
+| Example config / nine mappings | PASS: example mapping loads all LD1-LD9 keys; temporary mapping starts all null. |
+| Discovery never auto-assigns | PASS: visible `EXTRA-UNMAPPED` serial was attributed to no account. |
+| Save/reload valid unique mapping | PASS: temporary LD1 `SERIAL-ONE` save succeeded and reloaded exactly. |
+| Blank / duplicate / unavailable handling | PASS: blank rejected as `BLANK`; duplicate LD2 rejected without changing LD1; unavailable mapping remains non-OK/start-gated. |
+| Refresh/save/clear safety | PASS: config operations have no runner/touch/worker path; focused fixtures verify refresh is discovery-only and save/clear do not start workers. |
+| LD1/LD2 isolation | PASS: LD1 save/clear did not change LD2; LD2 unavailable did not affect valid LD1. |
+| Worker/controller safety | PASS through full suite; no worker was started by this QA run. |
+| Prohibited controls | PASS static review: no global mouse, DOM/browser, guessed port, login/reconnect, credential, OCR/template engine, LD-console, or external-network-control implementation. Scan hits were redaction documentation only. |
+| Git exclusions | PASS: local config/bounty, generated logs, diagnostics ignored; example config not ignored. |
+
+### Scope limits / AC traceability
+
+**MVP_SMOKE_PASS** only. The artifact was verified for presence/size/hash and packaging wiring, not launched; no real LDPlayer/ADB/game activity occurred.
+
+AC-58, AC-59, and AC-60 remain **BLOCKED_REAL_ENVIRONMENT / NOT_TESTED**. No real customer assets, device serials, calibrated recognition, customer-video UI flow, actual capture, or live reward/result evidence was supplied. No final project or real-environment AC is marked PASS.
