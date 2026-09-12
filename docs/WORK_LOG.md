@@ -1,5 +1,13 @@
 # WORK LOG
 
+## 2026-09-12 | REL-0.1.0 GitHub MVP prerelease publication | Manager
+
+- Performed: after QA `MVP_SMOKE_PASS`, created release ZIP from Code's verified Windows distribution, pushed existing QA-integrated target to remote branch `mvp/v0.1.0`, created tag/release `v0.1.0`, and verified remote asset metadata.
+- Changed: remote GitHub branch/tag/release; Manager progress/status records.
+- Evidence: QA `120a55b`; remote target `120a55b933e5688ff688ee49213a300133d77e52`; ZIP 11,210,660 bytes; SHA-256 `A525FA85A50DAB51AE2AAF9E0DCEF805A54C3A631C341E85507F042070059726`.
+- Result: published as an explicitly labelled GitHub **MVP prerelease**, not final product delivery.
+- Next handoff: real-customer LD/game validation using GUI mapping; existing Code/QA only for subsequent defects/retests.
+
 ## 2026-09-12 | UI-ADB-001 Code submission and QA release gate | Manager
 
 - Performed: verified existing Code branch/head/worktree, Code-reported full test result, and generated Windows artifact; passed exact target to existing QA.

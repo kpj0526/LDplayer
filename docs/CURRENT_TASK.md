@@ -1,5 +1,17 @@
 # CURRENT TASK
 
+## `v0.1.0` MVP prerelease publication (2026-09-12)
+
+- Task ID: `REL-0.1.0`
+- Status: `PUBLISHED_MVP_PRERELEASE`.
+- Owner: Manager publication after existing QA release-gate verdict.
+- Source: remote `mvp/v0.1.0` / tag `v0.1.0` at `120a55b933e5688ff688ee49213a300133d77e52`; Code implementation is included through `817183b` / `5b0862b`.
+- QA gate: `MVP_SMOKE_PASS`, QA report `120a55b`; independent `266 passed` and focused `53 passed`.
+- Asset: `ldmanager-v0.1.0-windows-20260912.zip`, 11,210,660 bytes, SHA-256 `A525FA85A50DAB51AE2AAF9E0DCEF805A54C3A631C341E85507F042070059726`.
+- Release page: `https://github.com/kpj0526/LDplayer/releases/tag/v0.1.0`.
+- Completion boundary: publication is complete; final project completion is not. Real LD/game validation remains required.
+- Next action: customer maps real LD instances through the GUI and provides real-environment test evidence.
+
 ## UI-ADB-001 QA release gate (2026-09-12)
 
 - Task ID: `UI-ADB-001`

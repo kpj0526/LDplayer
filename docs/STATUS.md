@@ -1,5 +1,13 @@
 # STATUS
 
+## GitHub v0.1.0 publication (2026-09-12)
+
+- Current phase: `NEEDS_REAL_TEST`
+- Published: `v0.1.0` MVP prerelease on `mvp/v0.1.0`; release page `https://github.com/kpj0526/LDplayer/releases/tag/v0.1.0`.
+- QA gate: `MVP_SMOKE_PASS`, report `120a55b`; 266 independent tests plus 53 focused registration tests passed.
+- Asset: Windows ZIP 11,210,660 bytes, SHA-256 `A525FA85A50DAB51AE2AAF9E0DCEF805A54C3A631C341E85507F042070059726`.
+- Not complete: no actual LDPlayer/game automation result is represented by this prerelease.
+
 ## Supplemental GUI launch result (2026-09-12)
 
 - Current phase: `NEEDS_REAL_TEST`

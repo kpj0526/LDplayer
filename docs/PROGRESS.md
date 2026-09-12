@@ -1,5 +1,14 @@
 # PROGRESS
 
+## GitHub `v0.1.0` MVP prerelease published (2026-09-12)
+
+- Current phase: `NEEDS_REAL_TEST`.
+- Published: public GitHub prerelease [`v0.1.0`](https://github.com/kpj0526/LDplayer/releases/tag/v0.1.0) from remote branch/tag `mvp/v0.1.0` at QA report commit `120a55b933e5688ff688ee49213a300133d77e52`.
+- Release asset: `ldmanager-v0.1.0-windows-20260912.zip`, 11,210,660 bytes, SHA-256 `A525FA85A50DAB51AE2AAF9E0DCEF805A54C3A631C341E85507F042070059726`.
+- Gate evidence: QA `120a55b` recorded `MVP_SMOKE_PASS` for Code `817183b` / implementation `5b0862b`: independent full suite `266 passed`; focused UI/config/discovery `53 passed`; artifact presence/hash verified.
+- Scope truth: this is a published MVP prerelease, not final project completion. Real LDPlayer/ADB mapping, calibrated game recognition, live mission/reward/repeat, and nine-instance live isolation remain `NEEDS_REAL_TEST` / `BLOCKED_REAL_ENVIRONMENT`.
+- Next: user performs real-environment setup/validation; Manager routes defects only to existing Code and QA.
+
 ## UI-ADB-001 Code submission; release-gate QA pending (2026-09-12)
 
 - Current phase: `VERIFYING`.

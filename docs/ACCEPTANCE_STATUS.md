@@ -14,6 +14,8 @@ Total ACs: `65`. The addition is planned only; implementation and QA counts rema
 
 UI-ADB-001 submission override: AC-61..AC-65 are `IMPLEMENTED` at Code `5b0862b` / `817183b`, pending independent QA. Global final QA remains `0/65`.
 
+UI-ADB-001 QA override: AC-61..AC-65 are `MVP_IMPLEMENTED` / `MVP_SMOKE_PASS` at QA `120a55b`. They are not global final QA PASS and remain `NEEDS_REAL_TEST` for actual ADB/LD device interaction. Global final QA remains `0/65`.
+
 ## MVP-001-CV smoke-result override (2026-09-12)
 
 | AC range | MVP status | Smoke status | Global QA status | Real environment status | Evidence |
