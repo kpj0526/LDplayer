@@ -842,3 +842,48 @@ INDEPENDENT_UI_ADB_MAPPING_PASS: nine mapping load; save/reload; blank/duplicate
 **MVP_SMOKE_PASS** only. The artifact was verified for presence/size/hash and packaging wiring, not launched; no real LDPlayer/ADB/game activity occurred.
 
 AC-58, AC-59, and AC-60 remain **BLOCKED_REAL_ENVIRONMENT / NOT_TESTED**. No real customer assets, device serials, calibrated recognition, customer-video UI flow, actual capture, or live reward/result evidence was supplied. No final project or real-environment AC is marked PASS.
+
+---
+
+## REL-0.1.0-PKG-01 urgent packaging gate (2026-09-12) — MVP_SMOKE_PASS
+
+| Item | Verified result |
+| --- | --- |
+| Exact Code target | `a51ef07c9cc23f5729b3532e55c7fd7303eac88c` on `kpj0526/Code` |
+| Implementation ancestry | `58eefc17ba156655e6558b737a50141e1c0b8a31` is an ancestor |
+| Cumulative ancestry | `817183b` is an ancestor |
+| Code worktree before verification | clean |
+| QA integration | explicit non-fast-forward merge `e8132de` |
+| Target diff | bootstrap module, application wiring, packaging script, tests/docs; clean `git diff --check` |
+
+Independent full suite command and actual result:
+
+```powershell
+& .\.venv\Scripts\python.exe -m pytest -q
+```
+
+`286 passed in 2.06s`.
+
+### Fresh extracted-distribution smoke
+
+QA created a ZIP from the submitted `Code/dist/ldmanager` directory, extracted it into a newly created temporary directory, and confirmed the extracted root contained `ldmanager.exe`, `README_FIRST_RUN.txt`, `configs/config.example.yaml`, `configs/bounty.example.yaml`, and `templates/README.md`, with no `configs/config.yaml` or `configs/bounty.yaml` before launch.
+
+QA launched the fresh extracted executable from that extracted root. Actual result: `ldmanager.exe` PID `25784` opened a visible `ldmanager (MVP)` window (window id `69406`, 1705x953). First launch created both missing local config files. The generated `config.yaml` contained exactly LD1-LD9 entries with all values `null`. No worker was started and no ADB/touch control was invoked. Only the temporary EXE window was then normally closed with its own Windows `WM_CLOSE`; the pre-existing user GUI was not targeted or controlled.
+
+### Bootstrap preservation resolution
+
+An initial independent preservation-probe assertion failed because the harness copied examples into a temporary directory but did not change its CWD before calling `bootstrap_default_configs()`. The function therefore correctly resolved its targets under the Code worktree, leaving the temporary missing `bounty.yaml` absent; that violated the harness's assumption, not the product contract.
+
+Corrected isolated probe changed CWD to the temporary fake distribution and produced:
+
+```text
+INDEPENDENT_BOOTSTRAP_PRESERVATION_PASS: existing config.yaml unchanged; only missing bounty.yaml created
+```
+
+It explicitly verified a pre-existing `config.yaml` remained byte-identical while only the missing `bounty.yaml` was created. This matches the source implementation's `target.exists()` no-overwrite guard and the fresh EXE first-run result.
+
+### Scope conclusion
+
+**MVP_SMOKE_PASS.** The release distribution/bootstrap gate passed: safe examples are present in the fresh extraction, first launch bootstraps only missing local configs with all mappings null, a GUI opens, and an existing user config is preserved.
+
+This gate did not perform real LDPlayer/ADB/game activity, worker start, touch input, or release publishing. AC-58, AC-59, and AC-60 remain **BLOCKED_REAL_ENVIRONMENT / NOT_TESTED**; no final project or real-environment AC is marked PASS.
