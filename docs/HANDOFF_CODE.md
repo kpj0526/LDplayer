@@ -229,3 +229,124 @@ stage 1 항목 포함 전체 AC는 여전히 QA 미검증(NOT_TESTED) 상태이�
 - [ ] 이번 단계 금지 항목(신규 에이전트/worktree/역할, Manager 문서 수정,
       실제 LD/게임 조작, 웹 DOM, 전역 마우스, 자격증명 저장·로그 기록)이
       코드베이스 어디에도 없는지 diff 재확인
+
+---
+
+## TP-001-RW-02 (Stage 2 교정): 로그 자격증명 미저장 + gitignore 커버리지
+
+**Manager corrective packet**: TP-001-RW-02. QA FAILED 대상 커밋
+`ba0e3da1228b70cd34a40e74a0f262212ed8310a`. QA report 커밋
+`5cba31e2d09b254166e4dbb79a5786be674e848e`.
+
+**상태: 지시된 4개 교정 항목만 부분 구현. 프로젝트 전체 AC PASS를 선언하지
+않음. QA 재검증 필요.**
+
+> AC 트레이서빌리티 참고: 이 worktree에는 Manager 쪽 공식 AC 카탈로그
+> 원문이 없어 "AC-26"의 정확한 문구를 직접 확인할 수 없었습니다. 아래
+> 표는 교정 지시 패킷(TP-001-RW-02) 본문에 적힌 4개 항목 + 그 항목이
+> 가리키는 것으로 보이는 보안 제약("로그에 자격증명 평문 미저장")을
+> 기준으로 작성했습니다. QA가 공식 AC-26 문구와 1:1로 대조해 주시기
+> 바랍니다.
+
+### 구현 AC / 트레이서빌리티
+
+| # | 지시 항목 (교정 패킷 원문 요약) | AC 매핑(추정) | 구현 여부 | 비고 |
+|---|---|---|---|---|
+| 1 | `password=...` 등 통제 마커가 계정 task/error 로그에 절대 남지 않아야 함(비식별화 또는 거부, password/token/API key/authorization/cookie 커버, 원문 값 보존 금지) | **AC-26** (로그 자격증명 미기록/미보존) + 보안 필수 제약 | **구현** | `src/ldmanager/redaction.py`(`redact_sensitive_text`) + `src/ldmanager/logs.py`의 `SensitiveDataRedactionFilter`. 로거(핸들러 아님)에 부착되어 `record.getMessage()`로 렌더링 후 치환, `record.args=()`로 재노출 차단 — 핸들러가 레코드를 받기 *전에* 1회 적용 |
+| 2 | 생성되는 `logs/`, `diagnostics/` 아티팩트에 대한 Git ignore 커버리지 추가, 기존 config 보호 유지 | (인프라/위생 요구사항) | **구현** | `.gitignore`에 `/logs/`, `/diagnostics/` 추가. 기존 `configs/config.yaml` 규칙은 그대로 유지(삭제/수정 없음) |
+| 3 | 통제된 민감 마커가 task/error 출력에 없음 + 명시된 생성 경로들이 ignore됨을 증명하는 회귀 테스트, 격리/보존·회전/설정 검증/경로 안전성/JSON-only 진단은 보존 | (회귀 테스트 요구사항) | **구현** | `tests/test_redaction.py`(9), `tests/test_logs.py`에 레드액션 통합 테스트 5개 추가, `tests/test_gitignore.py`(7, `git check-ignore` 서브프로세스 기반). 기존 격리/보존·회전/설정검증/경로안전/JSON-only 테스트는 **삭제·수정 없이 그대로 유지**(회귀 없음을 재실행으로 확인) |
+| 4 | 전체 테스트 실행, 커밋, HANDOFF 갱신(태스크ID/AC/파일/명령·결과/커밋/한계/QA 포인트) | (프로세스 요구사항) | **구현** | 아래 각 절 참고 |
+| — | 프로젝트 AC PASS 선언 | — | **선언하지 않음** | Manager 지시대로 개별 교정 항목 완료만 보고, 전체 PASS 주장 없음 |
+
+### 실제 변경 파일
+
+```
+ .gitignore                (수정 — /logs/, /diagnostics/ 추가; configs/config.yaml 규칙 유지)
+ src/ldmanager/redaction.py (신규 — 자격증명형 값 텍스트 치환)
+ src/ldmanager/logs.py       (수정 — SensitiveDataRedactionFilter를 로거에 부착)
+ tests/test_redaction.py    (신규 — 9개)
+ tests/test_logs.py         (수정 — 레드액션 통합 회귀 테스트 5개 추가, 기존 10개 유지)
+ tests/test_gitignore.py    (신규 — 7개, git check-ignore 기반)
+ docs/HANDOFF_CODE.md       (수정 — 본 절 추가)
+```
+
+건드리지 않은 것(회귀 보존 확인): `config.py`(민감 키 거부/섹션 검증),
+`paths.py`(경로 안전성), `diagnostics.py`(JSON-only 메타데이터, 이미지
+미생성) — 코드 변경 없음, 관련 기존 테스트 전부 그대로 통과.
+
+### 테스트 명령 / 결과
+
+```
+.venv\Scripts\python.exe -m pytest -v
+```
+
+결과: **64 passed**, 0 failed, 0 skipped (stage 1의 11개 + stage 2의 32개 +
+이번 교정의 21개[레드액션 9 + 로그 통합 5 + gitignore 7]). 전체 로그는
+세션 기록 참고. 별도로 `git status --short`로 테스트 실행 후 저장소
+루트에 `logs/`, `diagnostics/` 등 의도치 않은 파일이 생성되지 않았음을
+확인함(모든 로그/스크린샷 테스트는 `tmp_path`에서만 파일 생성).
+
+추가 수동 확인:
+```
+git check-ignore -q logs/LD1/task.log            # exit 0 (ignored)
+git check-ignore -q diagnostics/screenshots/x.png  # exit 0 (ignored)
+git check-ignore -q configs/config.yaml           # exit 0 (ignored, 유지됨)
+git check-ignore -q configs/config.example.yaml   # exit 1 (추적 대상 유지)
+```
+
+### 커밋 해시
+
+- 이전(QA FAIL 대상): `ba0e3da` (stage 2 문서 갱신 커밋, QA가 지목한 해시)
+- 이번 교정 커밋: 이 문서 커밋 직후 `git log --oneline -3`으로 확정되는
+  해시를 그대로 인용할 것 — 커밋 완료 후 사용자/Manager에게 보내는
+  응답 메시지에 정확한 해시를 명시함.
+
+### 한계 (Limitations)
+
+1. **`exc_info`/트레이스백은 레드액션 대상이 아님**: `SensitiveDataRedactionFilter`는
+   `record.getMessage()`(포맷된 메시지 문자열)만 치환한다. 예외 객체의
+   `str(exception)`이나 트레이스백 텍스트 안에 자격증명이 들어있는 경우
+   (예: `logger.exception(...)`으로 예외 메시지 자체에 비밀번호가 포함된 경우)는
+   이번 교정 범위 밖이며 레드액션되지 않는다.
+2. **키 이름 기반 값 매칭의 한계**: `password=`, `token:` 같은 "키=값"/
+   "키: 값" 패턴과 `Authorization`/`Cookie` 헤더 형태만 인식한다. 완전히
+   다른 표현(예: 키 이름 없이 값만 로깅, 혹은 커스텀 헤더명)은 탐지되지
+   않는다 — 이는 완벽한 DLP가 아니라 "실수 방지 가드레일"이다.
+3. **헤더형 치환은 해당 줄 전체를 지움**: `Authorization`/`Cookie` 패턴은
+   구분자 뒤 "그 줄 전체"를 치환한다. 같은 줄에 자격증명과 무관한 후속
+   텍스트가 있었다면 그것도 함께 사라진다(형식 손실은 있지만 안전 우선
+   설계로 의도됨).
+4. **필터는 로거 인스턴스에 부착 — 프로세스 전역 상태**: stage 2와 동일한
+   한계로, 동일 계정 로거를 재구성하려면 `force=True`가 필요하다(테스트
+   전용). 이 교정은 필터를 항상 (재)설치하도록 만들었으므로 `force=True`
+   경로에서 필터가 누락되거나 중복되지 않음을 테스트로 확인했다.
+5. **`.gitignore`의 `/logs/`, `/diagnostics/`는 저장소 루트 기준 절대
+   경로 패턴**: `LoggingSettings.root_dir`/`DiagnosticsSettings.screenshot_dir`를
+   저장소 루트 밖(예: 절대 경로, 다른 드라이브)으로 설정하면 이 ignore
+   규칙이 적용되지 않는다(원래 git ignore가 저장소 밖 경로에 적용될 수
+   없다는 것과 동일한 제약이며, 별도 버그 아님).
+6. **AC-26 원문 미대조**: 위 "AC 트레이서빌리티 참고"에 적었듯, 공식 AC
+   카탈로그를 이 worktree에서 직접 열람하지 못해 매핑은 교정 패킷 텍스트
+   기반 추정이다.
+7. stage 1/2에서 이미 기록된 한계(자동 보존정책 미스케줄링, CLI 정보출력
+   전용 등)는 그대로 유효하며 본 교정과 무관하게 남아 있다.
+
+### QA 중점사항 (요청)
+
+- [ ] 지시된 통제 마커(`password=`, `token=`, `api_key=`, `Authorization:
+      Bearer ...`, `Cookie: ...`)를 각각 task/error 로거로 직접 호출해
+      실제 파일에서 원문 리터럴이 전혀 검색되지 않는지(`grep`/`findstr`
+      등으로) 재확인
+- [ ] `logger.info("password=%s", secret)`처럼 **인자로 전달된** 값도
+      레드액션되는지(형식 문자열에 리터럴로 박혀있지 않은 경우) 별도 확인
+- [ ] `git check-ignore -v logs/... diagnostics/...`로 어떤 `.gitignore`
+      규칙이 매칭되는지 확인하고, `configs/config.yaml`이 여전히
+      ignore되며 `configs/config.example.yaml`은 추적 대상으로 남는지 확인
+- [ ] stage 2에서 검증된 항목(계정별 로그 격리, 회전/보존, config 섹션
+      검증, 경로 안전성, 진단 스크린샷 JSON-only) 테스트가 이번 커밋에서도
+      전부 통과하는지(회귀 없음) 재실행 확인
+- [ ] `exc_info`/예외 트레이스백 경유 자격증명 유출 가능성(위 한계 1번)에
+      대해 이후 단계에서 별도 AC로 다룰지 Manager와 확인
+- [ ] 이번 교정에서도 금지 항목(신규 에이전트/worktree/역할 생성, Manager
+      문서 수정, 실제 LD/게임 조작, 웹 DOM, 전역 마우스, 자격증명 저장)이
+      코드베이스에 없는지 diff 재확인

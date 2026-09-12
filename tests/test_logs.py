@@ -81,3 +81,78 @@ def test_purge_expired_logs_removes_only_old_rotated_files(tmp_path):
 def test_purge_expired_logs_on_missing_root_is_noop(tmp_path):
     settings = LoggingSettings(root_dir=tmp_path / "does_not_exist")
     assert purge_expired_logs(settings) == []
+
+
+# --- TP-001-RW-02: sensitive-value redaction regression coverage ---------
+
+_CONTROLLED_PASSWORD_MARKER = "S3cr3t-ControlMarker-9f8e7d"
+
+
+def test_password_marker_absent_from_task_log(tmp_path):
+    settings = LoggingSettings(root_dir=tmp_path / "logs")
+    logger = get_account_logger(AccountId.LD5, settings, force=True)
+    logger.info("login attempt password=%s", _CONTROLLED_PASSWORD_MARKER)
+    for handler in logger.handlers:
+        handler.flush()
+
+    text = task_log_path(settings, AccountId.LD5).read_text(encoding="utf-8")
+    assert _CONTROLLED_PASSWORD_MARKER not in text
+    assert "password=***REDACTED***" in text
+
+
+def test_password_marker_absent_from_error_log(tmp_path):
+    settings = LoggingSettings(root_dir=tmp_path / "logs")
+    logger = get_account_logger(AccountId.LD6, settings, force=True)
+    logger.error("auth failed password=%s", _CONTROLLED_PASSWORD_MARKER)
+    for handler in logger.handlers:
+        handler.flush()
+
+    text = error_log_path(settings, AccountId.LD6).read_text(encoding="utf-8")
+    assert _CONTROLLED_PASSWORD_MARKER not in text
+    assert "password=***REDACTED***" in text
+
+
+def test_token_api_key_authorization_cookie_markers_absent_from_task_log(tmp_path):
+    settings = LoggingSettings(root_dir=tmp_path / "logs")
+    logger = get_account_logger(AccountId.LD7, settings, force=True)
+    logger.info("token=%s", "tok-controlmarker-111")
+    logger.info("api_key=%s", "key-controlmarker-222")
+    logger.info("Authorization: Bearer jwt-controlmarker-333")
+    logger.info("Cookie: session=cookie-controlmarker-444; other=1")
+    for handler in logger.handlers:
+        handler.flush()
+
+    text = task_log_path(settings, AccountId.LD7).read_text(encoding="utf-8")
+    for marker in (
+        "tok-controlmarker-111",
+        "key-controlmarker-222",
+        "jwt-controlmarker-333",
+        "cookie-controlmarker-444",
+    ):
+        assert marker not in text
+    assert text.count("***REDACTED***") == 4
+
+
+def test_redaction_survives_percent_style_argument_not_just_format_string(tmp_path):
+    # Guards against a fix that only regex-scans the literal format
+    # string and misses a secret supplied as a logging %-arg.
+    settings = LoggingSettings(root_dir=tmp_path / "logs")
+    logger = get_account_logger(AccountId.LD8, settings, force=True)
+    logger.info("password=%s", "arg-only-controlmarker-555")
+    for handler in logger.handlers:
+        handler.flush()
+
+    text = task_log_path(settings, AccountId.LD8).read_text(encoding="utf-8")
+    assert "arg-only-controlmarker-555" not in text
+
+
+def test_non_sensitive_messages_are_unaffected_by_redaction(tmp_path):
+    settings = LoggingSettings(root_dir=tmp_path / "logs")
+    logger = get_account_logger(AccountId.LD9, settings, force=True)
+    logger.info("account LD9 transitioned to state=online")
+    for handler in logger.handlers:
+        handler.flush()
+
+    text = task_log_path(settings, AccountId.LD9).read_text(encoding="utf-8")
+    assert "account LD9 transitioned to state=online" in text
+    assert "REDACTED" not in text
