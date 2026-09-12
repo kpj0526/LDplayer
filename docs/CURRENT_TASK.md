@@ -1,5 +1,16 @@
 # CURRENT TASK
 
+## UI-ADB-001 QA release gate (2026-09-12)
+
+- Task ID: `UI-ADB-001`
+- Status: `VERIFYING`.
+- Code target: `817183be5a2241bb426a55942230de21dff8df98` (implementation `5b0862b`).
+- Code evidence: full suite `266 passed`; Windows artifact `dist\\ldmanager\\ldmanager.exe` exists at 2,071,926 bytes.
+- Owner: existing `qa` independently verifies; Manager holds GitHub publication.
+- Completion: QA validates AC-61..AC-65, regression safety, and release-launch evidence, then records `MVP_SMOKE_PASS`, `MVP_SMOKE_FAIL`, or `BLOCKED_REAL_ENVIRONMENT`.
+- Release boundary: do not push/tag/publish before the QA verdict; no real-game result may be claimed from mocked discovery/tests.
+- Next action: QA submits a committed report; Manager publishes only a truthfully labelled MVP prerelease if passed.
+
 ## UI-ADB-001 — GUI-based LD registration (2026-09-12)
 
 - Task ID: `UI-ADB-001`

@@ -1,5 +1,13 @@
 # WORK LOG
 
+## 2026-09-12 | UI-ADB-001 Code submission and QA release gate | Manager
+
+- Performed: verified existing Code branch/head/worktree, Code-reported full test result, and generated Windows artifact; passed exact target to existing QA.
+- Changed: `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/ACCEPTANCE_STATUS.md`, `docs/WORK_LOG.md`.
+- Evidence: Code implementation `5b0862b`, handoff `817183b`; `266 passed`; `dist\\ldmanager\\ldmanager.exe` 2,071,926 bytes.
+- Result: Code scope submitted, not approved. GitHub remains empty and `v0.1.0` remains unpublished pending independent QA smoke.
+- Next handoff: existing QA reports MVP verdict; Manager then publishes an accurately labelled `v0.1.0` MVP prerelease only on `MVP_SMOKE_PASS`.
+
 ## 2026-09-12 | UI-ADB-001 customer-friendly registration packet | Manager
 
 - Performed: converted the request to remove terminal/YAML dependency into a bounded GUI registration packet.

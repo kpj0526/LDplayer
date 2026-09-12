@@ -12,6 +12,8 @@ Total ACs: `65`. The addition is planned only; implementation and QA counts rema
 | AC-64 | Reject invalid mapping with visible account-local error | NOT_STARTED | NOT_TESTED | None | Must block account start |
 | AC-65 | Registration has no Worker/touch side effects or cross-account change | NOT_STARTED | NOT_TESTED | None | Mandatory safety regression |
 
+UI-ADB-001 submission override: AC-61..AC-65 are `IMPLEMENTED` at Code `5b0862b` / `817183b`, pending independent QA. Global final QA remains `0/65`.
+
 ## MVP-001-CV smoke-result override (2026-09-12)
 
 | AC range | MVP status | Smoke status | Global QA status | Real environment status | Evidence |

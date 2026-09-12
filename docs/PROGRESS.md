@@ -1,5 +1,13 @@
 # PROGRESS
 
+## UI-ADB-001 Code submission; release-gate QA pending (2026-09-12)
+
+- Current phase: `VERIFYING`.
+- Code submitted GUI-based LD registration at implementation `5b0862b`, handoff `817183b` on `kpj0526/Code`; Code worktree was clean when checked.
+- Code evidence: `266 passed, 0 failed`; documented PyInstaller build created `dist\\ldmanager\\ldmanager.exe` (2,071,926 bytes). This is Code self-test/build evidence, not QA approval or real-device validation.
+- QA target: exact Code `817183be5a2241bb426a55942230de21dff8df98`. Existing QA must independently verify AC-61..AC-65 plus full regression and release smoke before any GitHub publication.
+- Release state: `v0.1.0` is not yet pushed/tagged/published. It will be an MVP prerelease only if QA records `MVP_SMOKE_PASS`; actual LD/game criteria remain `NEEDS_REAL_TEST`.
+
 ## Customer-friendly LD registration requested: UI-ADB-001 (2026-09-12)
 
 - Current phase: `IMPLEMENTING`.
