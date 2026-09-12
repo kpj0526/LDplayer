@@ -5,6 +5,10 @@
 # every entry below is a placeholder that must be set explicitly per
 # environment before it is used.
 #
+# This file is scanned for anything that looks like a credential
+# (password, token, api_key, secret, ...) and load is refused if found.
+# Never put real credentials here.
+#
 # adb_mapping: LD1..LD9 -> "host:port" string, or null while unassigned.
 adb_mapping:
   LD1: null
@@ -16,3 +20,17 @@ adb_mapping:
   LD7: null
   LD8: null
   LD9: null
+
+# Per-account (LD1..LD9) task/error log rotation + retention policy.
+# All values below are safe defaults; omit this whole section to use them.
+logging:
+  root_dir: logs
+  retention_days: 14
+  max_bytes: 5000000
+  backup_count: 5
+
+# Where diagnostic screenshot *paths* are rooted (LD1..LD9 get their own
+# subdirectory). Stage 2 only plans paths/metadata here; no image is
+# captured until a later stage implements real ADB capture.
+diagnostics:
+  screenshot_dir: diagnostics/screenshots
