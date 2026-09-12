@@ -174,9 +174,8 @@ stage 1 항목 포함 전체 AC는 여전히 QA 미검증(NOT_TESTED) 상태이�
 ### 커밋 해시
 
 - stage 1: `4fada03`, `28dd160` (이전 절 참고)
-- stage 2: 이 커밋 직후 `git log -1`로 확정 — 아래 "커밋 로그" 참고.
-  (본 문서 커밋 자체가 stage 2 최종 커밋이므로, 해시는 PR/브랜치의
-  `git log --oneline -3` 결과를 그대로 인용할 것.)
+- stage 2: `6130f0d` — "TP-001 stage 2: config extension + per-account log system"
+  (브랜치 `kpj0526/Code`). 본 문서 갱신은 그 뒤의 후속 커밋.
 
 ### 한계 (Limitations)
 
