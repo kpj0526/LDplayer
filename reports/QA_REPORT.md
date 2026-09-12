@@ -614,3 +614,58 @@ BLANK_SERIAL_DIRECT_MAPPING_ERRORS=[]
 ### Stage 3 scope conclusion
 
 **Stage 3 scope FAIL** due to the Major blank-serial validation defect above. No actual LDPlayer or ADB environment was exercised; all runner checks used injected/mocked execution. Global AC-01 through AC-30 remain **NOT_TESTED**; in particular AC-30 and project delivery are not marked PASS.
+
+---
+
+## TP-002-RW-01 Stage 3 re-verification (2026-09-12) — PASS
+
+### Exact target and integration
+
+| Item | Verified result |
+| --- | --- |
+| Exact Code target | `a4dce6d431e51af95ba0322d4c3ac27e0048429c` on `kpj0526/Code` |
+| Repair | `5ea24e3e9afc4b3e766789c143497f14001d8922` is an ancestor of that target |
+| Cumulative ancestry | prior target `c5b8961` is an ancestor of that target |
+| Code worktree before tests | clean |
+| QA integration | explicit non-fast-forward merge `a23be71` (`QA: merge TP-002-RW-01 verification target`) |
+| Repair diff | `c5b8961..a4dce6d` changes `discovery.py`, tests, and handoff only; `git diff --check` exit 0 |
+
+### Independent execution
+
+```powershell
+& .\.venv\Scripts\python.exe -m pytest -q
+```
+
+Actual result: `105 passed in 0.59s` in the project virtual environment (Python 3.12). This was independently run by QA.
+
+QA also executed a separate in-memory/temporary-directory probe. The prior Major reproduction was repeated for each of `""`, spaces-only, tab-only, newline-only, and mixed whitespace serial values in an otherwise valid nine-account mapping. For each variant, `validate_complete_adb_mapping()` returned a `MISSING_ACCOUNT` error for LD1 and `ensure_complete_adb_mapping()` raised `InvalidAdbMappingError`.
+
+Two blank account values (LD1 empty and LD2 mixed whitespace) produced exactly two individual `MISSING_ACCOUNT` errors and no `DUPLICATE_SERIAL` error. Nine distinct nonblank values returned no errors. Actual independent probe result:
+
+```text
+INDEPENDENT_RW01_PASS: empty/spaces/tab/newline/mixed rejected + ensure raises; two blanks are two missing not duplicate; valid 9 accepted; Stage3 probes; Stage2 regressions
+```
+
+### Complete Stage 3 / regression evidence
+
+| Check | Result |
+| --- | --- |
+| Parser handling | PASS: device, offline, unauthorized, unknown state normalized; banner/daemon and malformed one-token lines skipped safely |
+| Discovery runner failure | PASS: controlled `OSError` returned a short discovery error and nine `discovery_unavailable` account statuses without a crash |
+| Explicit mapping | PASS: valid exact LD1-LD9 mapping accepted; 8-account, 10-account, `None`, duplicate, and every specified blank/whitespace variant rejected |
+| No automatic assignment | PASS: visible unmapped `EXTRA` device was not attributed to LD5; LD5 remained `unmapped` with `serial=None` |
+| Account-local statuses | PASS: LD2 offline and LD5 unmapped did not affect valid LD1/LD3 `ok` statuses |
+| ADB command boundary | PASS: patched invocation exactly `['adb-x', '-s', 'ONLY-SERIAL', 'shell', 'get-state']`; empty/whitespace serials rejected before spawn; no inferred port/current-device fallback found |
+| Prohibited control scan | PASS: zero executable matches for connect/disconnect/reconnect, touch/tap/input, screencap, browser/DOM/global-mouse, network-control, LD console, or prohibited subprocess forms in `src` |
+| Stage 2 logging security | PASS: controlled ordinary, percent-argument, exception, `error(exc_info=True)`, and lower-level `exc_info` markers absent from temporary task/error logs; traceback framing/type retained |
+| Stage 2 config/path/diagnostics/log retention | PASS: sensitive config rejected; traversal rejected; JSON sidecar only/no image; old rotated log purged while unrelated file retained |
+| Git ignore | PASS: `configs/config.yaml`, `logs/LD1/task.log`, `diagnostics/screenshots/LD1/request.json` ignored; `configs/config.example.yaml` not ignored |
+| Target diff | PASS: clean whitespace check and repair review |
+
+No actual LDPlayer, ADB device, or game environment was exercised. All runner and subprocess checks were injected/mocked; this report makes no real-device claim.
+
+### AC traceability and conclusion
+
+**Stage 3 scope PASS only.** The TP-002-RW-01 blank-serial Major defect is no longer reproducible at `a4dce6d`.
+
+Global AC-01 through AC-30 remain **NOT_TESTED**, including AC-30. This is not a project-delivery PASS.
