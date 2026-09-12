@@ -1020,12 +1020,9 @@ full-suite runs after the fix.
 
 ### Commit(s)
 
-This MVP is delivered as one connected commit series on `kpj0526/Code`
-(no merge). Exact hash(es) are recorded in the follow-up "docs:" commit
-immediately after this one, per this repo's established pattern —
-see the top of this HANDOFF entry's git history, or `git log --oneline
--5` at delivery time. Report to Manager/QA will quote the exact hash(es)
-directly.
+- `ff6648d` — "MVP-001: runnable, configurable MVP (controller/mission/GUI/build)"
+  (branch `kpj0526/Code`, gate `efd3a2f`). This HANDOFF hash-record
+  update is the follow-up commit immediately after it. Not merged.
 
 ### Limitations
 
