@@ -798,8 +798,9 @@ test_guarded_touch.py +15 = 54). 실행 후 `git status --short`로
 ### 커밋 해시
 
 - 이전(게이트, QA PASS 대상): `a4dce6d` (TP-002-RW-01, QA PASS 보고 `a3eb77f`)
-- 이번 TP-003 커밋: 커밋 직후 확정되는 해시를 아래 갱신 커밋 및 사용자
-  응답에 정확히 기록함(플레이스홀더 미사용 원칙 유지).
+- 이번 TP-003 커밋: `8b1687b` — "TP-003: per-instance ADB screenshot +
+  guarded relative-touch foundation" (브랜치 `kpj0526/Code`). 본 문서의
+  해시 기록 갱신은 그 뒤의 후속 커밋.
 
 ### 한계 (Limitations)
 
