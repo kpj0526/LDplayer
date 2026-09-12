@@ -68,6 +68,73 @@ def test_ensure_complete_adb_mapping_passes_silently_when_valid():
     ensure_complete_adb_mapping(_nine_mapping())  # must not raise
 
 
+# --- TP-002-RW-01: empty / whitespace-only serials must be rejected -----
+
+
+def test_empty_string_serial_is_rejected():
+    mapping = _nine_mapping()
+    mapping["LD1"] = ""
+    issues = validate_complete_adb_mapping(mapping)
+    assert any(
+        i.issue is MappingIssue.MISSING_ACCOUNT and "LD1" in i.detail for i in issues
+    )
+
+
+def test_whitespace_only_serial_is_rejected():
+    mapping = _nine_mapping()
+    mapping["LD2"] = "   "
+    issues = validate_complete_adb_mapping(mapping)
+    assert any(
+        i.issue is MappingIssue.MISSING_ACCOUNT and "LD2" in i.detail for i in issues
+    )
+
+
+def test_tab_and_newline_only_serial_is_rejected():
+    mapping = _nine_mapping()
+    mapping["LD3"] = "\t\n"
+    issues = validate_complete_adb_mapping(mapping)
+    assert any(
+        i.issue is MappingIssue.MISSING_ACCOUNT and "LD3" in i.detail for i in issues
+    )
+
+
+def test_ensure_complete_adb_mapping_raises_for_empty_string_serial():
+    mapping = _nine_mapping()
+    mapping["LD1"] = ""
+    with pytest.raises(InvalidAdbMappingError) as excinfo:
+        ensure_complete_adb_mapping(mapping)
+    assert any(e.issue is MappingIssue.MISSING_ACCOUNT for e in excinfo.value.errors)
+
+
+def test_ensure_complete_adb_mapping_raises_for_whitespace_only_serial():
+    mapping = _nine_mapping()
+    mapping["LD9"] = "  \t "
+    with pytest.raises(InvalidAdbMappingError) as excinfo:
+        ensure_complete_adb_mapping(mapping)
+    assert any(e.issue is MappingIssue.MISSING_ACCOUNT for e in excinfo.value.errors)
+
+
+def test_blank_serial_does_not_count_as_a_valid_distinct_serial():
+    # Two accounts both blank must not be reported as a *duplicate*
+    # serial -- each blank is its own MISSING_ACCOUNT issue, not a
+    # shared "" serial collision.
+    mapping = _nine_mapping()
+    mapping["LD1"] = ""
+    mapping["LD2"] = "   "
+    issues = validate_complete_adb_mapping(mapping)
+    assert not any(i.issue is MappingIssue.DUPLICATE_SERIAL for i in issues)
+    missing_accounts = {i for i in issues if i.issue is MappingIssue.MISSING_ACCOUNT}
+    assert len(missing_accounts) == 2
+
+
+def test_nine_distinct_nonblank_serials_are_still_accepted():
+    # Regression guard: the blank-serial fix must not start rejecting a
+    # normal, fully valid mapping.
+    mapping = _nine_mapping()
+    assert validate_complete_adb_mapping(mapping) == []
+    ensure_complete_adb_mapping(mapping)  # must not raise
+
+
 def test_invalid_mapping_error_message_has_no_secrets_just_structure():
     mapping = _nine_mapping()
     mapping["LD1"] = None

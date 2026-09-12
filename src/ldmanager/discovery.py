@@ -92,8 +92,13 @@ def validate_complete_adb_mapping(
     """Check that ``adb_mapping`` is a valid *complete* LD1..LD9 mapping.
 
     Requires exactly the nine ``AccountId`` keys, each with a distinct,
-    non-null serial. Returns the list of issues found (empty == valid).
-    Never touches ADB and never guesses a value.
+    non-blank serial. ``None``, ``""``, and a whitespace-only string
+    (e.g. ``"   "``) are all treated as "no serial configured" — a blank
+    value must never silently pass as a real serial just because it
+    isn't ``None`` (TP-002-RW-01: ``validate_complete_adb_mapping()``
+    previously accepted an empty-string serial). Returns the list of
+    issues found (empty == valid). Never touches ADB and never guesses
+    a value.
     """
 
     errors: list[MappingValidationError] = []
@@ -114,11 +119,13 @@ def validate_complete_adb_mapping(
     serial_owners: dict[str, list[str]] = {}
     for account_key in sorted(expected_keys & actual_keys):
         serial = adb_mapping.get(account_key)
-        if serial is None:
+        is_blank = serial is None or (isinstance(serial, str) and serial.strip() == "")
+        if is_blank:
             errors.append(
                 MappingValidationError(
                     MappingIssue.MISSING_ACCOUNT,
-                    f"{account_key} has no adb serial configured.",
+                    f"{account_key} has no adb serial configured "
+                    f"(value was {serial!r}).",
                 )
             )
             continue
