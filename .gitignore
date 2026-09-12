@@ -1,6 +1,10 @@
 # Local, unshared config (real ADB serials go here — never commit)
 configs/config.yaml
 
+# Generated per-account logs and diagnostic screenshot artifacts
+/logs/
+/diagnostics/
+
 # Python
 __pycache__/
 *.pyc

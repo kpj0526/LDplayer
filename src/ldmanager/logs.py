@@ -1,9 +1,12 @@
 """Per-account rotating log setup + retention policy (TP-001 stage 2).
 
 Scope: file layout, rotation, and a retention (purge) policy for LD1~LD9
-task/error logs. No credential material is ever accepted or written by
-this module — callers must not pass secrets as log message arguments.
-No ADB/LDPlayer/game interaction happens here.
+task/error logs. A credential-shaped value (password/token/api key/
+authorization/cookie) passed into a log call — whether embedded in the
+format string or passed as a ``%``-style argument — is redacted by
+:func:`ldmanager.redaction.redact_sensitive_text` *before* the record
+reaches any handler, so the literal value is never written to
+task.log/error.log. No ADB/LDPlayer/game interaction happens here.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from typing import Optional
 
 from .models import AccountId
 from .paths import ensure_safe_subdir
+from .redaction import redact_sensitive_text
 
 DEFAULT_ROOT_DIR = Path("logs")
 DEFAULT_RETENTION_DAYS = 14
@@ -49,6 +53,30 @@ class _MaxLevelFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003
         return record.levelno < self.max_level
+
+
+class SensitiveDataRedactionFilter(logging.Filter):
+    """Redacts credential-shaped values from every record it sees.
+
+    Attached directly to the per-account *logger* (not to a handler), so
+    it runs once in :meth:`logging.Logger.handle` — before the record is
+    dispatched to either the task or error handler. Renders the message
+    (``msg % args``) first so a secret passed as a positional argument
+    (e.g. ``logger.info("password=%s", value)``) is caught too, then
+    clears ``args`` so a handler's own formatting can't re-expose the
+    original value.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003
+        try:
+            rendered = record.getMessage()
+        except Exception:
+            # Don't block delivery on a formatting error in the caller's
+            # message; leave the record as-is for normal error handling.
+            return True
+        record.msg = redact_sensitive_text(rendered)
+        record.args = ()
+        return True
 
 
 def account_log_dir(settings: LoggingSettings, account_id: AccountId) -> Path:
@@ -93,6 +121,12 @@ def get_account_logger(
         handler.close()
         logger.removeHandler(handler)
 
+    for existing_filter in list(logger.filters):
+        logger.removeFilter(existing_filter)
+    # Installed on the *logger*, not a handler, so it runs exactly once
+    # per record before either the task or error handler can emit it.
+    logger.addFilter(SensitiveDataRedactionFilter())
+
     log_dir = account_log_dir(settings, account_id)
     log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -134,6 +168,8 @@ def close_account_logger(account_id: AccountId) -> None:
     for handler in list(logger.handlers):
         handler.close()
         logger.removeHandler(handler)
+    for existing_filter in list(logger.filters):
+        logger.removeFilter(existing_filter)
 
 
 def purge_expired_logs(
