@@ -186,21 +186,24 @@ def _status_for_device_state(state: AdbDeviceState) -> ConnectionStatus:
     return ConnectionStatus.DEVICE_STATE_UNKNOWN
 
 
-def build_account_connection_statuses(
+def compute_account_connection_statuses(
     adb_mapping: dict[str, Optional[str]],
-    runner: AdbRunner,
+    devices: list,
 ) -> list[AccountConnectionStatus]:
-    """Cross-check ``adb_mapping`` against live `adb devices` output.
+    """Cross-check ``adb_mapping`` against an already-fetched ``devices``
+    list — no ADB call happens here.
 
-    Produces exactly one status per ``AccountId`` (LD1..LD9), regardless
-    of whether the mapping is "complete" — an unmapped account simply
-    gets :attr:`ConnectionStatus.UNMAPPED` instead of raising. A device
-    that is visible over ADB but not referenced by any account's
-    configured serial is never auto-assigned to an unmapped account;
-    discovery only reports, it never assigns.
+    Pure/no-I/O counterpart of :func:`build_account_connection_statuses`,
+    so a caller that fetches the device list once (e.g. a GUI "Refresh"
+    button, per UI-ADB-001) can recompute per-account statuses cheaply
+    afterward (e.g. right after a config save) without re-invoking
+    `adb devices`. Produces exactly one status per ``AccountId``
+    (LD1..LD9); an unmapped account gets :attr:`ConnectionStatus.UNMAPPED`
+    instead of raising. A device visible over ADB but not referenced by
+    any account's configured serial is never auto-assigned to an
+    unmapped account — this function only reports, it never assigns.
     """
 
-    devices, discovery_error = discover_devices(runner)
     devices_by_serial = {device.serial: device for device in devices}
 
     statuses: list[AccountConnectionStatus] = []
@@ -214,17 +217,6 @@ def build_account_connection_statuses(
                     status=ConnectionStatus.UNMAPPED,
                     serial=None,
                     detail="No adb serial configured for this account.",
-                )
-            )
-            continue
-
-        if discovery_error is not None:
-            statuses.append(
-                AccountConnectionStatus(
-                    account_id=account_id,
-                    status=ConnectionStatus.DISCOVERY_UNAVAILABLE,
-                    serial=serial,
-                    detail=discovery_error,
                 )
             )
             continue
@@ -256,4 +248,51 @@ def build_account_connection_statuses(
             )
         )
 
+    return statuses
+
+
+def build_account_connection_statuses(
+    adb_mapping: dict[str, Optional[str]],
+    runner: AdbRunner,
+) -> list[AccountConnectionStatus]:
+    """Cross-check ``adb_mapping`` against live `adb devices` output.
+
+    Produces exactly one status per ``AccountId`` (LD1..LD9), regardless
+    of whether the mapping is "complete" — an unmapped account simply
+    gets :attr:`ConnectionStatus.UNMAPPED` instead of raising. A device
+    that is visible over ADB but not referenced by any account's
+    configured serial is never auto-assigned to an unmapped account;
+    discovery only reports, it never assigns.
+    """
+
+    devices, discovery_error = discover_devices(runner)
+
+    if discovery_error is None:
+        return compute_account_connection_statuses(adb_mapping, devices)
+
+    # Discovery itself failed: every *mapped* account is reported as
+    # DISCOVERY_UNAVAILABLE (we simply don't know its live state), but
+    # an unmapped account is still UNMAPPED regardless — that fact is
+    # already fully known and doesn't depend on discovery succeeding.
+    statuses: list[AccountConnectionStatus] = []
+    for account_id in AccountId:
+        serial = adb_mapping.get(account_id.value)
+        if serial is None:
+            statuses.append(
+                AccountConnectionStatus(
+                    account_id=account_id,
+                    status=ConnectionStatus.UNMAPPED,
+                    serial=None,
+                    detail="No adb serial configured for this account.",
+                )
+            )
+        else:
+            statuses.append(
+                AccountConnectionStatus(
+                    account_id=account_id,
+                    status=ConnectionStatus.DISCOVERY_UNAVAILABLE,
+                    serial=serial,
+                    detail=discovery_error,
+                )
+            )
     return statuses

@@ -1,4 +1,4 @@
-# Run Guide (MVP-001-CV)
+# Run Guide (MVP-001-CV + UI-ADB-001)
 
 Short, practical steps to run the MVP app. For what still needs to
 happen before this does anything with a *real* game, see
@@ -19,10 +19,11 @@ pip install -e ".[dev]"
 
 ## 2. Configure
 
-1. Copy `configs/config.example.yaml` → `configs/config.yaml`.
-   Fill in `adb_mapping` with your 9 LD1..LD9 ADB serials (or leave
-   entries `null` — an account with no serial simply shows an error in
-   the GUI instead of running, it never guesses one).
+1. Copy `configs/config.example.yaml` → `configs/config.yaml`. You do
+   **not** need to hand-fill `adb_mapping` in this file yourself as of
+   UI-ADB-001 — leave it as-is (all `null`) and register LD1..LD9 from
+   the GUI instead (see step 3.1 below). Editing it by hand still works
+   if you prefer (see §2a).
 2. Copy `configs/bounty.example.yaml` → `configs/bounty.yaml`. This is
    the file the real app actually reads (`configs/mission.example.yaml`
    / `configs/mission.yaml` belong to the earlier, simpler `mission.py`
@@ -35,6 +36,15 @@ pip install -e ".[dev]"
 3. `configs/config.yaml` and `configs/bounty.yaml` (and
    `configs/mission.yaml`, if you use it) are all git-ignored — never
    committed.
+
+### 2a. (Advanced/optional) Editing `adb_mapping` by hand instead
+
+If you prefer not to use the GUI for this: fill in `adb_mapping` in
+`configs/config.yaml` with your 9 LD1..LD9 ADB serials directly (or
+leave entries `null` — an account with no serial simply shows an error
+instead of running; nothing is ever guessed). The GUI flow in step 3.1
+and this manual edit both end up writing/reading the exact same file
+and section — use whichever you like, per account, at any time.
 
 ## 3. Run
 
@@ -51,13 +61,44 @@ python -m ldmanager.app
 ```
 
 A window opens with one panel per account (LD1..LD9) plus **Start
-All**/**Stop All** at the top. Each panel has its own **Start**/**Stop**
-and shows: running/stopped, current slot, cycle count + last outcome,
-last error, and the most recent log line.
+All**/**Stop All**/**Refresh ADB devices** at the top. Each panel has
+its own **Start**/**Stop** and shows: running/stopped, current slot,
+cycle count + last outcome, last error, and the most recent log line —
+plus (UI-ADB-001) an ADB-serial combobox with **Save**/**Clear** and a
+live mapping-status line.
 
 If `configs/config.yaml` or `configs/bounty.yaml` is missing/invalid,
 the app prints a clear error to the console and exits (code 1) instead
 of opening a broken window.
+
+### 3.1. Register LD1..LD9 from the GUI (no YAML/terminal editing needed)
+
+1. Start your LDPlayer instances, then click **Refresh ADB devices** at
+   the top of the window. This runs `adb devices` (read-only — no tap,
+   no worker started) and populates every panel's serial dropdown with
+   what it found.
+2. On each panel: either **pick** a discovered serial from the dropdown
+   or **type** one explicitly (e.g. if the instance isn't running yet),
+   then click **Save**. Nothing is ever auto-assigned — you always
+   choose or type the exact value that gets saved.
+3. Save persists immediately to `configs/config.yaml` (created if it
+   doesn't exist yet) and reloads that panel's state from disk. A
+   blank, malformed (contains whitespace), or duplicate (already used
+   by another account) serial is rejected with a visible error on that
+   panel — nothing is written in that case, and other accounts'
+   mappings are never touched.
+4. Click **Refresh ADB devices** again after saving to re-confirm the
+   device is actually online. **Start stays disabled until the mapping
+   cross-checks as OK** against a live refresh — saving a serial alone
+   is not enough, and a stale/never-refreshed mapping can never start
+   an account.
+5. Click **Clear** on a panel to remove that account's mapping (its
+   Start button becomes disabled again); every other account's mapping
+   is preserved.
+
+Note: comments in a hand-edited `config.yaml` are not preserved after a
+GUI Save/Clear (the file is re-serialized) — see
+`docs/HANDOFF_CODE.md`'s UI-ADB-001 section for details.
 
 ## 4. What clicking Start actually does right now
 

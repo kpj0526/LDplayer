@@ -1,10 +1,12 @@
 import pytest
 
+from ldmanager.adb import parse_adb_devices_output
 from ldmanager.discovery import (
     ConnectionStatus,
     InvalidAdbMappingError,
     MappingIssue,
     build_account_connection_statuses,
+    compute_account_connection_statuses,
     ensure_complete_adb_mapping,
     validate_complete_adb_mapping,
 )
@@ -226,6 +228,17 @@ def test_discovery_unavailable_is_reported_per_account_without_crashing():
     assert all(isinstance(s.detail, str) and s.detail for s in statuses)
 
 
+def test_unmapped_account_stays_unmapped_even_when_discovery_fails():
+    # An unmapped account's status is already fully known -- discovery
+    # failing elsewhere must not reclassify it as DISCOVERY_UNAVAILABLE.
+    mapping = _nine_mapping()
+    mapping["LD1"] = None
+    statuses = {s.account_id: s for s in build_account_connection_statuses(mapping, BrokenAdbRunner())}
+
+    assert statuses[AccountId.LD1].status is ConnectionStatus.UNMAPPED
+    assert statuses[AccountId.LD2].status is ConnectionStatus.DISCOVERY_UNAVAILABLE
+
+
 def test_malformed_non_string_discovery_result_is_handled_safely():
     class WeirdRunner:
         def list_devices(self):
@@ -237,6 +250,29 @@ def test_malformed_non_string_discovery_result_is_handled_safely():
     mapping = _nine_mapping()
     statuses = build_account_connection_statuses(mapping, WeirdRunner())
     assert all(s.status is ConnectionStatus.DISCOVERY_UNAVAILABLE for s in statuses)
+
+
+def test_compute_account_connection_statuses_matches_build_for_same_devices():
+    # Pure/no-I/O variant (UI-ADB-001) must agree exactly with the
+    # runner-driven variant when given the same parsed device list.
+    mapping = _nine_mapping()
+    rows = [(serial, "device") for serial in mapping.values()]
+    raw_output = _devices_output(*rows)
+    devices = parse_adb_devices_output(raw_output)
+
+    via_runner = build_account_connection_statuses(mapping, FakeAdbRunner(devices_output=raw_output))
+    via_pure = compute_account_connection_statuses(mapping, devices)
+
+    assert via_runner == via_pure
+
+
+def test_compute_account_connection_statuses_never_calls_a_runner():
+    # By construction (no runner parameter at all) -- documented here
+    # as an explicit regression guard on the function signature/intent.
+    mapping = _nine_mapping()
+    statuses = compute_account_connection_statuses(mapping, [])
+    assert len(statuses) == 9
+    assert all(s.status is ConnectionStatus.DEVICE_NOT_FOUND for s in statuses)
 
 
 def test_incomplete_mapping_still_produces_per_account_statuses_not_a_crash():

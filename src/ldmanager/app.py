@@ -33,7 +33,7 @@ from typing import Dict
 from .adb import SubprocessAdbRunner
 from .bounty_config import BountyConfigError, load_bounty_config
 from .bounty_mission import run_one_cycle
-from .config import ConfigError, load_config
+from .config import ConfigError, load_config, resolve_config_path
 from .controller import AccountController, AccountWorker
 from .logs import get_account_logger
 from .models import AccountId
@@ -103,7 +103,15 @@ def main() -> int:
 
     from .gui import LDManagerApp  # lazy: keeps this module importable headless
 
-    app = LDManagerApp(controller)
+    # A second SubprocessAdbRunner instance, distinct from the one(s)
+    # captured in each worker's cycle closure inside build_controller()
+    # -- both are stateless wrappers around the same adb_path/timeout,
+    # so this is safe and keeps build_controller()'s own return type
+    # (just an AccountController) unchanged. Used only for the GUI's
+    # read-only "Refresh ADB devices" button (list_devices()) -- never
+    # for a tap, never for starting a worker.
+    adb_runner_for_gui = SubprocessAdbRunner()
+    app = LDManagerApp(controller, adb_runner=adb_runner_for_gui, config_path=resolve_config_path())
     app.run()
     return 0
 
