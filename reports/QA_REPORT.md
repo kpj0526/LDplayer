@@ -723,3 +723,55 @@ No actual LDPlayer, ADB device, game, or user environment was used. All process/
 **Stage 4 scope PASS only.** No failure requiring reproduction, severity, or re-verification condition was found in this target.
 
 Global AC-01 through AC-30 remain **NOT_TESTED**, including AC-30; no project delivery PASS is asserted.
+
+---
+
+## MVP-001-CV abbreviated independent smoke (2026-09-12) — MVP_SMOKE_PASS
+
+### Target and integration
+
+| Item | Verified result |
+| --- | --- |
+| Exact Code target | `c42289c3be94b9e4393ce4437de3afc16140ec17` on `kpj0526/Code` |
+| Customer-video implementation | `6f3261003d1d1ad6083c6faa53ba7821cf7239b1` is an ancestor |
+| MVP bases | `ff6648d` and `f6af8ee` are ancestors |
+| Code worktree before smoke | clean |
+| QA integration | explicit non-fast-forward merge `fa856f2` (`QA: merge MVP-001-CV smoke target`) |
+| Diff | `efd3a2f..c42289c`; `git diff --check` exit 0 |
+
+### Actual execution
+
+```powershell
+& .\.venv\Scripts\python.exe -m pytest -q
+& .\.venv\Scripts\python.exe -m pytest -q -rs tests/test_app.py tests/test_gui.py
+```
+
+Actual results: `241 passed in 3.98s`; GUI/app construction subset `8 passed in 0.61s` (no GUI mainloop or real device invoked). Direct import smoke of `ldmanager.app`, `ldmanager.gui`, `ldmanager.controller`, and `ldmanager.bounty_mission` passed. `configs/config.example.yaml` loaded with all nine LD account mapping keys.
+
+### Mandatory mock smoke evidence
+
+QA used an independent in-memory ADB runner returning validated PNG-magic bytes and a controlled recognizer; no Code fixture was used for this probe. Direct state-machine outcomes observed:
+
+| Requirement | Result |
+| --- | --- |
+| Ordered five slots and repeat sequence | PASS: full mock cycle returned `completed_cycle`, ten accepted slot outcomes in exact order `1,2,3,4,5,1,2,3,4,5` (initial acceptance then re-acceptance). |
+| Complete/reward/result/close/list/reaccept | PASS: full mock sequence emitted its scoped completion, complete, claim, close, list verification, then five re-acceptance states. |
+| Refresh popup independent of cost | PASS: first phrase miss followed by two positive structural landmark recognitions emitted one confirm and completed; when structural title was false, outcome was `refresh_popup_not_verified` and no confirm command was emitted. No cost label/value participates in the recognizer/config contract. |
+| Phrase AND quantity=200 | PASS: phrase-only and quantity-only mock matches each returned `slot_accept_failed`; neither emitted complete or claim. |
+| Bounded reroll / preserve / advance | PASS: permanently unknown phrase with bound two returned `slot_accept_failed`, `refresh_attempts=2`, exactly two refresh-open and two confirm calls; structural-popup mismatch preserved (no confirm); accepted slot then advanced through subsequent ordered slots. |
+| 0–199 gate | PASS: five slots accepted but both completion signals absent returned `kill_progress_not_complete`; no complete-button, claim, or close command was emitted. |
+| Serial/account isolation | PASS: independent complete mock cycles for `MVP-SERIAL-1` and `MVP-SERIAL-2` recorded only their own serial in all run/capture calls. |
+| Selected worker start/stop | PASS: stopping LD1 left LD2 worker running. |
+| Global stop / no automatic touch | PASS: after joined `stop_all`, recorded scheduled-touch count remained unchanged. |
+| Worker exception containment | PASS: controlled LD3 exception appeared only in LD3 status; LD2 remained running until explicitly stopped. |
+| Capture/unknown safe failure and bounded retry | PASS through direct mock outcomes and suite coverage: non-match/unknown reaches bounded `slot_accept_failed`/`refresh_popup_not_verified`, with no infinite click loop. |
+| Exact scope / prohibited controls | PASS static scan: no global mouse, DOM/browser, guessed port, login/reconnect, credential, OCR/template engine, LD-console, or external-network-control implementation. Every mock ADB action carried the explicitly supplied serial. |
+| Existing safety regressions | PASS via full suite plus direct checks: config/logging/path/diagnostics/ignore safeguards remain covered. `git check-ignore` confirmed config/log/diagnostic generated paths ignored and config example not ignored. |
+
+An initial QA assertion that attempted to infer a “select completed mission” action solely by coordinate presence was corrected as a harness assumption: the supplied example config intentionally uses the same coordinate as first-slot selection. The state-machine outcome and ordered action flow above, rather than ambiguous coordinate reuse, are the smoke evidence; no product defect was reproduced.
+
+### Real-environment limits / AC traceability
+
+**MVP_SMOKE_PASS** is an abbreviated injected-runner/mock verdict only. It is not final project QA and does not establish a real-device/customer-video result.
+
+AC-58, AC-59, and AC-60 are **BLOCKED_REAL_ENVIRONMENT / NOT_TESTED**: customer video/assets, calibrated templates/ROIs, live LDPlayer/ADB serials, actual regional-bounty UI states, real recognition behavior, and real result/reward capture evidence were not supplied or exercised. No global/project/real AC is marked PASS from this smoke.
