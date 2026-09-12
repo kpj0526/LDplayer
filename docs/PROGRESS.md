@@ -1,5 +1,16 @@
 # PROGRESS
 
+## Live connection checkpoint: ADB executable unavailable (2026-09-13)
+
+- Current phase: `BLOCKED`.
+- Requested activity: user-authorized live MVP connection test, limited to safe discovery before any Worker start or game input.
+- Observed: the published `ldmanager.exe` process is running from a fresh extracted release directory. No game click, Worker start, ADB touch, or mission action was performed.
+- Read-only evidence: Windows returned `adb is not recognized` for the application-required `adb devices` command. No `adb.exe` was discovered in the standard `C:\LDPlayer` or `C:\Program Files\LDPlayer` paths; installed-LD registry probes returned no location.
+- Result: the GUI cannot currently enumerate an ADB serial, so LD1--LD9 cannot be explicitly assigned and live isolation/control verification cannot begin.
+- Safety: no account was mapped or started; no command was sent to the game.
+- Blocker: an accessible LDPlayer ADB executable/device bridge, followed by explicit GUI mapping. Existing `code` and `qa` sessions are not live in the current coordinator session, so no corrective implementation or independent QA task has been started or substituted.
+- Next: user exposes/enables LDPlayer ADB as documented and provides the macro's post-refresh error/device-list screenshot; then repeat read-only discovery and map one account before any input test.
+
 ## `v0.1.0` corrected release asset replaced (2026-09-12)
 
 - Current phase: `NEEDS_REAL_TEST`.

@@ -1,5 +1,20 @@
 # CURRENT TASK
 
+## Live ADB connection checkpoint (2026-09-13)
+
+- Task ID: `LIVE-ADB-001`
+- Title: Safe real-environment connection preflight
+- Purpose: enumerate live ADB devices and explicitly map LD1--LD9 before any automation input.
+- Owner: Manager coordinates; user supplies/activates the local LDPlayer ADB bridge. Independent QA is required before any live-function PASS claim.
+- Started: 2026-09-13 Asia/Seoul.
+- Status: `BLOCKED`.
+- Planned changes: no production-code or test-code changes.
+- Actual changes: management records only.
+- Completion: `adb devices` can be invoked by the released application; user explicitly maps serials in the GUI; each mapped account is displayed online. No Worker/touch is permitted during discovery.
+- Current result: released `ldmanager.exe` is running, but Windows reports `adb` unavailable. No standard LD install path or registry install location was found by read-only probes.
+- Blocker: LDPlayer-provided `adb.exe` is not available to the release application's command lookup.
+- Next action: repair local ADB availability, refresh devices in the GUI, and capture the resulting mapping state before continuing.
+
 ## REL-0.1.0 corrected asset replacement (2026-09-12)
 
 - Task ID: `REL-0.1.0-PKG-01`

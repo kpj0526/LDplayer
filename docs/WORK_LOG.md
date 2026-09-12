@@ -260,3 +260,11 @@
 - 실행 결과: 세 worktree의 HEAD는 모두 `ddca498abb5073d00ffd1fb80c0761df7ebae4ac`이다. Manager에는 관리 문서 untracked 변경이 있고 Code/Qa에는 미커밋 변경이 없다. Code의 마지막 agent 세션은 done, Qa는 연결 terminal만 확인됐다.
 - 관련 커밋 해시: `ddca498abb5073d00ffd1fb80c0761df7ebae4ac`
 - 다음 전달 대상: 사용자.
+## 2026-09-13 | LIVE-ADB-001 | Manager
+
+- Performed: user-authorized safe live connection preflight; inspected the released process and performed only read-only ADB/install discovery.
+- Changed: `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
+- Commands/tests: process executable-path inspection; `Get-Command adb`; standard LDPlayer-path and uninstall-registry probes; `adb devices` attempted only to determine command availability.
+- Result: `ldmanager.exe` is running from the extracted corrected release. Windows returned `adb is not recognized`; no ADB command/device enumeration is available. No worker, touch, game click, mapping, or mission action occurred.
+- Related commits: release QA target `2ff8ebf20694a213f2bfdb5ec50a6eb8e79502fd`; no new implementation/QA commit.
+- Next handoff: user local LDPlayer ADB setup; then Manager repeats read-only discovery. Existing Code/QA must be available for any product correction/independent verification.
