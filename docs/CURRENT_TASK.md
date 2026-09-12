@@ -1,5 +1,15 @@
 # CURRENT TASK
 
+## REL-0.1.0 corrected asset replacement (2026-09-12)
+
+- Task ID: `REL-0.1.0-PKG-01`
+- Status: `PUBLISHED_CORRECTED_MVP_PRERELEASE`.
+- QA: `MVP_SMOKE_PASS`, report commit `2ff8ebf`; independent `286 passed` and fresh extracted EXE/config bootstrap verification passed.
+- Release: `https://github.com/kpj0526/LDplayer/releases/tag/v0.1.0`.
+- Asset: `ldmanager-v0.1.0-windows-fixed-20260912.zip`, 11,231,354 bytes, SHA-256 `126F4F085B53C24CDB76A6AC90FF9A7C7567F6509BC7EBD969120AE4B2FC3432`.
+- Result: first uploaded ZIP was removed. Corrected archive bootstraps missing safe local configs on first launch and never overwrites an existing config.
+- Next: real-user LD device mapping and real-game validation.
+
 ## REL-0.1.0-PKG-01 — first-run release packaging repair (2026-09-12)
 
 - Task ID: `REL-0.1.0-PKG-01`

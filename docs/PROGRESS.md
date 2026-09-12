@@ -1,5 +1,14 @@
 # PROGRESS
 
+## `v0.1.0` corrected release asset replaced (2026-09-12)
+
+- Current phase: `NEEDS_REAL_TEST`.
+- Corrected release published: old unusable ZIP was deleted; the only release asset is `ldmanager-v0.1.0-windows-fixed-20260912.zip` (11,231,354 bytes, SHA-256 `126F4F085B53C24CDB76A6AC90FF9A7C7567F6509BC7EBD969120AE4B2FC3432`).
+- Remote branch/tag `mvp/v0.1.0` / `v0.1.0` now both point to corrected QA commit `2ff8ebf20694a213f2bfdb5ec50a6eb8e79502fd`.
+- QA packaging gate: `MVP_SMOKE_PASS`, independent `286 passed`; fresh extracted EXE opened, generated missing null-mapped configs, and preserved an existing config.
+- Customer path: extract the full ZIP, run `ldmanager.exe`, then use GUI device refresh and per-LD assignment/save. No terminal/YAML setup is required for first launch.
+- Scope truth: still MVP prerelease; real LD/game automation remains `NEEDS_REAL_TEST`.
+
 ## REL-0.1.0-PKG-01: published ZIP first-run packaging defect (2026-09-12)
 
 - Current phase: `REWORK`.

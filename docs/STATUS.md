@@ -1,5 +1,13 @@
 # STATUS
 
+## Corrected v0.1.0 asset (2026-09-12)
+
+- Current phase: `NEEDS_REAL_TEST`
+- Published: corrected Windows ZIP replaces the initial unusable asset at the existing `v0.1.0` prerelease.
+- QA: `MVP_SMOKE_PASS`, QA `2ff8ebf`; `286 passed`; fresh extracted EXE and bootstrap passed.
+- Customer start: extract all files, execute `ldmanager.exe`, assign devices in GUI.
+- Not complete: actual LD/game behavior remains unverified.
+
 ## GitHub v0.1.0 publication (2026-09-12)
 
 - Current phase: `NEEDS_REAL_TEST`

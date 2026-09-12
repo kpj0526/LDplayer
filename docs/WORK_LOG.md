@@ -1,5 +1,12 @@
 # WORK LOG
 
+## 2026-09-12 | REL-0.1.0 corrected asset replacement | Manager
+
+- Performed: after QA packaging pass, created corrected Windows ZIP, fast-forwarded remote MVP branch, moved the release tag to corrected QA commit, deleted the initial unusable release asset, uploaded the corrected asset, and verified GitHub metadata.
+- Evidence: QA `2ff8ebf`; remote branch/tag `2ff8ebf20694a213f2bfdb5ec50a6eb8e79502fd`; asset SHA-256 `126F4F085B53C24CDB76A6AC90FF9A7C7567F6509BC7EBD969120AE4B2FC3432`.
+- Result: current v0.1.0 asset can bootstrap its first-run local config and open its GUI after full ZIP extraction.
+- Next handoff: actual customer LD mapping and real-game validation.
+
 ## 2026-09-12 | REL-0.1.0-PKG-01 release packaging defect | Manager
 
 - Performed: inspected the first uploaded release ZIP after the customer asked how to run it.
