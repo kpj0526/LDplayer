@@ -552,3 +552,65 @@ The emitted output retained useful non-sensitive diagnostic context: `Traceback 
 **Stage 2 scope PASS only.** The prior critical traceback-secret defect is not reproducible at `9f54d24`: controlled literal credential-like markers are absent from both log destinations for all required ordinary and exception logging surfaces, while traceback framing/type remains useful.
 
 Global AC-01 through AC-30 remain **NOT_TESTED** exactly as recorded above. This is not a project delivery-complete determination.
+
+---
+
+## TP-002 Stage 3 full independent verification (2026-09-12) — FAIL
+
+### Target and integration evidence
+
+| Item | Verified result |
+| --- | --- |
+| Exact Code target | `c5b8961abc7aec3c6d8a2d79d963cff1fa953dbc` on `kpj0526/Code` |
+| Claimed implementation ancestry | `ffaa3ec9f100eea8c02b4a98b1d3c1b42f516931` is an ancestor of the exact target |
+| Cumulative ancestry | `9f54d24` is an ancestor of the exact target |
+| Code worktree before tests | clean |
+| QA integration | non-fast-forward merge `cfce7c9` (`QA: merge TP-002 Stage 3 verification target`) |
+| Target diff | `9f54d24..c5b8961`: Stage 3 ADB/discovery implementation and tests, config example/README/handoff; `git diff --check` exit 0 |
+
+### Full suite and independent evidence
+
+```powershell
+& .\.venv\Scripts\python.exe -m pytest -q
+```
+
+Actual result: `98 passed in 0.81s` (Python 3.12; project `.venv`). This is an independent QA execution, not reliance on the Code claim.
+
+QA then ran a separate temporary/in-memory probe with injected runners. Its successful checks were:
+
+| Check | Independent result |
+| --- | --- |
+| Parser | PASS: `device`, `offline`, `unauthorized`, and unknown state each normalized correctly; banner/daemon lines and a one-token malformed row were safely skipped |
+| Discovery runner failure | PASS: controlled `OSError` produced `([], "ADB device listing failed: OSError")`; connection-status construction returned nine account-local `discovery_unavailable` statuses without crashing |
+| Mapping variants | PASS for valid nine distinct serials and rejection of 8-account, 10-account, `None`, and duplicate-serial variants |
+| No auto-assignment | PASS: a discovered `EXTRA-UNMAPPED` device was not attributed to an unmapped LD5; LD5 remained `unmapped` with `serial=None` |
+| Account-local status isolation | PASS: with LD5 unmapped and LD2 offline, LD1 and LD3 remained `ok`, LD2 was `device_offline`, and LD5 was `unmapped` |
+| ADB argv scope | PASS: controlled patched subprocess call was exactly `['adb-x', '-s', 'ONLY-SERIAL', 'shell', 'get-state']`; empty, whitespace-only, and whitespace-containing serials were rejected by `build_adb_command()` before spawn |
+| No guessed serial/port | PASS in reviewed construction paths: only an explicitly supplied serial reaches `-s`; no default port or current-device fallback exists |
+| Stage 2 regressions | PASS: five controlled ordinary/percent/exception/`error(exc_info=True)`/lower-level-`exc_info` markers were absent from temporary task/error logs with traceback framing retained; secret config rejection, safe paths, JSON-only sidecar, and retention checks passed |
+| Git ignore | PASS: `configs/config.yaml`, `logs/LD1/task.log`, and `diagnostics/screenshots/LD1/request.json` ignored; `configs/config.example.yaml` not ignored |
+| Static prohibition scan | PASS after review: no executable touch/tap/input/screencap/login/reconnect/game/browser/DOM/global-mouse command path or guessed-port construction exists. `subprocess.run` is confined to `adb devices` and explicitly serial-scoped generic runner invocation. Documentation/diagnostic identifiers containing words such as `screenshot` were not treated as executable findings. |
+
+The independent probe printed:
+
+```text
+INDEPENDENT_STAGE3_PROBES_PASS: parser states/malformed; runner failure; 8/10/None/duplicate rejection; no auto-assign; local statuses; single-serial argv; Stage2 regressions
+BLANK_SERIAL_DIRECT_MAPPING_ERRORS=[]
+```
+
+### Major defect: blank serial accepted as a complete mapping
+
+| Field | Evidence |
+| --- | --- |
+| Failed constraint | Stage 3 requires exactly LD1-LD9 with nine non-null, distinct, **explicit nonblank** serial mappings before use. |
+| Actual | `validate_complete_adb_mapping()` treats a nine-key mapping containing `LD1: ""` as valid and returns `[]`; `ensure_complete_adb_mapping()` consequently does not raise. |
+| Expected | The blank serial must be rejected as an invalid/missing mapping before any later connection or command path can rely on it. |
+| Severity | Major — the public complete-mapping validation boundary can approve a non-explicit, unusable target despite `build_adb_command()` correctly rejecting blank serials later. |
+| Exact reproduction | `mapping = {a.value: 'SERIAL-' + a.value for a in AccountId}; mapping['LD1'] = ''; assert validate_complete_adb_mapping(mapping) != []` fails because the actual return is `[]`. |
+| Re-verification condition | Update complete-mapping validation to reject empty/whitespace-only (and any otherwise invalid) serial values; add a regression test; rerun the exact reproduction, independent Stage 3 probe, and full suite. |
+
+`config.load_config()` rejects blank YAML mapping values before this API is normally reached, but that does not satisfy the independently callable complete-mapping validation contract or remove the invalid direct-call path demonstrated above.
+
+### Stage 3 scope conclusion
+
+**Stage 3 scope FAIL** due to the Major blank-serial validation defect above. No actual LDPlayer or ADB environment was exercised; all runner checks used injected/mocked execution. Global AC-01 through AC-30 remain **NOT_TESTED**; in particular AC-30 and project delivery are not marked PASS.
