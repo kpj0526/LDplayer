@@ -1,12 +1,33 @@
-# Real-Capture Checklist (MVP-001 → real gameplay)
+# Real-Capture Checklist (MVP-001-CV → real gameplay)
 
-MVP-001 is a **safe, configurable mock/foundation**: it never performs
-real recognition and never fabricates a success. This checklist is
-everything that still needs to happen — in order — before this project
-could safely drive an actual game.
+MVP-001/MVP-001-CV are a **safe, configurable mock/foundation**: they
+never perform real recognition and never fabricate a success. This
+checklist is everything that still needs to happen — in order — before
+this project could safely drive an actual free regional-bounty flow.
 
-Nothing on this list is done in MVP-001. Treat every unchecked item as
-a hard prerequisite, not a nice-to-have.
+Nothing on this list is done as of MVP-001-CV. Treat every unchecked
+item as a hard prerequisite, not a nice-to-have.
+
+## 0. CV-specific additions (read first)
+
+- [ ] **Refresh-popup structural landmarks** (`refresh_popup_anchor_*`,
+      `refresh_popup_title_*` in `configs/bounty.yaml`) must be
+      calibrated against a real, opened refresh popup — pick two UI
+      elements that are present regardless of the displayed (variable)
+      refresh cost (e.g. a fixed icon/frame and a fixed title label),
+      never the cost number itself.
+- [ ] **Both acceptance conditions** (`mission_phrase_label` = '모든
+      몬스터 처치', `mission_quantity_label` = "200") must be
+      independently verified against real mission cards — confirm a
+      real recognizer can read both reliably from the real ROIs, not
+      just one.
+- [ ] **Kill-progress vs. explicit-complete** — confirm which of
+      `kill_progress_roi`/`kill_progress_complete_label` or
+      `complete_state_roi`/`complete_state_label` (or both) actually
+      appears in your real game version, and where.
+- [ ] **Reward → result → mission-list verification ROIs**
+      (`reward_screen_*`, `result_screen_*`, `mission_list_*`) must be
+      calibrated against real screenshots of those screens.
 
 ## 1. Real ADB connectivity
 
@@ -25,7 +46,7 @@ a hard prerequisite, not a nice-to-have.
 
 - [ ] For each instance, run `adb -s <serial> shell wm size` and record
       the actual resolution.
-- [ ] Update `configs/mission.yaml`'s `screen_size` to match (all 9
+- [ ] Update `configs/bounty.yaml`'s `screen_size` to match (all 9
       instances should normally share one resolution if configured
       identically in LDPlayer — verify this assumption for your setup).
 - [ ] Capture a handful of real screenshots via
@@ -36,12 +57,14 @@ a hard prerequisite, not a nice-to-have.
 ## 3. Real ROI calibration
 
 - [ ] Using real captured frames, measure the actual pixel bounding box
-      of each of the 5 slot regions, the kill-check indicator, the
-      claim button, the "claimed" confirmation area, the reset button,
-      and the "ready for next cycle" indicator.
+      of: each of the 5 slot select points, the mission phrase/quantity
+      ROIs, the refresh button + popup anchor/title ROIs + confirm
+      point, the kill-progress/complete-state ROIs, and the select-
+      complete/complete/claim/close points + reward/result/mission-list
+      verification ROIs.
 - [ ] Convert each pixel box to a fraction of the real screen size
       (`x/width`, `y/height`) and replace the placeholder values in
-      `configs/mission.yaml`. Every value there right now is an
+      `configs/bounty.yaml`. Every value there right now is an
       illustrative example, not a measurement.
 - [ ] Re-validate with `ldmanager.coordinates.RelativeRegion`/
       `RelativeCoordinate` (already strict — invalid values will raise).

@@ -1,0 +1,79 @@
+# ldmanager free regional-bounty five-slot configuration (MVP-001-CV)
+#
+# EVERY value below is a PLACEHOLDER example, not a calibrated real
+# value -- see docs/REAL_CAPTURE_CHECKLIST.md. Copy this file to
+# configs/bounty.yaml (git-ignored) and edit it, or point
+# LDMANAGER_BOUNTY_CONFIG at a different path.
+#
+# IMPORTANT: the refresh popup is verified STRUCTURALLY, by two fixed
+# UI landmarks (an anchor icon/frame region and a title-label region)
+# -- never by reading the displayed refresh cost, which changes each
+# time. Do not repurpose these two fields for a cost value.
+
+screen_size:
+  width: 960
+  height: 540
+
+templates_dir: templates
+threshold: 0.8
+
+# Tap points to select/check each of the 5 bounty slots. Exactly 5
+# entries expected by the state machine (config itself allows any
+# non-empty list; ldmanager.bounty_mission iterates whatever it's given).
+slot_select_points:
+  - {x: 0.10, y: 0.20}
+  - {x: 0.10, y: 0.35}
+  - {x: 0.10, y: 0.50}
+  - {x: 0.10, y: 0.65}
+  - {x: 0.10, y: 0.80}
+
+# A mission is only accepted when BOTH of these are recognized in the
+# currently-selected slot's opened mission panel -- phrase alone or
+# quantity alone is never enough.
+mission_phrase_roi: {x: 0.30, y: 0.20, width: 0.40, height: 0.08}
+mission_phrase_label: "모든 몬스터 처치"
+mission_quantity_roi: {x: 0.30, y: 0.30, width: 0.20, height: 0.06}
+mission_quantity_label: "200"
+
+# Refresh (reroll) flow for the currently-selected slot.
+refresh_button_point: {x: 0.85, y: 0.90}
+
+# Structural popup verification -- two independent, cost-INDEPENDENT
+# landmarks that must BOTH be recognized before the confirm button is
+# ever tapped.
+refresh_popup_anchor_roi: {x: 0.35, y: 0.40, width: 0.30, height: 0.10}
+refresh_popup_anchor_label: "새로고침"
+refresh_popup_title_roi: {x: 0.35, y: 0.30, width: 0.30, height: 0.08}
+refresh_popup_title_label: "확인"
+refresh_confirm_point: {x: 0.55, y: 0.60}
+
+# Kill-progress / completion eligibility -- two independent signals;
+# either one confirms eligibility to select+complete. 0-199/200 must
+# never trigger complete/claim.
+kill_progress_roi: {x: 0.40, y: 0.05, width: 0.20, height: 0.06}
+kill_progress_complete_label: "200/200"
+complete_state_roi: {x: 0.05, y: 0.05, width: 0.15, height: 0.06}
+complete_state_label: "완료"
+
+# Complete -> reward -> claim -> result -> close -> mission list.
+select_complete_point: {x: 0.10, y: 0.20}
+complete_button_point: {x: 0.85, y: 0.90}
+reward_screen_roi: {x: 0.30, y: 0.30, width: 0.40, height: 0.15}
+reward_screen_label: "보상 획득"
+claim_point: {x: 0.50, y: 0.70}
+result_screen_roi: {x: 0.30, y: 0.20, width: 0.40, height: 0.15}
+result_screen_label: "결과"
+close_result_point: {x: 0.90, y: 0.10}
+mission_list_roi: {x: 0.05, y: 0.05, width: 0.30, height: 0.08}
+mission_list_label: "현상금 목록"
+
+# Bounded retry/timeout policy -- every loop stops after this many
+# attempts rather than looping forever.
+max_capture_attempts: 3
+max_refresh_attempts: 5
+max_popup_verify_attempts: 3
+max_kill_progress_poll_attempts: 10
+max_reward_verify_attempts: 3
+max_result_verify_attempts: 3
+max_mission_list_verify_attempts: 3
+retry_delay_seconds: 1.0

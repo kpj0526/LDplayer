@@ -1111,3 +1111,203 @@ If step 3/4 cannot be exercised in the QA environment (no display, no
 `adb`, etc.), that is exactly the `BLOCKED_REAL_ENVIRONMENT` case the
 packet anticipates — steps 1 and 6 (and reading this HANDOFF section)
 should still be possible anywhere.
+
+---
+
+## MVP-001-CV: Free regional-bounty five-slot mission-cycle extension
+
+**Manager task packet: MVP-001-CV.** Queued immediately after MVP-001
+(`ff6648d`/`f6af8ee`, confirmed by Manager as the submitted safe unit).
+Implemented in the same Code worktree, same session, without
+discarding or resetting MVP-001. QA will run a **combined MVP smoke**
+(MVP-001 + MVP-001-CV together); this section is not an AC-PASS claim.
+
+**Status: mock/configurable extension delivered and self-tested only.
+AC-58..60 explicitly cannot pass without a customer/real environment
+(see table). Not merged.**
+
+### What changed structurally vs. MVP-001
+
+MVP-001 shipped a simplified, generic 5-slot → single kill-check →
+claim → reset cycle (`mission.py`/`mission_config.py`). MVP-001-CV adds
+a **new, separate** module pair — `bounty_config.py` /
+`bounty_mission.py` — that models the *actual* free regional-bounty
+flow described in the customer video: per-slot select+classify,
+structural (never cost-based) refresh-popup verification, a
+two-condition mission-acceptance check, an explicit 0-199/200 gate
+before any complete/reward action, and the full
+complete→reward→claim→result→close→list→re-refresh→re-accept sequence.
+`app.py` now wires the **new** bounty flow as the real app's cycle
+function; the earlier `mission.py`/`mission_config.py` are **kept,
+unchanged, and still fully tested** (backward compatible, not merged
+into or replaced in place) but are no longer reachable from `app.py`.
+`controller.py`/`gui.py` required **no changes** — `AccountWorker`'s
+cycle-function contract is duck-typed on `.outcome`, so the richer
+`BountyCycleResult` slots in without modifying worker/GUI/log wiring
+("Keep GUI/status/log integration" — confirmed unchanged, all prior
+`tests/test_controller.py`/`tests/test_gui.py` pass unmodified).
+
+### AC-31..60 traceability (best-effort)
+
+> As with every prior AC-numbered section in this document, the
+> official AC catalog text is not available in this worktree. The
+> mapping below follows the packet's own bullet order; QA should
+> reconcile against the authoritative AC-31..60 definitions.
+
+| AC | Requirement (from packet) | Evidence |
+|---|---|---|
+| AC-31 | Per account: select/check slots 1..5 | `bounty_mission._accept_or_refresh_slot()` — one `runner.run()` tap per slot via `slot_select_points[i]`, one per slot 1..5 |
+| AC-32 | Classify slot status | `_mission_is_acceptable()` capture+check immediately after selection, before deciding refresh vs. accept |
+| AC-33 | Open refresh only when needed | Refresh loop entered only when the immediate post-select check is not already acceptable |
+| AC-34 | Identify refresh popup **structurally**, never by fixed/displayed cost | `_verify_refresh_popup()`: two independent labels (`refresh_popup_anchor_label`, `refresh_popup_title_label`); neither field is a cost value (`test_refresh_popup_fields_are_not_a_cost_field_by_construction`); `test_popup_detection_is_unaffected_by_variable_cost_signal` proves detection works with no "cost" label present at all |
+| AC-35 | Tap confirm only if popup verified | Confirm (`refresh_confirm_point`) tapped only after `popup_verified` is truthy; `test_popup_not_structurally_verified_never_confirms` proves confirm is never sent otherwise |
+| AC-36 | Inspect new mission after refresh | `_mission_is_acceptable()` re-run immediately after each confirm |
+| AC-37 | Accept/preserve only when BOTH phrase AND qty 200 recognized | `_mission_is_acceptable()` requires `phrase.matched and quantity.matched` — two independent recognizer calls, `and`-combined |
+| AC-38 | Phrase-only match must reject | `test_phrase_only_match_is_rejected_bounded_reroll` |
+| AC-39 | Quantity-only match must reject | `test_quantity_only_match_is_rejected_bounded_reroll` |
+| AC-40 | Otherwise: bounded reroll | `max_refresh_attempts` bound in `BountyMissionConfig`; `test_slot_refresh_is_bounded_when_never_acceptable` |
+| AC-41 | Move to next slot only after verified acceptance | Slot loop `return`s `SLOT_ACCEPT_FAILED` (aborting the whole cycle, not silently skipping) if a slot never becomes acceptable — never advances on an unverified slot |
+| AC-42 | After all five: observe kill progress | Kill-progress polling loop runs only after the slot `for` loop completes all 5 |
+| AC-43 | 0-199/200 must never tap complete/reward | `test_kill_progress_incomplete_never_taps_complete_or_reward` — asserts `len(runner.calls) == 5` (only the 5 slot-selects; zero complete/reward/claim taps) |
+| AC-44 | Only 200/200 **or** explicit complete state may proceed | `eligible = progress.matched or complete_badge.matched`; `test_kill_progress_via_explicit_complete_badge_is_also_eligible` proves the badge path alone is sufficient |
+| AC-45 | Select mission for complete | `select_complete_point` tap, gated on `eligible` |
+| AC-46 | Click complete | `complete_button_point` tap |
+| AC-47 | Verify reward screen | Bounded `reward_screen_roi`/`reward_screen_label` check before claim |
+| AC-48 | Claim | `claim_point` tap, only after `reward_ok` |
+| AC-49 | Verify result screen | Bounded `result_screen_roi`/`result_screen_label` check after claim |
+| AC-50 | Close result | `close_result_point` tap, only after `result_ok` |
+| AC-51 | Mission list return verified | Bounded `mission_list_roi`/`mission_list_label` check after close |
+| AC-52 | Re-refresh completed slot(s) | Second pass over all 5 slots via the same `_accept_or_refresh_slot()` helper after the claim flow |
+| AC-53 | Accept new target | Same both-conditions check reused for the re-refresh pass |
+| AC-54 | Repeat | `run_one_cycle()` returns `COMPLETED_CYCLE`; the caller (worker loop, unchanged from MVP-001) calls it again |
+| AC-55 | Every action = capture → expected condition → one guarded touch → observe | Every `runner.run()` call site in `bounty_mission.py` is preceded by a condition check (selection is the one unconditional action, immediately followed by a capture+check) and every meaningful state transition is re-verified by a fresh capture afterward |
+| AC-56 | Config carries paths/ROIs/coordinates/thresholds/retries/timeouts, transparent placeholders | `bounty_config.py` + `configs/bounty.example.yaml` — 20+ explicit fields, all placeholder example values, documented as such in comments |
+| AC-57 | Never rely on one OCR output alone | Enforced structurally: acceptance = 2 recognizer calls (phrase+qty), popup = 2 recognizer calls (anchor+title), eligibility = 2 recognizer calls (progress OR badge) — no single-call decision point in the whole flow |
+| **AC-58** | Real popup structural detection verified against actual customer environment | **Not verified — cannot pass without customer environment.** Only proven against `LabelMappingRecognizer`/`PlaceholderRecognizer` fakes in this session |
+| **AC-59** | Real dual-condition (phrase + 200) recognition verified against actual game screens | **Not verified — cannot pass without customer environment.** Same limitation |
+| **AC-60** | Full real reward/claim/result flow verified against actual customer environment | **Not verified — cannot pass without customer environment.** Same limitation |
+
+Mock-test categories the packet required, and where each lives:
+variable-cost-independence → AC-34 row; phrase-only/200-only reject →
+AC-38/AC-39 rows; no complete/reward at 0-199 → AC-43 row; bounded
+reroll → AC-40 row; full one-cycle state flow →
+`test_full_cycle_reaches_completed_state_once`; account isolation/no
+cross-serial → `test_two_accounts_use_independent_runners_and_serials`;
+safe error on unknown screen →
+`test_capture_unavailable_mid_slot_is_reported_without_crashing` (and,
+structurally, every "not matched" branch throughout — an unrecognized
+screen is never treated as a green light).
+
+### Actual files changed/added
+
+```
+ New source (src/ldmanager/):
+   bounty_config.py    (BountyMissionConfig + validated YAML loader)
+   bounty_mission.py   (the actual free-regional-bounty state machine)
+
+ Modified source:
+   app.py               (build_controller()/main() now wire bounty_* instead
+                         of mission_*; mission.py/mission_config.py untouched
+                         and no longer imported by app.py)
+
+ New tests:
+   test_bounty_config.py (12), test_bounty_mission.py (11)
+
+ Modified tests:
+   test_app.py           (fixtures now write bounty.yaml, not mission.yaml)
+   test_gitignore.py     (+2: bounty.yaml ignored, bounty.example.yaml tracked)
+
+ New config:
+   configs/bounty.example.yaml
+
+ Modified:
+   .gitignore            (+ configs/bounty.yaml)
+   README.md             (MVP-001-CV banner, new "무료 지역 현상금 5-슬롯
+                          흐름" section, project structure, Quick Start)
+   docs/RUN_GUIDE.md      (bounty.yaml steps, updated "what Start does")
+   docs/REAL_CAPTURE_CHECKLIST.md (new CV-specific §0, updated §2/§3)
+   docs/MVP_UNVERIFIED.md (new "MVP-001-CV specific" section)
+   docs/HANDOFF_CODE.md   (this section)
+```
+
+Untouched (regression preserved): `mission.py`, `mission_config.py`
+(kept, tested, just unwired from `app.py`), `adb.py`, `config.py`,
+`logs.py`, `redaction.py`, `paths.py`, `diagnostics.py`, `discovery.py`,
+`screenshot.py`, `guarded_touch.py`, `coordinates.py`, `recognition.py`,
+`controller.py`, `gui.py`, `models.py`, `cli.py`, all `scripts/*`.
+
+### Full test command / result
+
+```
+.venv\Scripts\python.exe -m pytest -v
+```
+
+Result: **241 passed**, 0 failed, 0 skipped (216 prior [MVP-001 +
+everything before it] + 25 new/changed this extension: 12 in
+`test_bounty_config.py` + 11 in `test_bounty_mission.py` + 2 in
+`test_gitignore.py`). Re-run 3x consecutively: 241/241 each time. `git
+status --short` confirmed no stray files after the run.
+
+### Limitations
+
+1. **AC-58..60 cannot pass without a customer/real environment** — see
+   table above. Everything in this extension is verified only against
+   `LabelMappingRecognizer`/`PlaceholderRecognizer` fakes and a
+   `FakeAdbRunner`.
+2. **`bounty.example.yaml`'s ROIs/coordinates/labels are illustrative,
+   not calibrated** — never measured against a real screenshot or a
+   real customer-video frame.
+3. **The "classify status" step is a binary check** (already-acceptable
+   vs. needs-refresh), not a richer multi-state classifier (e.g.
+   distinguishing "empty slot" from "wrong mission" from "locked").
+   This was a deliberate simplification to keep the mock tractable; the
+   packet's "classify status" language is satisfied at this level but a
+   real implementation may want finer-grained states.
+4. **Live "current phase" is not surfaced to the GUI during a running
+   cycle** — `on_phase` callback exists in `bounty_mission.run_one_cycle()`
+   but `app.py`/`controller.py` don't wire it through to
+   `AccountWorkerStatus.current_slot` yet (this gap already existed in
+   MVP-001's `mission.py`/`on_slot_start`, carried forward unchanged;
+   `current_slot` is only ever reset to `None` after a cycle completes,
+   never updated live mid-cycle). GUI still correctly shows
+   running/stopped/cycle-count/last-outcome/last-error/last-log-line.
+5. **Popup structural verification uses exactly two fixed landmark
+   fields**, not an arbitrary configurable list — sufficient for this
+   mock and for the "never by cost" requirement, but a real popup might
+   need more (or different) landmarks; extending `BountyMissionConfig`
+   would be straightforward but wasn't done speculatively.
+6. **No dependency was added** for this extension (still just PyYAML +
+   pytest [+ optional pyinstaller]) — real recognition (AC-58/59) will
+   require adding one per `docs/REAL_CAPTURE_CHECKLIST.md` §4.
+7. All limitations recorded in every prior TP-00x/RW-0x/MVP-001 section
+   of this document remain valid and are not superseded by
+   MVP-001-CV.
+
+### Focused QA smoke instructions (combined MVP-001 + MVP-001-CV)
+
+1. `pip install -e ".[dev]"` then `pytest` — expect **241 passed**, 0
+   failed.
+2. Copy `configs/config.example.yaml` → `config.yaml` and
+   `configs/bounty.example.yaml` → `bounty.yaml` (not
+   `mission.example.yaml` — that belongs to the now-unwired earlier
+   flow). `adb_mapping` all `null` is fine for this smoke check.
+3. Run `python -m ldmanager.app` (or `scripts\run.bat`). Expect the
+   same 9-panel + Start All/Stop All window as MVP-001's smoke test.
+4. Click **Start** on one panel. Expect a contained error (blank-serial)
+   or, once a serial is configured against nothing real, a
+   `refresh_popup_not_verified`/`slot_accept_failed` outcome within a
+   few seconds — never a hang, never a crash, never more than the
+   bounded number of taps. Click **Stop**; confirm only that panel
+   stops.
+5. Spot-check `src/ldmanager/bounty_mission.py` and
+   `src/ldmanager/bounty_config.py` for the same forbidden-concept
+   absence as MVP-001 (no OCR/template library, no
+   pyautogui/pynput/selenium/requests/socket, no credential handling).
+6. If a real customer environment/video reference is available to QA:
+   AC-58/59/60 are the only items that could even theoretically be
+   assessed there — everything else (AC-31..57) is fully covered by
+   the automated mock suite and does not require one.
+
+As with MVP-001, `BLOCKED_REAL_ENVIRONMENT` is the expected/acceptable
+outcome for anything requiring real `adb`/a display/a real game screen
+in the QA environment — steps 1 and 5 should be possible anywhere.

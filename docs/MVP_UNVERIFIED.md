@@ -1,9 +1,35 @@
-# MVP-001: Unimplemented / Unverified List
+# MVP-001 / MVP-001-CV: Unimplemented / Unverified List
 
-Plain inventory of what MVP-001 does **not** do and has **not**
+Plain inventory of what this MVP does **not** do and has **not**
 verified, kept separate from `docs/HANDOFF_CODE.md`'s narrative so it's
 easy to scan. Nothing here is a secret gap — every item is either by
 explicit design (safety) or an acknowledged scope cut for this MVP.
+
+## MVP-001-CV specific
+
+- **No real structural popup verification has ever run against a real
+  popup.** `refresh_popup_anchor_*`/`refresh_popup_title_*` are
+  placeholder ROI/label pairs; whether two independent, cost-
+  independent landmarks are actually enough to reliably distinguish
+  "popup open" from "popup closed" in the real game has not been
+  checked.
+- **No real dual-condition acceptance check has been run.** The rule
+  "both phrase AND quantity must match" is implemented and unit-tested
+  with fakes, but never against real OCR/template-matching output —
+  real-world false-positive/false-negative rates for each condition are
+  unknown.
+- **Kill-progress vs. explicit-complete-badge priority is untested
+  against a real game.** The state machine accepts either signal as
+  sufficient; which one (or both) actually appears, and in what order,
+  in the real UI is unverified.
+- **The reward → claim → result → close → mission-list sequence has
+  never been observed against a real game.** Screen names/order/timing
+  are modeled from the customer-video description, not measured.
+- **`mission.py`/`mission_config.py` (the earlier, simpler flow) are no
+  longer wired into `app.py`.** They remain in the codebase, fully
+  tested, but a user pointing only at `configs/mission.yaml` (not
+  `configs/bounty.yaml`) will get a "file not found" error from the
+  real app — this is intentional, not a bug, but worth knowing.
 
 ## Not implemented (by design — safety)
 

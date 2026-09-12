@@ -2,13 +2,19 @@
 
 `ldmanager` — LDPlayer 다중 계정(LD1~LD9) 관리 도구.
 
-> **현재 단계: MVP-001 — 실행 가능한, 설정 기반 MVP.**
-> GUI로 LD1~LD9 계정을 개별/전체 시작·정지할 수 있고, 각 계정이 5-슬롯
-> → 200킬 체크 → 보상 수령 → 리셋 미션 사이클을 반복합니다. 인식(OCR/
-> 템플릿)은 **실제로 구현되어 있지 않은 안전한 자리표시자**이며 항상
-> "인식 안 됨"을 반환합니다 — 게임 자동화가 아니라 안전한 실행 가능
-> 골격입니다. 실제 LDPlayer/실제 ADB로는 검증되지 않았습니다(전부
-> 페이크/주입 러너 기반 자동 테스트로만 검증). 빠른 실행법은
+> **현재 단계: MVP-001-CV — 실행 가능한 MVP + 무료 지역 현상금
+> 5-슬롯 흐름 확장.**
+> GUI로 LD1~LD9 계정을 개별/전체 시작·정지할 수 있고, 각 계정이 실제
+> 무료 지역 현상금 흐름(슬롯 선택/확인 → 필요 시 새로고침 → **비용
+> 숫자가 아니라 구조적으로** 새로고침 확인 팝업 식별 → 신규 미션
+> 검사 → '모든 몬스터 처치' **그리고** 수량 200이 **둘 다** 인식될
+> 때만 수락 → 5슬롯 완료 후 킬 진행도 관찰 → 200/200 또는 명시적 완료
+> 상태에서만 완료/보상 → 결과 확인 → 닫기 → 목록 복귀 → 재새로고침 →
+> 신규 타겟 수락 → 반복)를 사이클로 반복합니다. 인식(OCR/템플릿)은
+> **실제로 구현되어 있지 않은 안전한 자리표시자**이며 항상 "인식 안
+> 됨"을 반환합니다 — 게임 자동화가 아니라 안전한 실행 가능 골격입니다.
+> 실제 LDPlayer/실제 ADB로는 검증되지 않았습니다(전부 페이크/주입
+> 러너 기반 자동 테스트로만 검증). 빠른 실행법은
 > [`docs/RUN_GUIDE.md`](docs/RUN_GUIDE.md), 실제 게임에 연결하기 전에
 > 해야 할 일은 [`docs/REAL_CAPTURE_CHECKLIST.md`](docs/REAL_CAPTURE_CHECKLIST.md),
 > 미구현/미검증 전체 목록은 [`docs/MVP_UNVERIFIED.md`](docs/MVP_UNVERIFIED.md)
@@ -50,13 +56,16 @@ pip install -e ".[dev]"
    ensure_complete_adb_mapping()`), 누락/중복/9개가 아닌 구성은 ADB를
    호출하기 전에 거부됩니다.
 
-## 빠른 실행 (MVP-001)
+## 빠른 실행 (MVP-001-CV)
 
 ```bash
-# configs/config.yaml, configs/mission.yaml 준비 후
+# configs/config.yaml, configs/bounty.yaml 준비 후
 python -m ldmanager.app
 # 또는 Windows에서: scripts\run.bat  /  scripts\run.ps1
 ```
+
+(`configs/mission.yaml`은 초기 버전 `mission.py`용이며 실제 앱은 더
+이상 읽지 않습니다 — `configs/bounty.yaml`이 실제로 필요한 파일입니다.)
 
 자세한 단계별 안내는 [`docs/RUN_GUIDE.md`](docs/RUN_GUIDE.md) 참고.
 Windows 실행 파일 빌드는 `scripts\build_windows.ps1`(PyInstaller).
@@ -100,18 +109,26 @@ src/ldmanager/
                     # 머신 (게임 자동화 아님, OCR/템플릿/미션 없음)
   recognition.py  # Recognizer 인터페이스 + PlaceholderRecognizer(항상
                   # unknown — 실제 OCR/템플릿 매칭 미구현)
-  mission_config.py  # 미션 사이클 ROI/좌표/threshold/재시도/타임아웃
-                      # 설정 로딩(mission.yaml, adb_mapping과 별도)
-  mission.py      # 5-슬롯→200킬 체크→보상→리셋 상태 머신(가드/재시도
-                  # 상한, 게임 로직 없음)
+  mission_config.py  # (superseded by bounty_config.py in the real app,
+                      # kept/tested) 초기 5-슬롯 ROI/좌표/threshold 설정
+  mission.py      # (superseded by bounty_mission.py in the real app,
+                  # kept/tested) 초기 5-슬롯→200킬→보상→리셋 상태 머신
+  bounty_config.py  # 무료 지역 현상금 흐름 ROI/좌표/label/threshold/
+                    # 재시도/타임아웃 설정 로딩(bounty.yaml)
+  bounty_mission.py  # 실제 무료 지역 현상금 5-슬롯 상태 머신: 슬롯 선택/
+                      # 확인→(구조적 팝업 검증 후)새로고침→둘 다 일치해야
+                      # 수락→킬 진행도 관찰(0-199/200은 완료/보상 절대
+                      # 없음)→완료→보상→결과→닫기→목록 복귀→재수락
   controller.py   # 계정별 독립 취소 가능 워커 + 컨트롤러(개별/전체
                   # 시작·정지, 예외 격리)
   gui.py          # Tkinter 기반 LD1~LD9 상태/버튼 GUI
-  app.py          # 실행 진입점(config+mission_config+controller+GUI 연결)
+  app.py          # 실행 진입점(config+bounty_config+controller+GUI 연결)
   cli.py          # 최소 CLI 진입점 (stage 1, MVP 컨트롤러와 별개)
 configs/
   config.example.yaml   # adb_mapping / logging / diagnostics 템플릿
-  mission.example.yaml  # ROI/좌표/threshold/재시도/타임아웃 템플릿
+  mission.example.yaml  # (초기 버전용, 현재 앱에서는 미사용) 템플릿
+  bounty.example.yaml   # 무료 지역 현상금 ROI/좌표/label/threshold/
+                        # 재시도/타임아웃 템플릿 — 실제 앱이 사용하는 것
 templates/
   README.md       # 자리표시자 안내(실제 템플릿 자산 없음)
 scripts/
@@ -133,6 +150,8 @@ tests/
   test_recognition.py
   test_mission_config.py
   test_mission.py
+  test_bounty_config.py
+  test_bounty_mission.py
   test_controller.py
   test_gui.py
   test_app.py
@@ -220,18 +239,17 @@ docs/
   전혀 영향이 없습니다. 워커 내부에서 예외가 발생해도 그 계정의
   `last_error`로만 남고 다른 워커나 컨트롤러 전체에는 전파되지
   않습니다.
-- **미션 사이클** (`mission.py`): 5개 슬롯 각각에 대해 캡처→목표 문구
-  인식→(없으면) 리롤을 반복(상한 있음)하다가 찾으면 다음 슬롯으로
-  넘어갑니다. 5개를 모두 처리하면 200킬 체크(상한 있는 폴링, 터치 없음)
-  → 보상 수령(가드된 터치 재사용) → 리셋(가드된 터치 재사용) 순으로
-  진행하고, 호출자(워커)가 이 사이클을 반복 호출합니다.
+- **미션 사이클** (`bounty_mission.py`, MVP-001-CV부터 실제 앱이 사용):
+  아래 "무료 지역 현상금 5-슬롯 흐름" 절 참고. 초기 버전(`mission.py`,
+  5개 슬롯→200킬 체크→보상→리셋)은 그대로 유지/테스트되지만 실제
+  `app.py`에서는 더 이상 사용되지 않습니다.
 - **인식** (`recognition.py`): `Recognizer` 인터페이스 + 기본 구현
   `PlaceholderRecognizer` — **실제 OCR/템플릿 매칭이 구현되어 있지
   않으며, 항상 `UNKNOWN`/신뢰도 0을 반환**합니다. 성공을 하드코딩하지
   않습니다. 실제 인식기로 교체하는 방법은
   `docs/REAL_CAPTURE_CHECKLIST.md` 4절 참고.
-- **설정** (`mission_config.py`, `configs/mission.example.yaml`): 경로
-  (`templates_dir`)/ROI/좌표/threshold/재시도 횟수/타임아웃이 전부
+- **설정** (`bounty_config.py`, `configs/bounty.example.yaml`): 경로
+  (`templates_dir`)/ROI/좌표/label/threshold/재시도 횟수/타임아웃이 전부
   YAML 설정값입니다 — 코드에 하드코딩된 값 없음.
 - **GUI** (`gui.py`): Tkinter(표준 라이브러리, 별도 의존성 없음) 기반.
   LD1~LD9 9개 패널 + 전체 Start All/Stop All. 각 패널은 상태(running/
@@ -246,6 +264,47 @@ docs/
 
 **이것은 게임 자동화가 아닙니다.** 실제 인식이 구현되어 있지 않으므로
 실제 화면에 대해 실행하면 매 슬롯에서 상한까지 리롤을 시도하다가
-`slot_recognition_failed`로 안전하게 멈춥니다 — 이는 버그가 아니라
-설계된 안전 기본값입니다. 전체 미구현/미검증 목록은
+안전하게 멈춥니다 — 이는 버그가 아니라 설계된 안전 기본값입니다.
+전체 미구현/미검증 목록은
 [`docs/MVP_UNVERIFIED.md`](docs/MVP_UNVERIFIED.md)를 참고하세요.
+
+## 무료 지역 현상금 5-슬롯 흐름 (MVP-001-CV)
+
+실제 앱(`app.py`)이 사용하는 미션 사이클입니다(`bounty_mission.py` +
+`bounty_config.py` + `configs/bounty.example.yaml`). 고객 영상으로
+확인된 실제 흐름을 구조적으로 모델링한 것이며, 여전히 인식은
+`PlaceholderRecognizer`(항상 미인식)입니다 — 게임 자동화가 아닙니다.
+
+1. **슬롯 선택/확인 (1~5)**: 각 슬롯을 탭해 선택하고 현재 미션이 이미
+   수락 조건을 만족하는지 확인합니다.
+2. **필요 시 새로고침**: 조건을 만족하지 않으면 새로고침 버튼을 탭해
+   확인 팝업을 엽니다.
+3. **팝업을 구조적으로 식별**: 팝업이 실제로 열렸는지는 **표시되는
+   비용 숫자가 아니라** 두 개의 독립적인 구조적 랜드마크
+   (`refresh_popup_anchor_*`, `refresh_popup_title_*`)로만 판단합니다
+   — 비용은 매번 바뀌므로 절대 판단 기준으로 쓰지 않습니다. 두 랜드
+   마크가 모두 확인되어야만 확인 버튼을 탭합니다(상한 있는 재시도).
+4. **신규 미션 검사 + 수락 판정**: 새로고침 후 나타난 미션에 대해
+   **'모든 몬스터 처치' 문구와 수량 '200' 둘 다**가 인식되어야만
+   수락합니다 — 어느 한쪽만 인식되어도 수락하지 않고(하나의 OCR
+   결과만으로 판단 금지) 리롤을 반복합니다(상한 있음).
+5. **다음 슬롯**: 검증된 수락 이후에만 다음 슬롯으로 넘어갑니다.
+6. **킬 진행도 관찰**: 5슬롯을 모두 처리한 뒤 200킬 진행도를
+   상한 있는 폴링으로 관찰합니다. **0~199/200 구간에서는 완료/보상
+   버튼을 절대 탭하지 않습니다.** `200/200` 카운터 **또는** 명시적
+   완료 배지, 둘 중 하나라도 확인되어야만 다음 단계로 진행합니다.
+7. **완료→보상→수령→결과→닫기→목록 복귀**: 미션을 선택하고 완료
+   버튼을 탭한 뒤, 보상 화면을 검증하고서야 수령을 탭하고, 결과
+   화면을 검증하고서야 닫으며, 미션 목록 복귀를 검증합니다. 각 단계
+   모두 상한 있는 검증을 거칩니다.
+8. **재새로고침 + 신규 타겟 수락 + 반복**: 완료된 슬롯들을 다시
+   새로고침해 새 타겟을 수락한 뒤(1~5단계 로직 재사용), 호출자
+   (워커)가 이 전체 사이클을 반복 호출합니다.
+
+모든 동작은 여전히 "캡처 → 기대 상태/조건 확인 → 명시적 시리얼 하나에
+가드된 상대 좌표 터치 한 번 → 관찰"만 반복하며, `should_stop()`은
+모든 캡처/터치 직전에 확인됩니다. 초기 단순 버전(`mission.py`)은
+호환성을 위해 그대로 유지/테스트되지만 실제 앱에서는 더 이상
+사용되지 않습니다. 자세한 AC 매핑/한계/실제 연동에 필요한 작업은
+`docs/HANDOFF_CODE.md`의 MVP-001-CV 절과
+`docs/REAL_CAPTURE_CHECKLIST.md`를 참고하세요.

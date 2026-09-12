@@ -1,13 +1,22 @@
-"""ldmanager MVP application entry point (MVP-001).
+"""ldmanager MVP application entry point (MVP-001 / MVP-001-CV).
 
 Wires together: :class:`~ldmanager.config.AppConfig` (adb_mapping/
-logging/diagnostics) + :class:`~ldmanager.mission_config.MissionConfig`
-(ROIs/points/thresholds/retries) + a real
+logging/diagnostics) + :class:`~ldmanager.bounty_config.BountyMissionConfig`
+(free regional-bounty ROIs/points/labels/thresholds/retries) + a real
 :class:`~ldmanager.adb.SubprocessAdbRunner` + the
 :class:`~ldmanager.recognition.PlaceholderRecognizer` + one
 :class:`~ldmanager.controller.AccountWorker` per account ->
 :class:`~ldmanager.controller.AccountController` ->
 :class:`~ldmanager.gui.LDManagerApp` (Tkinter GUI).
+
+As of MVP-001-CV, the real app drives
+:func:`ldmanager.bounty_mission.run_one_cycle` (the customer-video,
+free regional-bounty five-slot flow) rather than the earlier, simpler
+:func:`ldmanager.mission.run_one_cycle`. The earlier generic mission
+module/config are kept — unchanged, still fully tested — for backward
+compatibility and as a simpler reference implementation of the same
+guarded-touch contract; they are just no longer wired into this real
+entry point.
 
 This is the only module that constructs a *real* SubprocessAdbRunner
 and starts the Tk event loop. ``tkinter`` is imported lazily inside
@@ -22,11 +31,11 @@ import time
 from typing import Dict
 
 from .adb import SubprocessAdbRunner
+from .bounty_config import BountyConfigError, load_bounty_config
+from .bounty_mission import run_one_cycle
 from .config import ConfigError, load_config
 from .controller import AccountController, AccountWorker
 from .logs import get_account_logger
-from .mission import run_one_cycle
-from .mission_config import MissionConfigError, load_mission_config
 from .models import AccountId
 from .recognition import PlaceholderRecognizer
 
@@ -36,14 +45,14 @@ from .recognition import PlaceholderRecognizer
 DEFAULT_IDLE_DELAY_SECONDS = 1.0
 
 
-def _make_cycle_fn(account_id, serial, runner, recognizer, mission_cfg):
+def _make_cycle_fn(account_id, serial, runner, recognizer, bounty_cfg):
     def _cycle(should_stop):
         return run_one_cycle(
             account_id=account_id,
             serial=serial,
             runner=runner,
             recognizer=recognizer,
-            config=mission_cfg,
+            config=bounty_cfg,
             should_stop=should_stop,
         )
 
@@ -63,15 +72,15 @@ def build_controller() -> AccountController:
     """
 
     app_config = load_config()
-    mission_cfg = load_mission_config()
+    bounty_cfg = load_bounty_config()
     runner = SubprocessAdbRunner()
-    recognizer = PlaceholderRecognizer(templates_dir=mission_cfg.templates_dir)
+    recognizer = PlaceholderRecognizer(templates_dir=bounty_cfg.templates_dir)
 
     workers: Dict[AccountId, AccountWorker] = {}
     for account_id in AccountId:
         serial = app_config.adb_serial_for(account_id) or ""
         logger = get_account_logger(account_id, app_config.logging)
-        cycle_fn = _make_cycle_fn(account_id, serial, runner, recognizer, mission_cfg)
+        cycle_fn = _make_cycle_fn(account_id, serial, runner, recognizer, bounty_cfg)
         workers[account_id] = AccountWorker(
             account_id,
             cycle_fn,
@@ -88,7 +97,7 @@ def main() -> int:
 
     try:
         controller = build_controller()
-    except (ConfigError, MissionConfigError) as exc:
+    except (ConfigError, BountyConfigError) as exc:
         print(f"Cannot start ldmanager: {exc}", file=sys.stderr)
         return 1
 
