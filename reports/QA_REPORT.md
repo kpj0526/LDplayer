@@ -775,3 +775,17 @@ An initial QA assertion that attempted to infer a “select completed mission”
 **MVP_SMOKE_PASS** is an abbreviated injected-runner/mock verdict only. It is not final project QA and does not establish a real-device/customer-video result.
 
 AC-58, AC-59, and AC-60 are **BLOCKED_REAL_ENVIRONMENT / NOT_TESTED**: customer video/assets, calibrated templates/ROIs, live LDPlayer/ADB serials, actual regional-bounty UI states, real recognition behavior, and real result/reward capture evidence were not supplied or exercised. No global/project/real AC is marked PASS from this smoke.
+
+### Supplemental live GUI launch smoke (2026-09-12)
+
+At the user's request, QA created ignored local `configs/config.yaml` and `configs/bounty.yaml` by copying their example files only because they were absent. `git check-ignore -v` confirmed both local files are ignored. All LD1-LD9 ADB mappings remained `null`; no worker Start control was invoked.
+
+Documented launch command:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run.ps1
+```
+
+Actual outcome: a visible Python window titled `ldmanager (MVP)` opened (window id `985030`, 738x600) using the documented path. It remained open for approximately 20 seconds for desktop inspection. No real ADB input, worker start, or application control action was issued.
+
+The desktop automation provider could not focus the window for `Alt+F4`, so QA delivered standard Windows `WM_CLOSE` to that exact window handle (`wm_close_sent=True`). The Python GUI process then exited and disappeared from the desktop app list. This is supplemental GUI-launch evidence only; it does not alter the MVP smoke verdict or real-environment/AC-58..60 status.
