@@ -350,3 +350,128 @@ git check-ignore -q configs/config.example.yaml   # exit 1 (추적 대상 유지
 - [ ] 이번 교정에서도 금지 항목(신규 에이전트/worktree/역할 생성, Manager
       문서 수정, 실제 LD/게임 조작, 웹 DOM, 전역 마우스, 자격증명 저장)이
       코드베이스에 없는지 diff 재확인
+
+---
+
+## TP-001-RW-03 (Stage 2 재교정): `logger.exception()` 트레이스백 자격증명 미저장
+
+**Manager corrective packet**: TP-001-RW-03. QA final report
+`179a679252cda5adb4002b0ed341ea9089ed4881`이 대상 커밋
+`1305ba5a8b629e77664566702fb3ffe04eb8ac5e`(TP-001-RW-02 결과물)를 **FAIL**
+처리함 — 64개 테스트가 전부 통과했음에도, `logger.exception()`으로 통제된
+`password=...` 형태 마커를 기록하면 그 마커가 `error.log`의 트레이스백
+텍스트에 그대로 남는 문제(`traceback_sensitive_marker_absent=False`,
+Critical). 이는 TP-001-RW-02 한계 1번("`exc_info`/트레이스백은 레드액션
+대상이 아님")으로 이미 명시했던 갭이 실제로 재현된 것입니다.
+
+**상태: 이번 교정 항목만 구현. 프로젝트 전체 AC PASS를 선언하지 않음.**
+QA 재검증 조건(동일 재현 시 `traceback_sensitive_marker_absent=True` +
+Stage 2 전체 재실행 PASS)은 아래 자체 실행 결과로는 충족되는 것으로
+보이나, 최종 판정은 QA가 내립니다.
+
+### 근본 원인
+
+`SensitiveDataRedactionFilter`(TP-001-RW-02)는 `record.getMessage()`
+(즉 `msg % args`)만 치환했다. `logger.exception()`이 설정하는
+`record.exc_info`(예외 타입/값/트레이스백 튜플)는 `logging.Formatter.format()`
+내부에서 **핸들러가 레코드를 포맷할 때** 비로소
+`self.formatException(record.exc_info)`로 원문 그대로 렌더링되므로,
+필터 단계에서 건드리지 않으면 예외 메시지에 박힌 비밀값이 그대로
+`error.log`(때로는 `task.log`, `exc_info=True`를 낮은 레벨에 쓴 경우)에
+쓰였다.
+
+### 구현 AC / 트레이서빌리티
+
+| # | 지시 항목 | 구현 여부 | 비고 |
+|---|---|---|---|
+| 1 | `exc_info`/포맷된 트레이스백 출력에서 민감값을 어떤 파일 핸들러가 쓰기 전에 레드액션 또는 안전 차단. 예외 메시지/트레이스백 + 기존 메시지/args 모두 커버. 정상 오류 진단 정보는 보존, 원본 비밀값은 미보존 | **구현** | `logs.py`의 `SensitiveDataRedactionFilter`를 확장: `record.exc_info`가 있으면 `traceback.format_exception(*record.exc_info)`로 직접 렌더링 → `redact_sensitive_text()`로 치환 → `record.exc_text`에 저장 → `record.exc_info = None`으로 원본 예외 튜플 제거(Formatter가 재포맷 못 하도록). `record.stack_info`도 동일 원칙으로 치환. 기존 msg/args 경로는 변경 없이 유지 |
+| 2 | `logger.exception()`/`exc_info`를 쓰는 직접 회귀 테스트 추가, 마커가 error.log에 없음을 단언. task/error + 기존 일반/`%` 테스트 포함 | **구현** | `tests/test_logs.py`에 2개 추가: `test_logger_exception_traceback_marker_absent_from_error_log`(ERROR 레벨, `logger.exception()`, error.log 검증 + `ValueError`/메시지/`Traceback (most recent call last)` 등 정상 진단 정보 보존 확인), `test_exc_info_marker_absent_from_task_log_when_logged_below_error`(INFO 레벨 + `exc_info=True`, task.log 검증). 기존 일반 메시지/`%`-인자 레드액션 테스트(TP-001-RW-02, 5개)는 수정 없이 그대로 유지 |
+| 3 | 전체 스위트 실행, Stage 2 기능 전부 보존 | **구현** | `pytest -v` → **66 passed**, 0 failed(기존 64 + 신규 2). Stage 1/2/RW-02의 기존 테스트는 무수정, 전부 재통과 |
+| 4 | 커밋 + HANDOFF 갱신(TP-001-RW-03, 파일, 명령/결과, 정확한 해시, 한계, QA 포인트) | **구현** | 아래 각 절 참고 |
+| — | 프로젝트 AC PASS 선언 | — | **선언하지 않음** |
+
+### 실제 변경 파일
+
+```
+ src/ldmanager/logs.py   (수정 — SensitiveDataRedactionFilter가 exc_info/stack_info도 레드액션)
+ tests/test_logs.py      (수정 — exc_info 회귀 테스트 2개 추가)
+ docs/HANDOFF_CODE.md    (수정 — 본 절 추가)
+```
+
+건드리지 않은 것(회귀 보존 확인): `redaction.py`(패턴 자체는 변경 없음,
+`traceback.format_exception()` 출력 문자열에 그대로 재사용),
+`config.py`/`paths.py`/`diagnostics.py`/`.gitignore` — 무변경, 관련 기존
+테스트 전부 그대로 통과.
+
+### 테스트 명령 / 결과
+
+```
+.venv\Scripts\python.exe -m pytest -v
+```
+
+결과: **66 passed**, 0 failed, 0 skipped
+(Stage 1 11 + Stage 2 32 + RW-02 21 + RW-03 신규 2). QA가 보고한 재현
+시나리오와 동일한 형태로 자체 재현:
+
+```python
+try:
+    raise ValueError(f"login failed password={marker}")
+except ValueError:
+    logger.exception("unexpected failure")
+```
+
+위 코드로 생성된 `error.log`를 확인한 결과, 마커 리터럴은 부재하고
+`password=***REDACTED***`, `ValueError`, `unexpected failure`,
+`Traceback (most recent call last)` 등 정상 진단 정보는 그대로 보존됨을
+자체 확인함(`traceback_sensitive_marker_absent=True`에 해당).
+
+### 커밋 해시
+
+- 이전(QA FAIL 대상): `1305ba5` (TP-001-RW-02 HANDOFF 갱신 커밋, QA가 지목한 해시)
+- 이번 교정 커밋: `d8a6fcd` — "TP-001-RW-03: redact exc_info/traceback text
+  in account logs" (브랜치 `kpj0526/Code`). 본 문서의 해시 기록 갱신은
+  그 뒤의 후속 커밋.
+
+### 한계 (Limitations)
+
+1. **`record.exc_info`를 의도적으로 `None`으로 비움**: 표준 `logging.Formatter`
+   흐름에서는 `exc_text`가 이미 설정되어 있으면 `exc_info`를 재사용하지
+   않으므로 안전하지만, 이 레코드를 이후 다른 목적(예: 향후 단계에서 추가될
+   외부 에러 리포팅/크래시 수집 연동)으로 원본 예외 객체가 필요한 커스텀
+   핸들러가 붙는다면 그 핸들러는 원본 `exc_info` 튜플을 받지 못한다 —
+   레드액션된 텍스트(`exc_text`)만 사용 가능하다. 의도된 트레이드오프.
+2. **트레이스백 레드액션도 키 이름 기반 휴리스틱**: `redact_sensitive_text()`
+   패턴 자체는 RW-02와 동일 — `password=`/`token:`/`Authorization:`/
+   `Cookie:` 형태만 인식한다. 예외 메시지가 이런 키=값 형태를 쓰지 않고
+   비밀값만 단독으로 들어 있으면(예: `raise ValueError(secret)`) 탐지되지
+   않는다. 여전히 완전한 DLP가 아니라 가드레일이다.
+3. **`stack_info`도 동일 함수로 일괄 치환**: `stack_info=True`로 남긴 콜
+   스택 텍스트도 문자열 전체를 `redact_sensitive_text()`에 통과시킨다 —
+   해당 기능은 이번 QA 실패 재현에 직접 관련되지 않았으나, 동일 취약점
+   경로이므로 선제적으로 함께 처리함(과잉 구현이 아니라 동일 원인의 다른
+   증상을 막기 위함).
+4. RW-02/Stage 2에서 이미 기록된 한계(키 이름 기반 매칭의 일반적 한계,
+   헤더형 치환이 해당 줄 전체를 지우는 점, `.gitignore` 루트 기준 제약,
+   AC 카탈로그 원문 미대조, 자동 보존정책 미스케줄링 등)는 그대로
+   유효하며 본 교정과 무관하게 남아 있다.
+
+### QA 중점사항 (요청)
+
+- [ ] QA가 보고한 정확한 재현 절차(같은 마커 문자열/호출 방식)로
+      `error.log`를 재검사하여 `traceback_sensitive_marker_absent=True`가
+      QA 환경에서도 재현되는지 확인
+- [ ] `logger.exception()` 외에 `logger.error(msg, exc_info=True)`,
+      `logger.warning(msg, exc_info=sys.exc_info())` 등 다른 `exc_info`
+      전달 경로도 동일하게 레드액션되는지 추가 확인(본 교정은 필터가
+      `record.exc_info` 존재 여부만 보므로 호출 방식과 무관하게 동작해야
+      함 — 회귀 테스트로 일부 확인했으나 QA 자체 케이스로도 재확인 권장)
+- [ ] 트레이스백에서 파일 경로/줄 번호/예외 타입 등 **비민감** 진단 정보가
+      과도하게 삭제되지 않았는지(레드액션이 과잉 적용되지 않는지) 확인
+- [ ] Stage 2 + RW-02에서 검증된 항목(계정별 로그 격리, 회전/보존, config
+      섹션 검증, 경로 안전성, 진단 스크린샷 JSON-only, gitignore 커버리지)
+      전체 재실행 PASS 확인(회귀 없음)
+- [ ] 한계 1번(exc_info 소거)이 향후 크래시 리포팅 등 계획에 영향이
+      있는지 Manager와 사전 확인
+- [ ] 이번 교정에서도 금지 항목(신규 에이전트/worktree/역할 생성, Manager
+      문서 수정, 실제 LD/게임 조작, 웹 DOM, 전역 마우스, 자격증명 저장)이
+      코드베이스에 없는지 diff 재확인
