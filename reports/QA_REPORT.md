@@ -155,3 +155,165 @@ From the QA worktree at the verified commit:
 ```
 
 Ensure `configs/config.yaml` is absent before the last command to reproduce the safe missing-config path. The virtual environment, pytest cache, editable-install metadata, and any real `configs/config.yaml` remain ignored; only this QA report is intended for commit.
+
+---
+
+# QA Report - TP-001 Stage 2 Independent Verification
+
+## Verdict
+
+**FAIL - TP-001 Stage 2 scope.** Automated skeleton tests pass, but the required confidentiality safeguard fails: a caller-supplied password-like message is persisted verbatim in `task.log`. In addition, log and diagnostic artifact paths are not ignored by Git. No LDPlayer, game, real ADB, browser/DOM, or global mouse operation was performed.
+
+## Verification target and QA state
+
+| Item | Actual value |
+| --- | --- |
+| Required Code commit | `ba0e3da1228b70cd34a40e74a0f262212ed8310a` |
+| Implementation commit | `6130f0d99a1997580fd2d011f38f408e518db657` |
+| Verified Code parent of QA merge | `ba0e3da1228b70cd34a40e74a0f262212ed8310a` |
+| QA target-integration commit | `03b2ab28e098a9c7dc3bdcccd84f45b5349cb47c` |
+| QA branch | `kpj0526/Qa` |
+| Checkout method | Non-fast-forward merge of the required Code commit with prior QA report commit `30b2f1420beb56d010c6cc0985a784fb82a09a3f` |
+| Environment | Windows; Python 3.12.10; pytest 9.1.1; PyYAML 6.0.3; existing `.venv` refreshed with `pip install -e ".[dev]"` |
+
+The final QA-report commit is supplied with the Manager submission after this report is committed; it is not a Code verification target.
+
+## Commands and actual results
+
+### Dependency refresh and test rerun
+
+```powershell
+& .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+& .\.venv\Scripts\python.exe -m pytest -v
+```
+
+Actual relevant output:
+
+```text
+Successfully installed ldmanager-0.1.0
+platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.6.0
+collected 43 items
+============================= 43 passed in 0.54s =============================
+```
+
+### Configuration validation, path safety, and diagnostics
+
+Independent stdin assertions supplied temporary files only; no repository program file was changed. Actual output:
+
+```text
+nested_sensitive.yaml: REJECTED (ConfigError)
+bad_logging.yaml: REJECTED (ConfigError)
+bad_diagnostics.yaml: REJECTED (ConfigError)
+traversal: REJECTED (UnsafePathError)
+diagnostics: metadata_exists=True png_exists=False json=pending_capture
+```
+
+This confirms rejection of nested password-like keys and invalid logging/diagnostics settings; path traversal rejection; and a diagnostic request that writes JSON metadata but no PNG bytes.
+
+### Per-account logs, rotation, and retention
+
+Independent execution configured a temporary log root, exercised LD1 through LD9, sent one INFO and one ERROR record to each account, forced rotation with a 1024-byte limit, and purged an artificially old rotated error log. Actual output:
+
+```text
+per_account_LD1_to_LD9_separated=True task_rotation_exists=True old_error_deleted=True
+```
+
+This is positive evidence that account directories are separated, INFO and ERROR records go to separate files, rotation occurs, and the retention purge deletes an old matching rotated file.
+
+### Mandatory sensitive-log leakage check - FAIL
+
+The following controlled test used the non-secret marker `QA-SENTINEL-NOT-A-REAL-SECRET` only. It called `logger.info('password=QA-SENTINEL-NOT-A-REAL-SECRET')`, flushed handlers, then read the temporary LD1 task/error logs.
+
+Actual output:
+
+```text
+logs: task_has_sensitive_marker=True error_has_sensitive_marker=False task_has_error=False error_has_error=True
+```
+
+**Actual:** `task_has_sensitive_marker=True`; the password-like marker is written verbatim to `task.log`.
+
+**Expected:** password-like content must be redacted or rejected before any task/error log write; neither log may contain the marker.
+
+**Severity:** Critical - this directly violates the instruction not to store account/password/authentication information and can persist secrets in a local artifact that is not Git-ignored.
+
+**Reproduction:** run the controlled logger call above against `get_account_logger(AccountId.LD1, LoggingSettings(root_dir=<temporary directory>), force=True)`, flush, and inspect `task_log_path(...)`. The current result is `True` for the marker containment test.
+
+**Reverification condition:** implement and test a logging boundary that rejects/redacts sensitive message content and argument values before either handler emits a record; rerun the same marker test and require `task_has_sensitive_marker=False` and `error_has_sensitive_marker=False`, then rerun the full pytest suite.
+
+### Git-ignore and prohibited-control checks
+
+```powershell
+git check-ignore -v -- configs/config.yaml
+git check-ignore -v -- logs/LD1/task.log
+git check-ignore -v -- diagnostics/screenshots/LD1/request.json
+```
+
+Actual output:
+
+```text
+configs/config.yaml => IGNORED: .gitignore:2:configs/config.yaml configs/config.yaml
+logs/LD1/task.log => NOT_IGNORED
+diagnostics/screenshots/LD1/request.json => NOT_IGNORED
+```
+
+**Actual:** only `configs/config.yaml` is ignored. **Expected:** config, log, and diagnostic outputs must all be ignored. This is an additional Stage 2 failure; log/diagnostic artifacts could be staged accidentally.
+
+An AST scan of all `src/**/*.py` for executable web/DOM, global-mouse, ADB/control, process, and network imports/calls reported:
+
+```text
+forbidden executable import/call findings: []
+target diff --check: clean
+```
+
+This is positive static evidence only; it does not offset the sensitive-log failure.
+
+## Acceptance-criteria status
+
+Actual project ACs are not validated by this skeleton-only, no-real-LD/ADB verification. Therefore **AC-01 through AC-30 are all `NOT_TESTED`**; no project AC is marked PASS.
+
+| AC | QA status |
+| --- | --- |
+| AC-01 | NOT_TESTED |
+| AC-02 | NOT_TESTED |
+| AC-03 | NOT_TESTED |
+| AC-04 | NOT_TESTED |
+| AC-05 | NOT_TESTED |
+| AC-06 | NOT_TESTED |
+| AC-07 | NOT_TESTED |
+| AC-08 | NOT_TESTED |
+| AC-09 | NOT_TESTED |
+| AC-10 | NOT_TESTED |
+| AC-11 | NOT_TESTED |
+| AC-12 | NOT_TESTED |
+| AC-13 | NOT_TESTED |
+| AC-14 | NOT_TESTED |
+| AC-15 | NOT_TESTED |
+| AC-16 | NOT_TESTED |
+| AC-17 | NOT_TESTED |
+| AC-18 | NOT_TESTED |
+| AC-19 | NOT_TESTED |
+| AC-20 | NOT_TESTED |
+| AC-21 | NOT_TESTED |
+| AC-22 | NOT_TESTED |
+| AC-23 | NOT_TESTED |
+| AC-24 | NOT_TESTED |
+| AC-25 | NOT_TESTED |
+| AC-26 | NOT_TESTED |
+| AC-27 | NOT_TESTED |
+| AC-28 | NOT_TESTED |
+| AC-29 | NOT_TESTED |
+| AC-30 | NOT_TESTED |
+
+## Stage 2 scope summary
+
+| Check | Result |
+| --- | --- |
+| 43-test rerun | PASS |
+| Nested sensitive key and invalid logging/diagnostics rejection | PASS |
+| LD1-LD9 log isolation, separation, rotation, retention | PASS |
+| Path-traversal safety | PASS |
+| JSON-only diagnostic metadata, no PNG | PASS |
+| Config artifact Git exclusion | PASS |
+| Log and diagnostic artifact Git exclusion | **FAIL** |
+| No forbidden executable web/DOM/mouse/ADB path | PASS (static) |
+| Sensitive log message redaction/rejection | **FAIL - Critical** |
