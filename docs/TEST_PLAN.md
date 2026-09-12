@@ -1,5 +1,15 @@
 # MVP smoke plan override (2026-09-12)
 
+## UI-ADB-001 test extension: AC-61..AC-65
+
+| AC | Automated/GUI verification | Required safety evidence |
+| --- | --- | --- |
+| AC-61 | Construct GUI and verify all LD1..LD9 panels expose mapping state plus editable/selectable serial control. | No terminal/YAML edit needed in the tested user path. |
+| AC-62 | Fake ADB discovery populates available serial choices only. | No automatic assignment and no ADB touch command. |
+| AC-63 | Save valid nine-unique mapping to isolated temporary config, reload it, and verify panel values. | Existing config remains valid/compatible. |
+| AC-64 | Blank, duplicate, missing/offline, and malformed serial cases present an account-local visible error and reject start. | No mapping overwrite or Worker start. |
+| AC-65 | Probe refresh/save with fake runner and assert zero touch/Worker actions; change LD1 then verify LD2 mapping remains unchanged. | Every discovery/control call carries an explicit target serial when applicable. |
+
 After MVP-001, QA prioritizes application and GUI startup; LD1-LD9 config loading; mock ADB serial/account separation; individual and global stop; no touch after global stop; one mock mission cycle; recognizer interface invocation; recognition/capture failure safety; bounded retry/timeout; and one worker exception not terminating the controller.
 
 Long-duration/performance, exhaustive boundary, visual calibration, actual LDPlayer/game, clean-host packaging, and full AC tests are deferred as `NEEDS_REAL_TEST` or `BLOCKED_REAL_ENVIRONMENT`, never PASS.

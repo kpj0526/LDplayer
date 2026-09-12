@@ -1,5 +1,18 @@
 # TASK PACKET — TP-001 (통합본)
 
+## UI-ADB-001: Customer-friendly LD registration
+
+1. **WHO**: Windows customer who does not use terminals or edit configuration files; existing `code` implements; existing `qa` independently verifies; Manager coordinates. No other agents or worktrees.
+2. **WHAT**: Add an ADB registration area under each LD1..LD9 GUI panel, with current mapping/state, discovered serial selection or manual entry, save/clear controls, and a global device-refresh action.
+3. **WHERE**: Existing native Python GUI and local ignored configuration in the existing Code worktree; mappings remain `LDx -> ADB serial`.
+4. **WHEN**: Before starting an account. Refresh discovers available ADB devices; customer explicitly assigns one to an LD panel and saves. Invalid/unmapped accounts cannot start.
+5. **WHY**: Customers must be able to register their LD instances without terminals or YAML editing while retaining strict cross-account safety.
+6. **HOW**: Use the existing explicit-serial ADB discovery/validation layer. Display discovered serials without auto-assignment; validate exact LD1..LD9 keys, nonblank serials and uniqueness; write a local ignored config atomically; reload/update panel state; surface understandable errors. Keep all ADB control serial-scoped.
+7. **CONSTRAINTS**: No guessed port/automatic LD assignment; no credentials; no Worker or tap from refresh/save; do not mutate production mapping until validation succeeds; no new agents/worktrees; existing configuration remains compatible.
+8. **ACCEPTANCE CRITERIA**: `AC-61` GUI displays per-LD mapping state and allows explicit serial selection/entry. `AC-62` Refresh shows discovered ADB devices but never auto-assigns them. `AC-63` Save persists a valid unique mapping locally and reloads it. `AC-64` blank, duplicate, unavailable, or invalid mapping is rejected with a panel-visible error and cannot start that account. `AC-65` registration/refresh emits no touch and starts no Worker; mapping to one LD cannot affect another.
+9. **OWNER**: `code` implements/tests/commits/handoffs; `qa` verifies the exact commit; Manager tracks and only publishes a release after the release scope is verified.
+10. **NEXT ACTION**: Code completes its currently running release build safely, then implements UI-ADB-001 on its existing branch, runs tests and reports a commit. QA independently verifies AC-61..AC-65. Release is held for that verified MVP increment.
+
 ## 1. WHO
 
 사용자는 Windows의 십이지천2M 다계정 사용자다. Manager는 조정·문서·최종 판단, code는 코드·테스트 구현, qa는 독립 검증을 담당한다. LD1~LD9의 9개 계정과 계정별 5개 토벌임무가 대상이다.

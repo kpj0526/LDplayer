@@ -4,6 +4,10 @@ Current delivery is an executable, configurable Windows MVP draft: LD1-LD9 mappi
 
 Real LDPlayer/game validation, pixel accuracy, long-duration/performance testing, clean-host packaging testing, and final AC-30 integration remain `NEEDS_REAL_TEST` or `BLOCKED_REAL_ENVIRONMENT`.
 
+## Customer-friendly LD registration amendment (2026-09-12)
+
+Customers must not need to edit YAML or use a terminal to register LD instances. The GUI shall show an explicit ADB-device registration area below every LD1..LD9 account panel: current mapping status, a user-selectable discovered-device serial, and a per-account save/clear action. A global **Refresh ADB devices** action shall display devices discovered by the configured ADB runner so the customer can choose a serial for each LD panel. Mapping remains an explicit user choice: the app must never guess which discovered device belongs to LD1..LD9, must reject duplicates/blank mappings, and must persist only the mapping/settings data locally. Worker start remains blocked for an unmapped or invalid account, with an understandable GUI error.
+
 ## Customer-video mission-cycle amendment (2026-09-12)
 
 This is an addition to the existing MVP, not a replacement. For each independently mapped LD1-LD9 account, the MVP must cover the actual free regional-bounty flow shown in the customer reference: open mission list; select and inspect each of five slots; classify pending/completed/requires-refresh; refresh only when needed; identify the `지역 퀘스트를 갱신하시겠습니까?` confirmation popup by its structural screen state rather than refresh cost; click its confirm button only after a positive popup match; inspect new mission detail; accept and preserve only missions that jointly verify `모든 몬스터 처치` and quantity 200; otherwise boundedly refresh again; advance only after a slot is accepted; proceed to kill/reward flow only after all five are accepted.

@@ -1,5 +1,12 @@
 # WORK LOG
 
+## 2026-09-12 | UI-ADB-001 customer-friendly registration packet | Manager
+
+- Performed: converted the request to remove terminal/YAML dependency into a bounded GUI registration packet.
+- Changed: `docs/PROJECT_SPEC.md`, `docs/TASK_PACKET.md`, `docs/TEST_PLAN.md`, `docs/ACCEPTANCE_STATUS.md`, `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
+- Result: AC-61..AC-65 added; total is now 65. No implementation or QA result is claimed.
+- Next handoff: existing Code implements after its active build command; existing QA verifies exact commit. GitHub publication is held until this release-scope change is smoke-tested.
+
 ## 2026-09-12 | MVP-001-CV supplemental live GUI launch | QA / Manager
 
 - Performed: QA safely launched the documented GUI entry point with example-derived ignored local configuration; Manager independently confirmed the `ldmanager (MVP)` process/window identity.

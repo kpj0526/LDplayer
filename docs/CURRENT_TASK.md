@@ -1,5 +1,18 @@
 # CURRENT TASK
 
+## UI-ADB-001 — GUI-based LD registration (2026-09-12)
+
+- Task ID: `UI-ADB-001`
+- Title: Customer-friendly ADB mapping without terminal/YAML editing
+- Purpose: let a customer refresh devices, explicitly assign each ADB serial to LD1..LD9, save it, and see mapping errors in the application.
+- Owner: existing `code`; existing `qa` verifies after Code commits.
+- Status: `IMPLEMENTING` (queued behind the active release build command).
+- Planned files: Code-selected GUI/controller/config/discovery modules, tests, run guide, and Code handoff.
+- Completion: AC-61..AC-65 implemented; Code self-tests and commits; QA independently verifies the exact commit. No auto-assignment, Worker start, or touch during registration.
+- Current result: prior GUI can open but configuration requires local YAML; this request closes that customer-usability gap.
+- Blocker: none for mock implementation; real device discovery and mapping still require later customer environment verification.
+- Next action: Code reports build result then implements this packet; release remains on hold.
+
 ## Supplemental live GUI launch smoke (2026-09-12)
 
 - Task ID: `MVP-001-CV-GUI-SMOKE`

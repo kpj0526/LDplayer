@@ -1,5 +1,17 @@
 # ACCEPTANCE STATUS
 
+## UI-ADB-001 extension (2026-09-12)
+
+Total ACs: `65`. The addition is planned only; implementation and QA counts remain unchanged until an exact Code commit and independent QA evidence exist.
+
+| AC ID | Verification item | Implementation status | QA status | Evidence | Note |
+| ----- | ----- | ----- | ----- | -- | -- |
+| AC-61 | Per-LD GUI mapping state and explicit selection/entry | NOT_STARTED | NOT_TESTED | None | Customer-friendly registration |
+| AC-62 | Discover devices without automatic assignment | NOT_STARTED | NOT_TESTED | None | Explicit customer choice only |
+| AC-63 | Persist and reload a valid unique local mapping | NOT_STARTED | NOT_TESTED | None | Ignored local config only |
+| AC-64 | Reject invalid mapping with visible account-local error | NOT_STARTED | NOT_TESTED | None | Must block account start |
+| AC-65 | Registration has no Worker/touch side effects or cross-account change | NOT_STARTED | NOT_TESTED | None | Mandatory safety regression |
+
 ## MVP-001-CV smoke-result override (2026-09-12)
 
 | AC range | MVP status | Smoke status | Global QA status | Real environment status | Evidence |

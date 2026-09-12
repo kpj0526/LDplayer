@@ -1,5 +1,14 @@
 # PROGRESS
 
+## Customer-friendly LD registration requested: UI-ADB-001 (2026-09-12)
+
+- Current phase: `IMPLEMENTING`.
+- New MVP-required scope: GUI device refresh and explicit per-panel LD1..LD9 ADB registration/save/clear controls, replacing the customer-facing need to edit YAML or use a terminal.
+- Safety rules retained: discovered devices are shown but never automatically mapped; uniqueness/format/device validity are checked; invalid accounts cannot start; registration must not start Workers or issue touches.
+- AC total changed from `60` to `65`; AC-61..AC-65 are `NOT_STARTED` / `NOT_TESTED`.
+- Release impact: requested `v0.1.0` GitHub publication is held until this customer-facing MVP addition is implemented and independently smoke-tested. The pre-existing MVP is not represented as a final real-game release.
+- Next: existing Code finishes the in-flight build, implements UI-ADB-001 and submits a commit; existing QA validates its exact commit.
+
 ## Supplemental live GUI launch: PASS (2026-09-12)
 
 - Current phase: `NEEDS_REAL_TEST`.
