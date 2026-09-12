@@ -1,5 +1,7 @@
-# Local, unshared config (real ADB serials go here — never commit)
+# Local, unshared config (real ADB serials / calibrated ROIs go here — never commit)
 configs/config.yaml
+configs/mission.yaml
+configs/bounty.yaml
 
 # Generated per-account logs and diagnostic screenshot artifacts
 /logs/
@@ -14,3 +16,4 @@ __pycache__/
 venv/
 build/
 dist/
+*.spec

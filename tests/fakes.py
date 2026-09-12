@@ -1,4 +1,4 @@
-"""Shared test doubles for TP-002/TP-003 (no real ADB, no subprocess)."""
+"""Shared test doubles for TP-002/TP-003/MVP-001 (no real ADB, no subprocess)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Sequence
 
 from ldmanager.adb import AdbBinaryResult, AdbCommandResult, validate_serial
+from ldmanager.recognition import RecognitionResult, RecognitionStatus
 
 
 @dataclass
@@ -111,3 +112,30 @@ class ExceptionRaisingCaptureRunner:
         validate_serial(serial)
         self.capture_calls.append((serial, tuple(args)))
         raise RuntimeError(self.message)
+
+
+@dataclass
+class LabelMappingRecognizer:
+    """A :class:`~ldmanager.recognition.Recognizer` test double.
+
+    Never performs real image analysis: returns ``MATCH`` iff
+    ``expected_label`` is in ``matching_labels``, else ``UNKNOWN`` — so a
+    test can precisely script "slots match but the kill-check doesn't"
+    (etc.) without any real OCR/template matching. Every call is
+    recorded in ``calls`` (the ``expected_label`` asked for, in order).
+    """
+
+    matching_labels: frozenset = field(default_factory=frozenset)
+    calls: list = field(default_factory=list)
+
+    def recognize(self, image_bytes, roi, expected_label, threshold):
+        self.calls.append(expected_label)
+        if expected_label in self.matching_labels:
+            return RecognitionResult(
+                status=RecognitionStatus.MATCH, label=expected_label,
+                confidence=1.0, detail="fake: matched",
+            )
+        return RecognitionResult(
+            status=RecognitionStatus.UNKNOWN, label=None,
+            confidence=0.0, detail="fake: not in matching_labels",
+        )

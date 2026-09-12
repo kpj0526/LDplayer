@@ -4,9 +4,11 @@ from ldmanager.coordinates import (
     InvalidCoordinateError,
     InvalidScreenSizeError,
     RelativeCoordinate,
+    RelativeRegion,
     ScreenSize,
     build_tap_args,
     to_pixel_coordinates,
+    to_pixel_rect,
 )
 
 
@@ -117,3 +119,54 @@ def test_build_tap_args_differ_for_different_points():
     args1 = build_tap_args(size, RelativeCoordinate(x=0.1, y=0.1))
     args2 = build_tap_args(size, RelativeCoordinate(x=0.9, y=0.9))
     assert args1 != args2
+
+
+# --- RelativeRegion: ROI validation ----------------------------------------
+
+
+def test_valid_region_is_accepted():
+    region = RelativeRegion(x=0.1, y=0.1, width=0.2, height=0.3)
+    assert (region.x, region.y, region.width, region.height) == (0.1, 0.1, 0.2, 0.3)
+
+
+def test_full_screen_region_is_accepted():
+    RelativeRegion(x=0.0, y=0.0, width=1.0, height=1.0)  # must not raise
+
+
+@pytest.mark.parametrize(
+    "x,y,width,height",
+    [
+        (0.9, 0.0, 0.2, 0.1),  # extends past right edge
+        (0.0, 0.9, 0.1, 0.2),  # extends past bottom edge
+        (0.0, 0.0, 0.0, 0.1),  # zero width
+        (0.0, 0.0, 0.1, 0.0),  # zero height
+        (0.0, 0.0, -0.1, 0.1),  # negative width
+        (0.0, 0.0, 1.5, 0.1),  # width > 1
+        (-0.1, 0.0, 0.1, 0.1),  # negative x
+    ],
+)
+def test_invalid_region_is_rejected(x, y, width, height):
+    with pytest.raises(InvalidCoordinateError):
+        RelativeRegion(x=x, y=y, width=width, height=height)
+
+
+def test_region_non_numeric_dimension_is_rejected():
+    with pytest.raises(InvalidCoordinateError):
+        RelativeRegion(x=0.0, y=0.0, width="0.1", height=0.1)  # type: ignore[arg-type]
+
+
+def test_to_pixel_rect_converts_and_clamps():
+    size = ScreenSize(width=1000, height=2000)
+    region = RelativeRegion(x=0.1, y=0.2, width=0.3, height=0.4)
+    x_px, y_px, w_px, h_px = to_pixel_rect(size, region)
+    assert (x_px, y_px) == (100, 400)
+    assert (w_px, h_px) == (300, 800)
+
+
+def test_to_pixel_rect_full_screen_stays_within_bounds():
+    size = ScreenSize(width=1000, height=2000)
+    region = RelativeRegion(x=0.0, y=0.0, width=1.0, height=1.0)
+    x_px, y_px, w_px, h_px = to_pixel_rect(size, region)
+    assert x_px >= 0 and y_px >= 0
+    assert x_px + w_px <= size.width
+    assert y_px + h_px <= size.height
