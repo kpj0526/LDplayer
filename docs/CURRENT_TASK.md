@@ -12,8 +12,8 @@
 - Actual changes: management records only.
 - Completion: `adb devices` can be invoked by the released application; user explicitly maps serials in the GUI; each mapped account is displayed online. No Worker/touch is permitted during discovery.
 - Current result: released `ldmanager.exe` is running, but Windows reports `adb` unavailable. No standard LD install path or registry install location was found by read-only probes.
-- Blocker: LDPlayer-provided `adb.exe` is not available to the release application's command lookup.
-- Next action: repair local ADB availability, refresh devices in the GUI, and capture the resulting mapping state before continuing.
+- Blocker: coordinator PC has no LDPlayer/ADB by user confirmation; this is a real-customer-environment dependency, not an attempted local repair target.
+- Next action: customer enables the per-instance ADB bridge, refreshes devices in the GUI, and captures the resulting mapping state before continuing.
 
 ## REL-0.1.0 corrected asset replacement (2026-09-12)
 

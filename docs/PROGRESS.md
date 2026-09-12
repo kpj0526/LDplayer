@@ -1,5 +1,14 @@
 # PROGRESS
 
+## Customer-environment dependency confirmed (2026-09-13)
+
+- Current phase: `BLOCKED`.
+- User confirmed the coordinator PC has no LDPlayer installation and no ADB bridge; real LD/game validation must occur on the customer's PC.
+- Consequence: no local live-device mapping, per-account input isolation, mission recognition, reward/repeat, or AC-30 real-environment verification can be performed here.
+- Safe local scope remains limited to packaged-app launch and mocked regression evidence already recorded. This does not establish live-game success.
+- Required customer checkpoint: enable ADB debugging on every intended LD instance, run the corrected release, refresh devices, explicitly save LD1--LD9 serial mappings, and provide the resulting device/error screen before any Start action.
+- Next: receive the customer-environment mapping evidence; existing Code and QA must be available for any corrective implementation and independent re-verification.
+
 ## Live connection checkpoint: ADB executable unavailable (2026-09-13)
 
 - Current phase: `BLOCKED`.

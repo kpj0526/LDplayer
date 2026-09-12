@@ -268,3 +268,11 @@
 - Result: `ldmanager.exe` is running from the extracted corrected release. Windows returned `adb is not recognized`; no ADB command/device enumeration is available. No worker, touch, game click, mapping, or mission action occurred.
 - Related commits: release QA target `2ff8ebf20694a213f2bfdb5ec50a6eb8e79502fd`; no new implementation/QA commit.
 - Next handoff: user local LDPlayer ADB setup; then Manager repeats read-only discovery. Existing Code/QA must be available for any product correction/independent verification.
+## 2026-09-13 | LIVE-ADB-001 | Manager
+
+- Performed: recorded the user's confirmation that this coordinator PC has neither LDPlayer nor ADB.
+- Changed: `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
+- Commands/tests: none after confirmation; no local workaround, game input, mapping, or claim of live verification was attempted.
+- Result: live validation is deferred to the customer's LDPlayer environment. Existing mock/package evidence remains distinct from real-environment evidence.
+- Related commits: no Code/QA change.
+- Next handoff: customer device-refresh/mapping screenshot and any displayed error; existing Code/QA only for a required correction and independent verification.
