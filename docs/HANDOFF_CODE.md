@@ -475,3 +475,126 @@ except ValueError:
 - [ ] 이번 교정에서도 금지 항목(신규 에이전트/worktree/역할 생성, Manager
       문서 수정, 실제 LD/게임 조작, 웹 DOM, 전역 마우스, 자격증명 저장)이
       코드베이스에 없는지 diff 재확인
+
+---
+
+## TP-002 stage 3: LD1~LD9 discovery + 명시적 ADB 매핑
+
+**Manager task packet**: TP-002 (Stage 3). Prior Stage 2 범위는 QA PASS
+(QA report `2529a1a`)로 확인됨. **프로젝트 전체 AC는 여전히
+NOT_TESTED이며, 이번 절은 stage 3 범위에 한정된 자체 실행 결과다.**
+
+**상태: 지시된 stage 3 항목만 구현. 프로젝트 AC PASS를 선언하지 않음.
+병합하지 않음.**
+
+> AC 트레이서빌리티 참고: 이 worktree에는 Manager 쪽 공식 AC 카탈로그
+> 원문이 없어 "AC-01/02/09"의 정확한 문구를 직접 확인할 수 없었다. 아래
+> 매핑은 패킷 지시 항목의 순서/의미를 기준으로 한 최선 추정이며, QA가
+> 공식 문구와 대조해야 한다.
+
+### 구현 AC / 트레이서빌리티
+
+| AC(추정) | 지시 항목 | 구현 여부 | 비고 |
+|---|---|---|---|
+| **AC-01** | 주입 가능한 ADB 러너 + `adb devices` 출력 안전 파싱 | 구현 | `src/ldmanager/adb.py`: `AdbRunner`(Protocol, `list_devices()`/`run(serial, args)` 2개뿐), `SubprocessAdbRunner`(유일하게 실제 프로세스 실행), `parse_adb_devices_output()`(배너/데몬 라인 무시, 토큰 부족 라인은 스킵, 인식 못 하는 상태는 `UNKNOWN`으로 분류 — 어떤 입력에도 예외 없음) |
+| **AC-02** | LD1~LD9 정확히 9개, distinct 시리얼로만 구성된 명시적 매핑 검증. 포트 추측 금지. 사용자가 매핑을 제공할 수 있으나 discovery가 임의 배정하지 않음. 누락/중복/9개 아님/미확인·오프라인·미승인·알수없음·손상된 상태로의 매핑 거부 | 구현 | `src/ldmanager/discovery.py`: `validate_complete_adb_mapping()`/`ensure_complete_adb_mapping()`(모양 검증: 정확히 LD1~LD9, distinct, non-null — ADB 미호출), `build_account_connection_statuses()`(실제 discovery 결과와 교차검증: `device_not_found`/`device_offline`/`device_unauthorized`/`device_state_unknown`/`discovery_unavailable`). discovery는 매핑되지 않은 계정에 보이는 장치를 자동 배정하지 않음(테스트로 확인) |
+| **AC-09** | 계정별 연결/매핑 상태 및 구조화된 진단 오류를 자격증명 없이 노출 | 구현 | `AccountConnectionStatus`(account_id/status/serial/detail) — `serial`은 자격증명이 아닌 ADB 대상 문자열이라 노출 가능하다고 판단. `InvalidAdbMappingError`/`MappingValidationError`도 이슈 종류 + 사람이 읽을 수 있는 detail만 담고, 원시 예외 스택이나 시스템 경로 등은 노출하지 않음 |
+| (인프라) | 명령 구성/러너는 파라미터화되고 정확히 지정된 시리얼 하나로만 범위가 한정됨. 실제 touch/screenshot/게임 조작/전역 마우스/DOM/로그인·재연결 없음 | 구현 | `build_adb_command()`가 `["adb", "-s", <serial>, *args]` 형태만 생성(빈/공백 포함 시리얼 거부). 이 프로젝트 어디에도 touch/tap/screenshot/입력/로그인/재연결/게임 로직 없음 — `adb.py`/`discovery.py` 모두 "무엇이 보이는가"와 "임의의 한 시리얼에 임의의 명령을 스코프해서 실행"까지만 구현 |
+| (테스트) | 페이크 러너 기반 자동 테스트: 유효한 9개, 중복/누락/9개 아님, 오프라인/미승인/알수없음, 손상된 출력, 대상 명령 분리, 계정별 오류 표현 | 구현 | `tests/fakes.py`(`FakeAdbRunner`/`BrokenAdbRunner`), `tests/test_adb.py`(15개: 파싱 안전성, 명령 구성/분리, 서브프로세스 러너 argv), `tests/test_discovery.py`(15개: 유효 9개/누락/중복/9개 아님/오프라인/미승인/알수없음/discovery 불가/비-문자열 출력/미배정 원칙/불완전 매핑에서도 크래시 없음) |
+| (문서) | config 예시/문서 갱신, 자격증명 없음 | 구현 | `configs/config.example.yaml`에 매핑 원칙 설명 추가(실제 시리얼 값은 여전히 전부 `null`), README에 stage 3 섹션 추가 |
+| — | 실제 LDPlayer 연동 | **구현하지 않음 / 주장하지 않음** | 페이크 러너로만 검증됨. 실제 `adb` 바이너리·실제 에뮬레이터로 검증된 바 없음 |
+| — | 프로젝트 AC PASS 선언 / 병합 | — | **선언하지 않음 / 수행하지 않음** |
+
+### 실제 변경 파일
+
+```
+ src/ldmanager/adb.py         (신규)
+ src/ldmanager/discovery.py   (신규)
+ tests/fakes.py               (신규 — FakeAdbRunner/BrokenAdbRunner)
+ tests/test_adb.py            (신규, 15개)
+ tests/test_discovery.py      (신규, 15개)
+ configs/config.example.yaml  (수정 — adb_mapping 설명 보강, 값 변경 없음)
+ README.md                    (수정 — stage 3 섹션/구조 갱신)
+ docs/HANDOFF_CODE.md          (수정 — 본 절 추가)
+```
+
+건드리지 않은 것(회귀 보존 확인): `config.py`, `logs.py`, `redaction.py`,
+`paths.py`, `diagnostics.py`, `.gitignore`, `cli.py` — 코드 변경 없음.
+`cli.py`는 이번 단계에서 discovery/adb 기능을 노출하도록 확장하지
+않았다(범위를 라이브러리 계층으로 한정 — 아래 한계 3번 참고).
+
+### 테스트 명령 / 결과
+
+```
+.venv\Scripts\python.exe -m pytest -v
+```
+
+결과: **98 passed**, 0 failed, 0 skipped. 실행 후 `git status --short`로
+저장소에 의도치 않은 파일이 남지 않았음을 확인함(모든 신규 테스트는
+인메모리 페이크 러너만 사용, 실제 subprocess/네트워크/파일 I/O 없음 —
+`SubprocessAdbRunner` 관련 테스트도 `subprocess.run` 자체를
+monkeypatch로 대체해 실제 `adb` 바이너리를 호출하지 않음).
+
+### 커밋 해시
+
+- 이전(Stage 2 PASS 확인 대상): `d8a6fcd`/`9f54d24` (TP-001-RW-03, QA PASS
+  보고 `2529a1a`가 참조한 것으로 보이는 최신 상태)
+- 이번 stage 3 커밋: `ffaa3ec` — "TP-002 stage 3: LD1-LD9 discovery +
+  explicit ADB mapping validation" (브랜치 `kpj0526/Code`). 본 문서의
+  해시 기록 갱신은 그 뒤의 후속 커밋.
+
+### 한계 (Limitations)
+
+1. **실제 LDPlayer/실제 ADB 미검증**: 이 worktree에는 실제 `adb` 실행
+   파일이나 실제 LDPlayer 인스턴스가 없다(설치/확인하지 않음). 모든
+   discovery/매핑 로직은 `FakeAdbRunner`로만 검증되었다.
+   `SubprocessAdbRunner`의 argv 구성도 `subprocess.run` 자체를
+   monkeypatch로 대체해 검증했을 뿐, 실제 프로세스 실행 경로는 시험되지
+   않았다.
+2. **`adb devices -l`의 확장 필드 미파싱**: `adb devices -l`이 출력하는
+   `product:`/`model:`/`device:`/`transport_id:` 같은 추가 컬럼은
+   파싱하지 않는다(현재는 시리얼 + 상태 두 컬럼만 사용). 필요해지면
+   `parse_adb_devices_output()` 확장이 필요하다.
+3. **CLI 미노출**: `cli.py`는 이번 단계에서 discovery/연결 상태를
+   출력하도록 확장하지 않았다 — 라이브러리 계층(`adb.py`/`discovery.py`)만
+   구현했다. 사람이 직접 상태를 보려면 아직 별도 스크립트/REPL에서
+   함수를 호출해야 한다.
+4. **`ensure_complete_adb_mapping()`은 어디서도 자동 호출되지 않음**:
+   `config.load_config()`는 여전히 부분/미할당 매핑을 허용한다(stage
+   1/2와 동일한 관대한 로딩). "완전한 9개 매핑" 요구는 이 함수를 명시적
+   으로 호출하는 호출자(향후 연결 플로우)의 책임이다.
+5. **`adb devices` 파싱은 상태 컬럼이 있는 모든 2-토큰 이상 라인을
+   받아들임**: 진짜 ADB 출력이 아닌 우연히 2단어 이상인 노이즈 라인도
+   시리얼+상태로 오인될 수 있다(상태는 `UNKNOWN`으로 안전하게 분류되지만
+   "라인"으로는 집계됨). 완전한 grammar 파서가 아니라 실용적 파서다.
+6. **AC-01/02/09 원문 미대조**: 위 "AC 트레이서빌리티 참고" 그대로 —
+   공식 카탈로그 문구와 직접 대조하지 못했다.
+7. Stage 1/2/RW-02/RW-03에서 이미 기록된 한계(자동 보존정책 미스케줄링,
+   `exc_info` 소거의 트레이드오프, 키 이름 기반 레드액션 휴리스틱 등)는
+   그대로 유효하며 본 단계와 무관하게 남아 있다.
+
+### QA 중점사항 (요청)
+
+- [ ] `validate_complete_adb_mapping()`이 정확히 "LD1~LD9, 9개, distinct,
+      non-null"만 허용하고 그 외 모든 변형(8개/10개/중복/None 혼합)을
+      거부하는지 경계값 위주로 재확인
+- [ ] `build_account_connection_statuses()`가 매핑되지 않은 계정에
+      discovery로 보이는 장치를 **절대 자동 배정하지 않는지**
+      (`test_discovery_never_auto_assigns_unmapped_account_even_if_a_device_is_present`
+      외에 QA 자체 시나리오로) 재확인
+- [ ] `offline`/`unauthorized`/인식 불가 상태 토큰 각각이 서로 다른
+      `ConnectionStatus`로 구분되는지, 그리고 `discovery_unavailable`
+      (러너 예외/비-문자열 반환)이 예외를 전파하지 않고 안전하게
+      보고되는지 확인
+- [ ] `build_adb_command()`/`SubprocessAdbRunner.run()`이 항상 정확히
+      하나의 명시적 시리얼로만 스코프되고, 빈 문자열/공백 포함 시리얼을
+      거부하는지, 그리고 이 코드 경로 어디에도 touch/tap/screenshot/
+      게임 입력/로그인 로직이 없는지 diff 재확인
+- [ ] 이번 단계가 Stage 2(계정별 로그 격리/회전/보존, 민감정보 레드액션
+      — msg/args + exc_info, config 섹션 검증, 경로 안전성, 진단
+      스크린샷 JSON-only, gitignore 커버리지) 전체를 회귀 없이 유지하는지
+      전체 스위트 재실행으로 확인
+- [ ] "실제 LDPlayer 연동은 검증되지 않았다"는 명시적 서술이 README/
+      HANDOFF 양쪽에 정확히 반영되어 있는지, 과장된 표현이 없는지 확인
+- [ ] 금지 항목(신규 에이전트/worktree/역할 생성, Manager 문서 수정,
+      실제 게임 자동화, 병합)이 이번 단계에도 없는지 diff 재확인
