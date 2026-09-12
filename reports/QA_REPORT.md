@@ -490,3 +490,65 @@ This no-real-LD/game/ADB verification does not establish the full project requir
 | LD1-LD9 logs, rotation, retention | PASS |
 | Safe paths and JSON-only diagnostics | PASS |
 | Forbidden executable control path and clean diff | PASS (static) |
+
+---
+
+## TP-001-RW-03 full Stage 2 re-verification (2026-09-12) — PASS
+
+### Target and integration evidence
+
+| Item | Verified result |
+| --- | --- |
+| Exact Code HEAD | `9f54d248fe0c02be53556760cf85f5a51dec5f4c` on `kpj0526/Code` |
+| Claimed implementation | `d8a6fcdd4f321de833a5b39af4f6afcb829ddcd6` is an ancestor of that HEAD |
+| Prior target ancestry | `1305ba5` is an ancestor of `9f54d24` |
+| QA integration | non-fast-forward merge commit `f67a608` (`QA: merge TP-001-RW-03 verification target`) |
+| Target diff | `1305ba5..9f54d24`: `docs/HANDOFF_CODE.md`, `src/ldmanager/logs.py`, and `tests/test_logs.py`; `git diff --check` exit 0 |
+
+The Code worktree was clean at the exact target before test execution. QA preserved existing report history and merged the target into `kpj0526/Qa` with an explicit non-fast-forward merge.
+
+### Independent execution evidence
+
+```powershell
+& .\.venv\Scripts\python.exe -m pytest -q
+```
+
+Actual result: `66 passed in 0.87s` (Python 3.12; existing project virtual environment).
+
+QA also ran a separate temporary-directory probe, not relying on the added regression tests. It wrote five controlled, non-real credential-like markers through these surfaces:
+
+```python
+logger.info("password=" + ORDINARY_MARKER)
+logger.info("token=%s", PERCENT_MARKER)
+logger.exception("exception framing remains")
+logger.error("error exc_info framing remains", exc_info=True)
+logger.log(logging.WARNING, "lower level exc_info framing remains", exc_info=True)
+```
+
+The three exception paths respectively raised `ValueError("password=<marker>")`, `RuntimeError("api_key=<marker>")`, and `LookupError("cookie=<marker>")`. After flushing every handler, QA read every created `task.log` and `error.log` and asserted all five literal markers absent. Actual result:
+
+```text
+INDEPENDENT_RUNTIME_PROBES_PASS: 5 redaction surfaces; framing; LD1-LD9 isolation; retention; JSON-only diagnostics; safe path; invalid config rejection
+```
+
+The emitted output retained useful non-sensitive diagnostic context: `Traceback (most recent call last)`, the `ValueError`/`RuntimeError`/`LookupError` types, and the ordinary non-sensitive logging messages. The sensitive exception portions appeared only as `password=***REDACTED***`, `api_key=***REDACTED***`, and `cookie=***REDACTED***`.
+
+### Stage 2 regression and safety checks
+
+| Check | Result / evidence |
+| --- | --- |
+| Ordinary, percent-argument, `logger.exception()`, `logger.error(exc_info=True)`, lower-level `logger.log(WARNING, exc_info=True)` | PASS; no controlled literal appeared in any read `task.log` or `error.log` |
+| Git ignores | PASS: `configs/config.yaml`, `logs/LD1/task.log`, and `diagnostics/screenshots/LD1/request.json` each reported by `git check-ignore -v`; `configs/config.example.yaml` returned exit 1 (not ignored) |
+| Secret config validation | PASS; a nested `password` field was rejected with `ConfigError` |
+| Invalid logging/diagnostics values | PASS; `retention_days: 0`, `max_bytes: 99`, `backup_count: -1`, and an empty diagnostics screenshot directory were each rejected with `ConfigError` |
+| Safe paths | PASS; `ensure_safe_subdir(root, "..")` raised `UnsafePathError`; diagnostic reason traversal was contained in the account directory |
+| JSON-only diagnostics | PASS; metadata sidecar parsed as JSON with `pending_capture`; no PNG/image file was created |
+| LD1-LD9 isolation, rotation, retention | PASS; requested log files were separated by account and level; an old `task.log.1` was deleted while unrelated `not-a-log.txt` was retained |
+| Forbidden-control static scan | PASS; zero matches in `src` for ADB/LD console invocations, subprocess/system execution, browser/DOM/global-mouse automation, network-control primitives, or related executable-control patterns |
+| Target diff | PASS; clean whitespace check, and reviewed `1305ba5..9f54d24` changes are limited to the traceback redaction repair, tests, and handoff documentation |
+
+### Stage 2 scope conclusion
+
+**Stage 2 scope PASS only.** The prior critical traceback-secret defect is not reproducible at `9f54d24`: controlled literal credential-like markers are absent from both log destinations for all required ordinary and exception logging surfaces, while traceback framing/type remains useful.
+
+Global AC-01 through AC-30 remain **NOT_TESTED** exactly as recorded above. This is not a project delivery-complete determination.
