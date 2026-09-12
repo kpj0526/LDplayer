@@ -706,3 +706,156 @@ FAIL** 처리함 — `validate_complete_adb_mapping()`이 나머지 8개는
 - [ ] 금지 항목(신규 에이전트/worktree/역할 생성, Manager 문서 수정,
       포트/장치 추측, 실제 게임 자동화, 병합)이 이번 교정에도 없는지
       diff 재확인
+
+---
+
+## TP-003: 계정별 ADB 스크린샷 캡처 + 가드된 상대 좌표 터치 기반
+
+**Manager task packet**: TP-003. Gate: TP-002-RW-01 stage 3 범위 QA PASS
+(`a3eb77f`, 대상 `a4dce6d`). **프로젝트 전체 AC는 여전히 NOT_TESTED이며,
+이번 절은 TP-003 범위 자체 실행 결과다.**
+
+**상태: 지시된 "안전한 주입형 기반(foundation)" 항목만 구현. 게임
+자동화가 아님. 프로젝트 AC PASS 선언하지 않음. 병합하지 않음.**
+
+### 구현 개요
+
+| 구성요소 | 파일 | 역할 |
+|---|---|---|
+| 바이너리 캡처 가능한 ADB 러너 | `adb.py` (확장) | `AdbRunner` Protocol에 `capture_binary(serial, args)` 추가(텍스트 디코딩 없이 raw bytes), `SubprocessAdbRunner.capture_binary()`가 유일한 실제 구현, `validate_serial()`을 `build_adb_command()`/`screenshot.py`/`guarded_touch.py`가 공유 |
+| 스크린샷 캡처 + 안전한 바이트 검증 | `screenshot.py` (신규) | `capture_screenshot()`: PNG 매직 헤더 검사, 실패/빈 출력/손상 바이트/러너 예외를 전부 구조화된 `ScreenshotCaptureResult(ok=False, error=...)`로 반환(예외 전파 없음) |
+| 기기-내부 상대 좌표 | `coordinates.py` (신규) | `RelativeCoordinate`(`[0.0,1.0]` 엄격 검증, 생성 시점 즉시 거부), `ScreenSize`(양의 정수만), `build_tap_args()`(상대 좌표 → 픽셀 → `shell input tap x y` 인자만 생성, 전역 데스크톱 좌표 개념 없음) |
+| 가드된 터치 상태 머신 | `guarded_touch.py` (신규) | `perform_guarded_touch()`: 캡처→사전조건 훅→(수락 시에만) 시리얼 하나에 정확히 한 번 터치→캡처→사후조건 훅. 실패/거짓/예외/타임아웃(재시도 상한 소진) 시 추가 입력 없이 계정 로컬 `GuardedTouchResult` 반환 |
+| 테스트 더블 확장 | `tests/fakes.py` (수정) | `FakeAdbRunner`에 `capture_binary`/`capture_results`/`capture_calls` 추가, `ExceptionRaisingCaptureRunner`(러너 자체가 예외를 던지는 경로 전용) 신규 |
+
+### 요구사항 대비 확인
+
+- **단일 명시적 비공백 시리얼로만 범위 고정**: `validate_serial()`이
+  `capture_binary`/`run` 양쪽에서 공유되며, 빈/공백 시리얼은 어떤 캡처나
+  터치도 시도되기 전에 `ValueError`로 즉시 거부됨(테스트로 확인:
+  `test_blank_serial_is_rejected_before_any_capture_or_touch` 등). 포트나
+  장치를 추론/기본값으로 채우는 코드는 없음.
+- **기기-내부 상대 좌표, 엄격 검증, 전역 마우스/고정 외부 좌표 없음**:
+  `RelativeCoordinate.__post_init__`이 범위 밖/NaN/Inf/비수치/bool 값을
+  전부 생성 시점에 거부. `build_tap_args()`는 항상
+  `["shell", "input", "tap", <px>, <py>]`만 생성하며, 이 argv는 여전히
+  `AdbRunner.run(serial, args)`를 통해 하나의 시리얼로만 스코프됨.
+- **가드 계약**: `perform_guarded_touch()`가 정확히 지시된 5단계
+  (신선한 캡처 → 사전조건 → 수락 시 단일 터치 → 신선한 캡처 →
+  사후조건)를 구현. 사전조건 거짓/예외, 캡처 실패/손상, 사후조건
+  거짓/예외/캡처실패 어느 경우든 `runner.calls`(탭 호출 기록)는 정확히
+  0개(터치 전) 또는 1개(터치 후 실패)만 존재함을 테스트로 직접 확인.
+- **재시도/타임아웃 상한**: `max_capture_attempts`/
+  `max_postcondition_attempts`로 캡처·검증 재시도만 상한이 걸림(터치
+  자체는 성공 여부와 무관하게 최대 1회). `sleep_fn`을 주입 가능하게 해
+  테스트는 실제로 대기하지 않음(`lambda s: None`).
+- **안전한 스크린샷 바이트 검증**: PNG 매직 헤더(`\x89PNG\r\n\x1a\n`)
+  미만 길이/불일치 바이트는 `INVALID_IMAGE_BYTES`로, 빈 출력은
+  `EMPTY_OUTPUT`으로, 러너 비정상 종료는 `RUNNER_FAILED`로, 러너 자체
+  예외는 `EXCEPTION`으로 각각 구분되어 반환됨(모두 예외 없이).
+- **테스트는 페이크/주입 러너만 사용**: 실제 `adb`/실제 LDPlayer는 어디
+  에서도 호출되지 않음. `SubprocessAdbRunner` 관련 테스트도
+  `subprocess.run` 자체를 monkeypatch로 대체.
+- **금지 항목 미구현**: OCR, 이미지 템플릿 매칭, 미션/게임 로직, GUI,
+  로그인/재연결, 전역 마우스, 웹 DOM, 자격증명 저장 — 이 코드베이스
+  어디에도 없음(grep으로 재확인 가능: `ocr`, `template`, `mission`,
+  `login`, `reconnect`, `pyautogui`, `mouse` 등 관련 코드/의존성 전무).
+
+### 실제 변경 파일
+
+```
+ src/ldmanager/adb.py           (수정 — capture_binary 추가, validate_serial 공유화)
+ src/ldmanager/coordinates.py   (신규)
+ src/ldmanager/screenshot.py    (신규)
+ src/ldmanager/guarded_touch.py (신규)
+ tests/fakes.py                 (수정 — capture_binary 지원, ExceptionRaisingCaptureRunner 추가)
+ tests/test_adb.py              (수정 — capture_binary argv/분리 테스트 4개 추가)
+ tests/test_coordinates.py      (신규, 26개)
+ tests/test_screenshot.py       (신규, 9개)
+ tests/test_guarded_touch.py    (신규, 15개)
+ README.md                      (수정 — TP-003 섹션/구조 갱신)
+ docs/HANDOFF_CODE.md           (수정 — 본 절 추가)
+```
+
+건드리지 않은 것(회귀 보존 확인): `config.py`, `logs.py`, `redaction.py`,
+`paths.py`, `diagnostics.py`, `discovery.py`, `.gitignore`, `cli.py`,
+`models.py` — 코드 변경 없음. `configs/config.example.yaml`도 이번
+단계에서는 변경하지 않았다(아래 한계 3번 참고 — 캡처 인자/화면 크기는
+현재 함수 인자로만 전달되며 config 스키마에 아직 노출되지 않음).
+
+### 테스트 명령 / 결과
+
+```
+.venv\Scripts\python.exe -m pytest -v
+```
+
+결과: **159 passed**, 0 failed, 0 skipped (이전 105 + 이번 TP-003 신규
+54: test_adb.py +4, test_coordinates.py +26, test_screenshot.py +9,
+test_guarded_touch.py +15 = 54). 실행 후 `git status --short`로
+저장소에 의도치 않은 파일이 남지 않았음을 확인함(모든 신규 테스트는
+인메모리 페이크 러너만 사용).
+
+### 커밋 해시
+
+- 이전(게이트, QA PASS 대상): `a4dce6d` (TP-002-RW-01, QA PASS 보고 `a3eb77f`)
+- 이번 TP-003 커밋: `8b1687b` — "TP-003: per-instance ADB screenshot +
+  guarded relative-touch foundation" (브랜치 `kpj0526/Code`). 본 문서의
+  해시 기록 갱신은 그 뒤의 후속 커밋.
+
+### 한계 (Limitations)
+
+1. **실제 LDPlayer/실제 ADB 미검증**: 모든 캡처/터치 로직은
+   `FakeAdbRunner`/`ExceptionRaisingCaptureRunner`로만 검증되었다. 실제
+   PNG 디코딩(픽셀 유효성, 해상도 일치 등)이나 실제 `input tap`의 기기
+   반응은 전혀 시험되지 않았다 — PNG 검증은 매직 헤더 존재 여부만 본다
+   (아래 4번 참고).
+2. **화면 크기(`ScreenSize`) 자동 조회 없음**: `wm size` 같은 명령으로
+   기기의 실제 해상도를 조회하는 기능은 구현하지 않았다. 호출자가
+   `ScreenSize`를 직접 공급해야 한다 — 잘못된 해상도를 넘기면 상대
+   좌표가 엉뚱한 픽셀로 변환될 수 있다(좌표 자체의 `[0,1]` 검증과는
+   별개의 책임).
+3. **config.yaml에 아직 노출되지 않음**: 캡처 인자(`DEFAULT_CAPTURE_ARGS`),
+   재시도/타임아웃 상한, 화면 크기는 모두 함수 기본값/인자이며
+   `configs/config.example.yaml`에는 아직 추가하지 않았다 — 이번
+   단계에서는 "설정 가능한 정책"보다 "안전한 기반 구현"을 우선했다.
+   설정화가 필요하면 다음 단계에서 `config.py`에 섹션을 추가해야 한다.
+4. **PNG 검증은 매직 헤더까지만**: 실제 PNG 청크 구조(IHDR 등)나
+   해상도/손상 여부까지는 검사하지 않는다 — "바이트가 PNG처럼 시작하는가"
+   만 확인하는 얕은 검증이다.
+5. **재시도 사이 페이싱은 호출자 책임**: `sleep_fn`은 기본이
+   no-op이므로, 실제 운영에서 캡처/장치 사이에 의미 있는 지연을 두려면
+   호출자가 `time.sleep` 등을 명시적으로 주입해야 한다(이번 기반은
+   페이싱 정책을 강제하지 않는다).
+6. **`guarded_touch`는 사전/사후조건 훅의 "의미"에 관여하지 않음**:
+   훅이 실제로 무엇을 검증하는지(신뢰도 임계값, 이미지 비교 등)는
+   전적으로 미래 단계/호출자의 책임이며, 이번 기반은 훅의 반환값
+   (True/False/예외)만 안전하게 처리한다 — OCR/템플릿 매칭 로직은
+   의도적으로 포함하지 않았다.
+7. Stage 1~3/RW-01~RW-03에서 이미 기록된 한계는 그대로 유효하며 본
+   단계와 무관하게 남아 있다.
+
+### QA 중점사항 (요청)
+
+- [ ] "가드 계약"의 각 실패 지점(사전조건 거짓/예외, 사전 캡처 실패/
+      손상, 터치 명령 자체 실패, 사후조건 거짓/예외, 사후 캡처 실패)에서
+      `runner.calls`(탭 호출)가 정확히 의도된 개수(0 또는 1)인지, 그리고
+      어떤 경우에도 탭이 2회 이상 발생하지 않는지 QA 자체 시나리오로
+      재확인
+- [ ] `RelativeCoordinate`/`ScreenSize`가 범위를 벗어나거나 비정상적인
+      값(NaN/Inf/문자열/bool/0/음수/실수 픽셀)을 생성 시점에 확실히
+      거부하는지 경계값 위주로 재확인
+- [ ] `capture_binary`가 항상 정확히 하나의 명시적 시리얼로만 스코프
+      되고, 서로 다른 시리얼의 캡처 호출이 `capture_calls`에서 섞이지
+      않는지 diff/테스트로 재확인
+- [ ] PNG 바이트 검증(매직 헤더만 확인하는 얕은 검증)이 실제 운영에서
+      충분한지, 아니면 다음 단계에서 더 엄격한 검증(예: 최소 크기,
+      IHDR 파싱)이 필요한지 Manager와 협의
+- [ ] 이 코드베이스에 OCR/템플릿 매칭/미션 로직/GUI/로그인·재연결/
+      전역 마우스/웹 DOM/자격증명 저장이 전혀 없는지 diff 및 의존성
+      목록(`pyproject.toml`) 재확인
+- [ ] Stage 1~3/RW-01~RW-03 전체가 이번 커밋에서도 회귀 없이 통과하는지
+      전체 스위트 재실행 확인
+- [ ] 화면 크기 자동 조회 부재(한계 2번), config 미노출(한계 3번)이
+      다음 단계 계획에 영향이 있는지 Manager와 사전 확인
+- [ ] 금지 항목(신규 에이전트/worktree/역할 생성, Manager 문서 수정,
+      실제 게임 자동화, 병합)이 이번 단계에도 없는지 diff 재확인

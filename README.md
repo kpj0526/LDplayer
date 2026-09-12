@@ -2,13 +2,12 @@
 
 `ldmanager` — LDPlayer 다중 계정(LD1~LD9) 관리 도구.
 
-> **현재 단계: TP-002 stage 3 — LD1~LD9 discovery + 명시적 ADB 매핑
-> 검증.**
-> 실제 LDPlayer/게임 조작, 웹 DOM 제어, 전역 마우스 제어, 자격증명 저장·로그
-> 기록, 실제 ADB 스크린샷 캡처, 실제 touch/screenshot/로그인/재연결은 이
-> 단계에도 포함되지 않습니다. 실제 LDPlayer 연동 자체가 아직 검증되지
-> 않았음을 명시합니다(주입 가능한 러너 + 페이크 러너 기반 자동 테스트만
-> 수행됨).
+> **현재 단계: TP-003 — 계정별 ADB 스크린샷 캡처 + 가드된 상대 좌표
+> 터치 기반(foundation).**
+> 이것은 게임 자동화가 아닙니다. OCR/템플릿 매칭/미션 로직/GUI/로그인·
+> 재연결/전역 마우스/웹 DOM/자격증명 저장은 이 프로젝트 어디에도
+> 구현되어 있지 않습니다. 실제 LDPlayer/실제 ADB 장치를 이용한 통합
+> 검증도 수행되지 않았습니다(페이크 러너 기반 자동 테스트만 실행함).
 
 ## 요구 사항
 
@@ -74,9 +73,14 @@ src/ldmanager/
   diagnostics.py  # 진단 스크린샷 경로/메타데이터 생성 (실제 캡처 없음)
   paths.py        # 안전한 파일명/경로 검증 유틸리티
   redaction.py    # 자격증명형 텍스트 레드액션(로그 전용)
-  adb.py          # 주입 가능한 ADB 러너, `adb devices` 파싱, 단일 시리얼
-                  # 범위 명령 구성 (실제 touch/screenshot 없음)
+  adb.py          # 주입 가능한 ADB 러너(텍스트 + 바이너리 캡처), `adb
+                  # devices` 파싱, 단일 시리얼 범위 명령 구성
   discovery.py    # LD1~LD9 매핑 검증 + 러너 기반 연결 상태 조회
+  coordinates.py  # 기기-내부 상대 좌표([0,1]) 검증 + 픽셀 변환(전역
+                  # 마우스/고정 외부 좌표 없음)
+  screenshot.py   # 계정별 스크린샷 바이너리 캡처 + PNG 바이트 검증
+  guarded_touch.py  # 캡처→사전조건→단일 터치→캡처→사후조건 가드 상태
+                    # 머신 (게임 자동화 아님, OCR/템플릿/미션 없음)
   cli.py          # 최소 CLI 진입점 (실제 자동화 없음)
 configs/
   config.example.yaml  # adb_mapping / logging / diagnostics 템플릿
@@ -90,7 +94,10 @@ tests/
   test_gitignore.py
   test_adb.py
   test_discovery.py
-  fakes.py        # FakeAdbRunner/BrokenAdbRunner 테스트 더블
+  test_coordinates.py
+  test_screenshot.py
+  test_guarded_touch.py
+  fakes.py        # FakeAdbRunner/BrokenAdbRunner/ExceptionRaisingCaptureRunner
 docs/
   HANDOFF_CODE.md  # 단계별 구현/테스트 인수인계 기록
 ```
@@ -129,3 +136,34 @@ docs/
 - 실제 LDPlayer/실제 ADB 장치를 이용한 통합 검증은 이번 단계에도
   수행되지 않았습니다(페이크 러너 기반 자동 테스트만 실행함). "실제
   LDPlayer 연동이 된다"는 주장은 하지 않습니다.
+
+## 스크린샷 캡처 + 가드된 터치 기반 (TP-003)
+
+- `ldmanager.adb.AdbRunner`에 `capture_binary(serial, args)`가
+  추가되었습니다(바이너리 전용, 텍스트 디코딩 없음). `run()`과 마찬가지로
+  항상 명시적·비공백 시리얼 하나로만 범위가 고정됩니다.
+- `ldmanager.screenshot.capture_screenshot()`은 캡처된 바이트가 PNG
+  매직 헤더로 시작하는지 검사합니다. 러너 실패/빈 출력/손상된 바이트/
+  러너 예외는 모두 예외를 던지지 않고 `ScreenshotCaptureResult(ok=False,
+  error=...)`로 반환됩니다.
+- `ldmanager.coordinates.RelativeCoordinate`는 `[0.0, 1.0]` 범위의
+  기기-내부 상대 좌표만 허용합니다(생성 시점에 즉시 검증 — 잘못된 좌표는
+  객체조차 만들어지지 않음). `ScreenSize` + `build_tap_args()`가 이를
+  `shell input tap <x> <y>` 인자로 변환합니다. **전역 데스크톱 마우스나
+  고정된 외부 좌표 개념은 어디에도 없습니다.**
+- `ldmanager.guarded_touch.perform_guarded_touch()`가 가드 계약을
+  구현합니다:
+  `캡처 → 사전조건 훅 → (수락 시에만) 시리얼 하나에 정확히 한 번 터치
+  → 캡처 → 사후조건 훅`.
+  사전조건이 거짓/예외이거나, 캡처가 끝내 실패/손상 상태면 **터치는 전혀
+  전송되지 않습니다.** 터치 이후 사후조건이 거짓/예외/캡처실패로
+  끝나도 **터치를 반복 전송하지 않습니다** — 캡처/검증 재시도만
+  `max_capture_attempts`/`max_postcondition_attempts`로 상한이 걸린 채
+  반복되고, 결과는 항상 계정 로컬의 구조화된 `GuardedTouchResult`로
+  반환됩니다(예외 전파 없음).
+- 이 계층 어디에도 OCR, 이미지 템플릿 매칭, 미션/게임 로직, GUI, 로그인/
+  재연결, 전역 마우스 제어는 구현되어 있지 않습니다 — "정확히 지정된
+  시리얼에 정확히 하나의 좌표로 하나의 탭을 보낼지 말지 결정하는" 골격
+  까지만입니다.
+- 이번 단계도 전부 페이크 러너로만 검증되었습니다 — 실제 `adb`/실제
+  LDPlayer 화면으로 시험된 바 없습니다.
