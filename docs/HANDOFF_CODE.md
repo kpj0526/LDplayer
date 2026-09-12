@@ -1489,3 +1489,242 @@ no stray files.
   empty across a Refresh/Save/Clear sequence in the automated suite
   (already asserted by `test_save_and_clear_never_tap_or_start_a_worker`
   — QA may want to reproduce manually too).
+
+---
+
+## REL-0.1.0-PKG-01: packaged distribution had no first-run configs
+
+**Release defect packet REL-0.1.0-PKG-01.** Manager verified the
+published ZIP contained `ldmanager.exe`/`_internal` but no `configs/`
+files; since `app.py` requires `configs/config.yaml` +
+`configs/bounty.yaml` to start, a customer extracting the ZIP and
+double-clicking the exe got a console error and no GUI at all — not
+launchable "out of the box." Fixed in the same Code worktree, on top
+of clean `817183b`.
+
+**Status: implemented and verified (including an actual built-exe
+launch). Not tagged/pushed/published** — per this packet and the prior
+REL-0.1.0 packet, Manager handles release integration.
+
+### Fix: two complementary layers
+
+1. **App-safe first-run bootstrap** (`src/ldmanager/bootstrap.py`,
+   new) — `main()` now calls `bootstrap_default_configs()` before
+   `build_controller()`. It creates `configs/config.yaml` from
+   `configs/config.example.yaml`, and `configs/bounty.yaml` from
+   `configs/bounty.example.yaml`, **only when the real file doesn't
+   already exist** — it never overwrites an existing (possibly
+   user-edited/already-registered) config. Every copied `adb_mapping`
+   entry is `null` (nothing guessed); neither example file contains a
+   credential (both already pass `config.py`'s/`bounty_config.py`'s
+   own sensitive-key rejection, unmodified, before and after the
+   copy). The example *source* files are located next to the running
+   executable (`sys.executable`'s directory when frozen, via
+   `app_base_dir()`) so they're found regardless of the process's
+   working directory; the *target* location still uses the existing,
+   unmodified `resolve_config_path()`/`resolve_bounty_config_path()`
+   (CWD/env-var-based) so bootstrap and the normal config loader always
+   agree on where the file lives.
+2. **Packaging fix** (`scripts/build_windows.ps1`) — after PyInstaller
+   finishes, the script now copies `configs/config.example.yaml`,
+   `configs/bounty.example.yaml`, and the whole `templates/` folder
+   into `dist/ldmanager/` (siblings of `ldmanager.exe`), and generates
+   `dist/ldmanager/README_FIRST_RUN.txt`. This is what actually makes
+   the bootstrap step above have something to bootstrap *from* once
+   the exe is run outside this dev environment (a ZIP of
+   `dist/ldmanager/` is now self-contained). Only `*.example.yaml` is
+   ever copied — never a real, possibly-filled-in local `config.yaml`/
+   `bounty.yaml` from the developer's own machine (guarded by
+   `tests/test_release_packaging.py`).
+
+### Actual files changed/added
+
+```
+ New source (src/ldmanager/):
+   bootstrap.py   (app_base_dir(), bootstrap_default_configs())
+
+ Modified source:
+   app.py   (main() calls bootstrap_default_configs() first; prints
+             its messages; otherwise unchanged)
+
+ New tests:
+   test_bootstrap.py (11): app_base_dir() frozen/unfrozen, creates both
+   configs from examples, all-null adb_mapping, no sensitive key
+   (verified via a real load_config() call, not text scanning),
+   byte-identical to source examples, never overwrites an existing
+   config.yaml/bounty.yaml (both directions), leaves the other file
+   alone when only one is missing, safe no-op when no example is
+   bundled, safe no-op (empty message list) on a second run.
+   test_release_packaging.py (7): build script exists and references
+   both example files + templates + $DistRoot\configs/\templates,
+   build script never copies a bare (non-.example) config, build
+   script generates the first-run README, source example configs/
+   templates actually exist, RUN_GUIDE documents the bootstrap flow.
+
+ Modified tests:
+   test_app.py (+2 new tests; existing 3 fixed): ALL tests in this
+   file now `monkeypatch.chdir(tmp_path)` -- see "regression found"
+   below. New: first-run bootstrap -> build_controller() succeeds
+   end-to-end (simulates a freshly extracted ZIP using this repo's own
+   real example files copied into an isolated tmp_path); bootstrap
+   never disturbs an already-registered config.yaml.
+
+ Modified:
+   scripts/build_windows.ps1 (packages configs/*.example.yaml +
+   templates/ + generates README_FIRST_RUN.txt into dist/ldmanager/
+   after the PyInstaller step)
+   docs/RUN_GUIDE.md (rewrote §2 "Configure" to lead with bootstrap;
+   removed a duplicated "2a" block introduced while editing; expanded
+   §8 "Build" with the dist/ldmanager/ folder layout and bootstrap
+   behavior for the packaged exe)
+   docs/HANDOFF_CODE.md (this section)
+```
+
+Untouched: `config.py`, `bounty_config.py` (both reused unmodified by
+bootstrap.py), `discovery.py`, `config_mapping.py`, `gui.py`,
+`controller.py`, `mission.py`/`mission_config.py`, `bounty_mission.py`,
+`adb.py`, `logs.py`, `redaction.py`, `paths.py`, `diagnostics.py`,
+`screenshot.py`, `guarded_touch.py`, `coordinates.py`, `recognition.py`,
+`models.py`, `cli.py`, `scripts/run.bat`/`run.ps1`/`entrypoint.py`, all
+`configs/*.example.yaml` content, `templates/README.md` content.
+
+### Regression found and fixed during this packet (test isolation, not a product bug)
+
+While first running the full suite after adding bootstrap, two
+`test_app.py` tests started failing because bootstrap correctly found
+and copied **this actual repository's own real
+`configs/*.example.yaml`** (since those tests ran from the repo root
+with no `monkeypatch.chdir`, and `app_base_dir()` falls back to CWD
+when unfrozen) — one of those runs briefly left a real, untracked
+`configs/bounty.yaml` sitting in the actual repo working directory
+(git-ignored, so never at risk of being committed, but still a real
+on-disk side effect from a test run). Found, deleted, and fixed
+properly: every test in `test_app.py` now isolates `CWD` via
+`monkeypatch.chdir(tmp_path)`, which — as a welcome side effect — also
+closes a pre-existing, previously-undocumented gap from MVP-001/
+MVP-001-CV where `test_build_controller_succeeds_with_valid_configs_and_covers_all_accounts`
+could leave real (empty) `logs/LD1..LD9/*.log` files in the repo root
+too (same root cause: an unmounted CWD default). Verified clean via
+`git status --short --ignored` after re-running the full suite
+multiple times post-fix.
+
+### Actual build + launch verification (this session)
+
+```
+scripts\build_windows.ps1
+```
+completed successfully. `dist\ldmanager\` afterward:
+```
+ldmanager.exe                        2,089,484 bytes
+_internal\...                        (PyInstaller runtime)
+configs\config.example.yaml          (template only)
+configs\bounty.example.yaml          (template only)
+templates\README.md
+README_FIRST_RUN.txt
+```
+No `configs\config.yaml`/`configs\bounty.yaml` shipped (as intended —
+only bootstrap, at first run, creates those).
+
+**Fresh-extraction launch test**: copied the entire `dist\ldmanager\`
+folder to a clean temp directory (`%TEMP%\ldmgr_zip_sim_pkg01`,
+containing only what a customer's extracted ZIP would have — no
+pre-existing `config.yaml`/`bounty.yaml`), then launched
+`ldmanager.exe` from that folder via `Start-Process` (tracked by exact
+PID, not an image-name kill):
+
+- Process was **still running 4 seconds later**, with
+  `MainWindowTitle = 'ldmanager (MVP)'` — direct confirmation the GUI
+  window actually opened, not just that the process didn't crash.
+- `configs\config.yaml` and `configs\bounty.yaml` were both freshly
+  created by bootstrap.
+- `configs\config.yaml`'s `adb_mapping` verified to have **all nine
+  entries (`LD1`..`LD9`) as `null`** — no ADB workers/taps were ever
+  possible since nothing was mapped, satisfying "no real ADB/workers."
+- Cleanly terminated via `Stop-Process -Id <PID> -Force`; confirmed
+  gone via `Get-Process`/`tasklist` afterward — no lingering process.
+- Temp simulation directory removed afterward.
+
+A second, complementary live-exe check (pre-seed an already-registered
+`config.yaml`, launch, confirm it's byte-unchanged after) was started
+but hit an environment/tooling path-permission error unrelated to
+ldmanager itself (a `Remove-Item`/protected-path guard in this
+session's sandbox) partway through and was not completed within this
+session's time budget, per an explicit user instruction to stop
+further live-exe verification once the primary fresh-extraction
+evidence was judged sufficient. The "never overwrite an existing
+config" guarantee is still verified — just at the automated-test level
+rather than an additional live-exe run: `test_bootstrap.py`'s
+`test_bootstrap_never_overwrites_an_existing_config`/
+`..._bounty_config`/`..._leaves_config_untouched_when_only_bounty_is_missing`,
+plus `test_app.py`'s
+`test_bootstrap_does_not_disturb_an_already_registered_config`.
+
+### Full test command / result
+
+```
+.venv\Scripts\python.exe -m pytest -v
+```
+
+Result: **286 passed**, 0 failed, 0 skipped (266 prior [UI-ADB-001 +
+everything before it] + 20 new/changed: 11 in `test_bootstrap.py` + 7
+in `test_release_packaging.py` + 2 new in `test_app.py`). `git status
+--short --ignored` confirmed no stray files in the repo after the
+suite run, the build, and both live-exe checks.
+
+### Commit(s)
+
+- `58eefc1` — "REL-0.1.0-PKG-01: bootstrap first-run configs, fix ZIP
+  packaging" (branch `kpj0526/Code`, on top of clean `817183b`). This
+  HANDOFF hash-record update is the follow-up commit immediately after
+  it. Not tagged, not pushed, not published.
+
+### Build artifact (this session)
+
+- Path: `dist\ldmanager\ldmanager.exe` (plus `_internal\`,
+  `configs\*.example.yaml`, `templates\`, `README_FIRST_RUN.txt` —
+  all siblings, forming the full ZIP-ready `dist\ldmanager\` folder)
+- Size: 2,089,484 bytes
+- SHA-256: `959efc305eae22721b6374de23da8f21d4978ae06578dc8bc4b645afd0c9b5e5`
+- `dist\`/`build\`/`*.spec` remain git-ignored, as before — this
+  artifact is not part of the commit.
+
+### Limitations
+
+1. **CWD-dependence for a non-standard launch remains** (documented,
+   not fixed — same underlying design as `resolve_config_path()`
+   throughout the project): bootstrap always finds the bundled
+   `*.example.yaml` files next to the exe, but creates
+   `configs/config.yaml`/`configs/bounty.yaml` relative to the
+   process's *working directory*. For the standard double-click launch
+   these are the same folder. A shortcut with a custom "Start in"
+   folder, or a command-line launch from elsewhere, would create the
+   config there instead — still self-consistent (bootstrap and the app
+   always agree), just not necessarily inside the exe's own folder.
+2. **The "existing config untouched" guarantee was not re-confirmed
+   against the real built exe in this session** (see above) — only at
+   the automated-test level. Recommended as a QA follow-up if a fully
+   live confirmation is wanted.
+3. **No credential ever flows through bootstrap** by construction (it
+   only copies two already-credential-free example files), but this
+   also means bootstrap does nothing to help a user who needs to
+   supply *real* ADB serials — that's still the GUI's
+   Refresh/Save/Clear flow (UI-ADB-001), unchanged by this packet.
+4. All limitations recorded in every prior TP-00x/RW-0x/MVP-001/
+   MVP-001-CV/UI-ADB-001 section of this document remain valid and are
+   not superseded by REL-0.1.0-PKG-01.
+
+### QA focus points
+
+- Extract `dist\ldmanager\` (or a ZIP of it) to a clean machine/folder
+  with nothing pre-existing, double-click `ldmanager.exe`, confirm the
+  GUI opens with no console/terminal interaction and every account
+  shows unmapped/Start-disabled.
+- Confirm `configs\config.yaml`/`configs\bounty.yaml` appear next to
+  the exe after that first run, with `adb_mapping` all `null`.
+- Re-run the exe a second time after registering an account (via
+  UI-ADB-001's Save) and confirm that registration is still present —
+  i.e., confirm the "never overwrite" guarantee end-to-end from a QA
+  seat, closing the one live-exe check not completed in this session.
+- Confirm no ADB tap/worker start occurs merely from launching the exe
+  fresh (only Refresh/Save/Start, all user-initiated, should ever touch
+  ADB or a worker) — consistent with prior packets' same requirement.

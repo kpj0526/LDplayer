@@ -22,6 +22,14 @@ This is the only module that constructs a *real* SubprocessAdbRunner
 and starts the Tk event loop. ``tkinter`` is imported lazily inside
 :func:`main` so this module (and :func:`build_controller`) can still be
 imported in a headless/test context without requiring a display.
+
+As of REL-0.1.0-PKG-01, :func:`main` also runs
+:func:`ldmanager.bootstrap.bootstrap_default_configs` before anything
+else, so a freshly extracted packaged distribution (which ships
+``configs/*.example.yaml`` next to the executable but no real config)
+opens the GUI on first launch instead of failing with a "config not
+found" console error — see ``ldmanager/bootstrap.py`` for exactly what
+it does and does not touch (never overwrites an existing config).
 """
 
 from __future__ import annotations
@@ -31,6 +39,7 @@ import time
 from typing import Dict
 
 from .adb import SubprocessAdbRunner
+from .bootstrap import bootstrap_default_configs
 from .bounty_config import BountyConfigError, load_bounty_config
 from .bounty_mission import run_one_cycle
 from .config import ConfigError, load_config, resolve_config_path
@@ -93,7 +102,11 @@ def build_controller() -> AccountController:
 
 
 def main() -> int:
-    """Real entry point: build the controller, launch the GUI, block."""
+    """Real entry point: bootstrap first-run configs, build the
+    controller, launch the GUI, block."""
+
+    for message in bootstrap_default_configs():
+        print(message)
 
     try:
         controller = build_controller()
