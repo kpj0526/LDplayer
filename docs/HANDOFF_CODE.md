@@ -539,8 +539,9 @@ monkeypatch로 대체해 실제 `adb` 바이너리를 호출하지 않음).
 
 - 이전(Stage 2 PASS 확인 대상): `d8a6fcd`/`9f54d24` (TP-001-RW-03, QA PASS
   보고 `2529a1a`가 참조한 것으로 보이는 최신 상태)
-- 이번 stage 3 커밋: 커밋 직후 확정되는 해시를 아래 갱신 커밋 및 사용자
-  응답에 정확히 기록함(플레이스홀더 미사용 원칙 유지).
+- 이번 stage 3 커밋: `ffaa3ec` — "TP-002 stage 3: LD1-LD9 discovery +
+  explicit ADB mapping validation" (브랜치 `kpj0526/Code`). 본 문서의
+  해시 기록 갱신은 그 뒤의 후속 커밋.
 
 ### 한계 (Limitations)
 
