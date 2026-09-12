@@ -1,0 +1,71 @@
+# ldmanager mission-cycle configuration (MVP-001)
+#
+# EVERY value below is a PLACEHOLDER example, not a calibrated real
+# value. Nothing in this project infers or guesses a ROI/coordinate/
+# resolution for you -- see docs/REAL_CAPTURE_CHECKLIST.md for how to
+# replace these with values measured against your actual game/device
+# before relying on this for anything real.
+#
+# Copy this file to configs/mission.yaml (git-ignored) and edit it.
+# LDMANAGER_MISSION_CONFIG can point to a different path instead.
+
+# The phrase/label the slot recognizer is looking for. This MVP ships
+# only a PlaceholderRecognizer that never actually matches anything
+# (see src/ldmanager/recognition.py) -- this value is wired through but
+# has no real effect until a real recognizer is implemented.
+target_label: "REPLACE_WITH_REAL_TARGET_PHRASE"
+
+# Where template/reference assets for a future real recognizer would
+# live. Nothing reads from this directory yet.
+templates_dir: templates
+
+# Minimum confidence a real recognizer would need to report a match.
+threshold: 0.8
+
+# The device's screen resolution in pixels. Every x/y/width/height below
+# is a FRACTION of this size, never an absolute desktop coordinate.
+# Find your real value with: adb -s <serial> shell wm size
+screen_size:
+  width: 960
+  height: 540
+
+# Exactly 5 slot regions (one per mission slot), each a rectangle as a
+# fraction of the screen: {x, y, width, height}, all in [0.0, 1.0].
+# These example values lay 5 equal slots out in a row near the top of
+# the screen -- replace with your own measured positions.
+slot_rois:
+  - {x: 0.05, y: 0.10, width: 0.15, height: 0.08}
+  - {x: 0.24, y: 0.10, width: 0.15, height: 0.08}
+  - {x: 0.43, y: 0.10, width: 0.15, height: 0.08}
+  - {x: 0.62, y: 0.10, width: 0.15, height: 0.08}
+  - {x: 0.81, y: 0.10, width: 0.15, height: 0.08}
+
+# Where to tap to reroll a slot when the target phrase is missing.
+reroll_point: {x: 0.50, y: 0.90}
+
+# Region + label used to confirm the "200 kills" condition before claiming.
+kill_check_roi: {x: 0.40, y: 0.02, width: 0.20, height: 0.06}
+kill_check_label: "200/200"
+
+# Where to tap to claim the reward once the kill-check is confirmed.
+claim_point: {x: 0.50, y: 0.70}
+
+# Region + label used to verify the claim actually happened.
+claimed_roi: {x: 0.40, y: 0.45, width: 0.20, height: 0.10}
+claimed_label: "claimed"
+
+# Where to tap to reset/start a new round after claiming.
+reset_point: {x: 0.50, y: 0.95}
+
+# Region + label used to verify the screen is ready for a new cycle.
+ready_roi: {x: 0.05, y: 0.10, width: 0.15, height: 0.08}
+ready_label: "ready"
+
+# Bounded retry/timeout policy -- every loop in the mission state
+# machine stops after this many attempts rather than looping forever.
+max_capture_attempts: 3
+max_reroll_attempts: 5
+max_kill_check_attempts: 10
+max_claim_verify_attempts: 3
+max_reset_verify_attempts: 3
+retry_delay_seconds: 1.0

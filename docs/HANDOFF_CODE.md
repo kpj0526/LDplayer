@@ -859,3 +859,258 @@ test_guarded_touch.py +15 = 54). 실행 후 `git status --short`로
       다음 단계 계획에 영향이 있는지 Manager와 사전 확인
 - [ ] 금지 항목(신규 에이전트/worktree/역할 생성, Manager 문서 수정,
       실제 게임 자동화, 병합)이 이번 단계에도 없는지 diff 재확인
+
+---
+
+## MVP-001: Runnable, configurable MVP
+
+**Manager task packet: MVP-001.** Starting point: Stage 4 (= TP-003)
+scope QA PASS `d69bc0b`, Code HEAD `efd3a2f`. Delivered as one
+connected commit series prioritizing a runnable flow over exhaustive
+refinement, reusing explicit-serial ADB / guarded capture-touch /
+config-log-diagnostic protections from prior stages.
+
+**Status: MVP scope delivered and self-tested only. No project AC
+PASS claim. Not merged.** Per the packet, QA will smoke-test only and
+label `MVP_SMOKE_PASS` / `MVP_SMOKE_FAIL` / `BLOCKED_REAL_ENVIRONMENT`
+— this section is not a claim of that outcome.
+
+### What was built
+
+| Requirement (packet) | Delivered as | Notes |
+|---|---|---|
+| Runnable Python app | `src/ldmanager/app.py` (`build_controller()` + `main()`) | Wires real config, real `SubprocessAdbRunner`, `PlaceholderRecognizer`, one worker per account, GUI |
+| Start script | `scripts/run.bat`, `scripts/run.ps1` | Both call `python -m ldmanager.app` (or the venv's python) |
+| PyInstaller Windows build script (or generated exe if practical) | `scripts/build_windows.ps1` + `scripts/entrypoint.py` | **Actually run in this session** — see "PyInstaller build" below |
+| Basic native GUI | `src/ldmanager/gui.py` (Tkinter, stdlib — no new GUI dependency) | LD1..LD9 panels + Start All/Stop All |
+| LD1-LD9 example config | `configs/config.example.yaml` (pre-existing, unchanged) + `configs/mission.example.yaml` (new) | adb_mapping still all-`null`; mission ROIs are explicit placeholder examples |
+| Templates folder | `templates/README.md` | Empty on purpose — no fabricated "success" assets |
+| ROI/relative-coordinate/threshold/retry-timeout config | `src/ldmanager/coordinates.py` (`RelativeRegion` added) + `src/ldmanager/mission_config.py` | All validated, none guessed |
+| Per-account logs/status | `logs.get_account_logger()` (reused) + `controller.AccountWorkerStatus` | Log reuse from Stage 2/RW-02/RW-03 unchanged |
+| Simple run guide | `docs/RUN_GUIDE.md` | Also summarized in README |
+| Actual-game-capture checklist | `docs/REAL_CAPTURE_CHECKLIST.md` | 8-section ordered checklist, nothing on it done yet |
+| Unimplemented/unverified list | `docs/MVP_UNVERIFIED.md` | Split by "by design" vs. "scope cut" vs. "not verified" |
+| Controller, one worker/account, individual+global start/stop, account-local state/error/log | `src/ldmanager/controller.py` (`AccountWorker`, `AccountController`) | Real `threading.Thread` + `threading.Event` per account |
+| 5-slot → 200-kill-check → claim → reset state machine | `src/ldmanager/mission.py` (`run_one_cycle`) | Reuses `guarded_touch.perform_guarded_touch` for claim/reset |
+| Configurable recognition abstraction, safe unknown/low-confidence | `src/ldmanager/recognition.py` (`Recognizer` protocol, `PlaceholderRecognizer`) | Always returns `UNKNOWN`/0.0 — never a hardcoded match |
+| GUI shows LD1-LD9 status/slot/targets/error/log + buttons | `gui.AccountPanel` | Polls `controller.all_statuses()` on a timer |
+
+### Requirement-by-requirement confirmation (mandatory behaviors)
+
+- **Explicit serial, no cross-account command**: every capture/touch still goes through `adb.validate_serial()` + `build_adb_command`/`capture_binary` (Stage 3/TP-003, unchanged). `mission.run_one_cycle` takes one `serial` and never touches another. Tested: `tests/test_mission.py`, plus all prior `tests/test_adb.py` argv-isolation tests (unchanged, still passing).
+- **Individual stop only local**: `AccountController.stop_account()` only calls that one worker's `stop()`; verified two independent real threads don't affect each other (`tests/test_controller.py::test_stopping_one_account_does_not_affect_another`).
+- **Global stop leaves no automatic touch**: `mission.run_one_cycle` checks `should_stop()` before every capture and every touch (`tests/test_mission.py::test_should_stop_true_from_start_sends_zero_touches`, `test_stop_requested_after_first_slot_halts_with_no_touches_needed`); at the worker/thread level, `tests/test_controller.py::test_global_stop_all_sends_no_further_touch_calls_after_settling` proves no growth in recorded "touch" calls after a joined `stop_all()`.
+- **Bounded retries/timeouts**: every mission-cycle loop (slot reroll, kill-check poll, claim/reset verification) is bounded by `MissionConfig`'s `max_*_attempts` fields — never unbounded. Tested directly (`test_recognition_never_matching_is_bounded_not_infinite`, `test_kill_check_never_matching_is_bounded_with_zero_touches`, plus the pre-existing `guarded_touch`/TP-003 bounded-retry tests, unchanged).
+- **Recognition failure/unknown has no infinite click**: with `PlaceholderRecognizer` (always `UNKNOWN`), a slot exhausts its bound and the cycle safely stops (`SLOT_RECOGNITION_FAILED`) instead of looping — same test as above.
+- **Worker exception containment**: `AccountWorker._loop` catches any exception from its cycle function, records it on that worker's own status, and never propagates — proven with one crashing worker + one normal worker running side by side (`tests/test_controller.py::test_worker_exception_is_contained_and_does_not_affect_other_workers`).
+- **Program starts and GUI can construct**: `tests/test_gui.py` constructs a real `LDManagerApp(controller)` (real `tk.Tk()`, confirmed working in this Windows dev environment) without calling `mainloop()`; `tests/test_app.py` proves `build_controller()`/`main()` work against real (temp) config files without touching real ADB or opening a window.
+- **Mock cycle reaches core states once**: `tests/test_mission.py::test_mock_cycle_reaches_all_core_states_once` runs one full cycle with a recognizer scripted to match every label, reaching all 5 slots + kill-check + claim + reset, `outcome == COMPLETED`, with exactly 2 touches total (claim + reset; no reroll needed).
+- **Faked/injected only, no real device/game/login/reconnect/global mouse/DOM/guessed port/credentials/security bypass**: confirmed by construction — every new test uses `FakeAdbRunner`/`LabelMappingRecognizer`/`PlaceholderRecognizer`; no new dependency touches a display, input device, or network; `SubprocessAdbRunner`/Tk are the only two things that talk to something real, and both are exercised as: (a) `SubprocessAdbRunner` with `subprocess.run` monkeypatched in tests (unchanged from TP-003), never invoked for real inside pytest; (b) Tk is real (a real window toolkit is unavoidable for "GUI can construct"), but no `mainloop()` is ever called by a test.
+
+### Actual files changed/added
+
+```
+ New source (src/ldmanager/):
+   recognition.py       (Recognizer protocol + PlaceholderRecognizer)
+   mission_config.py    (MissionConfig + YAML loader, validated)
+   mission.py            (5-slot -> kill-check -> claim -> reset state machine)
+   controller.py         (AccountWorker + AccountController)
+   gui.py                 (Tkinter GUI)
+   app.py                  (real wiring + main())
+
+ Modified source:
+   coordinates.py         (+ RelativeRegion, + to_pixel_rect)
+
+ New tests:
+   test_recognition.py (3), test_mission_config.py (13), test_mission.py (8),
+   test_controller.py (8), test_gui.py (5), test_app.py (3)
+
+ Modified tests:
+   fakes.py               (+ LabelMappingRecognizer)
+   test_coordinates.py    (+12: RelativeRegion/to_pixel_rect coverage)
+   test_gitignore.py      (+5: mission.yaml / mission.example.yaml / PyInstaller artifacts)
+
+ New config/assets:
+   configs/mission.example.yaml
+   templates/README.md
+
+ New scripts:
+   scripts/run.bat, scripts/run.ps1
+   scripts/build_windows.ps1
+   scripts/entrypoint.py  (PyInstaller-safe absolute-import launcher; see below)
+
+ New docs:
+   docs/RUN_GUIDE.md
+   docs/REAL_CAPTURE_CHECKLIST.md
+   docs/MVP_UNVERIFIED.md
+
+ Modified:
+   .gitignore   (+ configs/mission.yaml, + *.spec; build/ and dist/ already ignored)
+   pyproject.toml (+ [project.optional-dependencies].build = ["pyinstaller>=6.0"])
+   README.md    (MVP-001 banner, Quick Start, project structure, new "실행 가능한 MVP" section)
+   docs/HANDOFF_CODE.md (this section)
+```
+
+Untouched (regression preserved): `adb.py` (unchanged from TP-003 except
+already-covered prior sections), `config.py`, `logs.py`, `redaction.py`,
+`paths.py`, `diagnostics.py`, `discovery.py`, `screenshot.py`,
+`guarded_touch.py`, `models.py`, `cli.py`.
+
+### PyInstaller build (actually run this session, not merely scripted)
+
+A real build was executed and smoke-tested in this dev environment:
+
+```
+.venv\Scripts\python.exe -m pip install -e ".[build]"       # pyinstaller 6.22.2
+.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --name ldmanager \
+    --windowed --paths src scripts\entrypoint.py
+```
+
+**First attempt failed** pointing PyInstaller directly at
+`src/ldmanager/app.py`: `ImportError: attempted relative import with no
+known parent package` (PyInstaller runs the target script as `__main__`
+with no package context, breaking `app.py`'s `from .config import ...`
+style imports). **Fixed** by adding `scripts/entrypoint.py` — a tiny
+non-package wrapper that does `from ldmanager.app import main` (absolute
+import, works frozen or unfrozen) — and pointing the build at that
+instead. `scripts/build_windows.ps1` was updated to match.
+
+Rebuilt successfully: `dist\ldmanager\ldmanager.exe` (~1.6 MB
+bootstrap + `_internal\`). **Smoke-tested** by running the exe from an
+empty directory (no `configs/config.yaml` present):
+
+```
+exit=1
+Cannot start ldmanager: Config file not found: ...\configs\config.yaml. ...
+```
+
+— confirms the packaged exe's config-missing error path works exactly
+like the unfrozen app, exits cleanly (no hang, no crash dialog), and no
+window was left open (verified via `tasklist`/`taskkill` — a first,
+accidental hung-window run during debugging was killed immediately;
+see Limitations). **The "launch with a valid config and see the real
+GUI window" path was deliberately not exercised from the built exe** in
+this session, to avoid opening an uncontrolled on-screen window on the
+host machine — that path is instead covered by `tests/test_gui.py`/
+`tests/test_app.py` against the unfrozen app.
+
+### Full test command / result
+
+```
+.venv\Scripts\python.exe -m pytest -v
+```
+
+Result: **216 passed**, 0 failed, 0 skipped (159 prior [Stage 1-3 +
+RW-01..RW-03] + 57 new/changed this MVP: 40 in six new test files +
+12 in `test_coordinates.py` + 5 in `test_gitignore.py`). Re-run 8x
+consecutively during development to rule out the GUI-construction
+flakiness described below (all 8 runs: 216/216 passed). `git status
+--short` confirmed no stray files (`build/`, `dist/`, `logs/`,
+`diagnostics/` all correctly git-ignored) after both the test run and
+the PyInstaller build.
+
+A real, reproducible flakiness was found and fixed during this session
+(not a product bug, a test-fixture bug): `tests/test_gui.py` originally
+created a fresh `tk.Tk()` root per test (function-scoped fixture);
+constructing/destroying multiple Tk roots in quick succession within
+one process intermittently raised `_tkinter.TclError` from Tcl/ttk
+theme re-initialization. Fixed by making the fixture module-scoped (one
+shared root for the whole file) — confirmed stable across 8 consecutive
+full-suite runs after the fix.
+
+### Commit(s)
+
+This MVP is delivered as one connected commit series on `kpj0526/Code`
+(no merge). Exact hash(es) are recorded in the follow-up "docs:" commit
+immediately after this one, per this repo's established pattern —
+see the top of this HANDOFF entry's git history, or `git log --oneline
+-5` at delivery time. Report to Manager/QA will quote the exact hash(es)
+directly.
+
+### Limitations
+
+1. **Recognition is entirely a placeholder.** `PlaceholderRecognizer`
+   never analyzes pixels; every recognition call returns `UNKNOWN`/0.0.
+   Against a real screen, every mission cycle will exhaust its slot
+   reroll bound and stop with `slot_recognition_failed` — this is the
+   *intended* safe behavior of this MVP, not a bug, but it means **no
+   real gameplay progress is possible until a real recognizer is
+   implemented** (see `docs/REAL_CAPTURE_CHECKLIST.md` §4).
+2. **`mission.example.yaml`'s ROIs/coordinates are illustrative, not
+   calibrated.** They were never measured against a real screenshot.
+3. **No automatic screen-resolution discovery.** `screen_size` is
+   entered by hand; nothing runs `adb shell wm size` automatically.
+4. **PyInstaller build verified only for the "config missing" error
+   path**, not for successfully opening the real GUI window from the
+   frozen exe (see above — deliberately not exercised to avoid an
+   uncontrolled on-screen window during this session). The build is
+   also only verified on this one dev machine, not on a clean end-user
+   Windows install, and not as a fully offline-portable artifact.
+5. **A real GUI window was briefly, unintentionally left open** during
+   PyInstaller debugging (the first, broken build attempt actually
+   crashed with an ImportError as designed — but a stray `ldmanager.exe`
+   process was observed running past a 30s timeout during that same
+   investigation and was force-closed via `taskkill` before it could be
+   confirmed whether a visible window had actually appeared on screen).
+   No further build/run attempt in this session left a process running
+   — every subsequent invocation was verified to exit and confirmed
+   absent via `tasklist` immediately after. Documented here in the
+   interest of not hiding an imperfect step, even though the final
+   delivered state has no lingering process.
+6. **Idle delay between cycles is fixed (`DEFAULT_IDLE_DELAY_SECONDS =
+   1.0`), not configurable via YAML yet.** Only mission-cycle retry/
+   timeout bounds are in `mission.yaml`; the worker's own inter-cycle
+   pacing is a Python constant in `app.py`.
+7. **No diagnostic screenshot capture is wired into the mission cycle**
+   — captures happen only transiently in memory for recognition; the
+   pre-existing `diagnostics.py` path/metadata planning from an earlier
+   stage is not connected to `mission.py`.
+8. **GUI has no settings editor, no log viewer beyond one recent line
+   per panel, no persistence of status across restarts.**
+9. All limitations recorded in every prior TP-00x/RW-0x section of this
+   document remain valid and are not superseded by MVP-001.
+
+See `docs/MVP_UNVERIFIED.md` for the complete, categorized list (by
+design / scope cut / not verified) and `docs/REAL_CAPTURE_CHECKLIST.md`
+for the ordered path from here to something that could touch a real
+game.
+
+### Focused QA smoke instructions
+
+QA is smoke-testing only per the packet (label
+`MVP_SMOKE_PASS`/`MVP_SMOKE_FAIL`/`BLOCKED_REAL_ENVIRONMENT`; no AC
+claims). Suggested minimal smoke path:
+
+1. `pip install -e ".[dev]"` then `pytest` — expect 216 passed, 0
+   failed. Re-run once or twice if any `tkinter`/`ttk` error appears in
+   `test_gui.py` (see Limitations/flakiness note above — should be
+   fixed, but this environment's Tk behavior may differ).
+2. Copy both example configs (`configs/config.example.yaml` →
+   `config.yaml`, `configs/mission.example.yaml` → `mission.yaml`);
+   leaving `adb_mapping` all `null` is fine for this smoke check.
+3. Run `python -m ldmanager.app` (or `scripts\run.bat`). Expect: a
+   window opens showing 9 panels (LD1..LD9) plus Start All/Stop All,
+   each panel showing "stopped" with Start/Stop buttons. Close the
+   window normally.
+4. Click **Start** on one panel. Expect: status flips to "running",
+   and — because `adb_mapping` is unset/`PlaceholderRecognizer` never
+   matches — within a few seconds the status should show an error
+   (blank-serial `ValueError`, contained) or a `slot_recognition_failed`
+   outcome, **never** a hang or a crash of the whole window. Click
+   **Stop** on that same panel; confirm it stops without affecting the
+   other 8 (still "stopped", untouched).
+5. Optionally: run `scripts\build_windows.ps1`, then run the resulting
+   `dist\ldmanager\ldmanager.exe` from a directory **with no
+   `configs/config.yaml`** and confirm it exits promptly (code 1) with
+   a clear stderr message rather than hanging or crashing silently
+   (mirrors step 3.1 of this session's own verification above).
+6. Confirm no real ADB/LDPlayer/game/login/global-mouse/DOM/credential
+   code exists by spot-checking `src/ldmanager/` for any of those
+   concepts (there should be none — grep for `pyautogui`, `pynput`,
+   `selenium`, `requests`, `socket`, `password`, `token` outside of the
+   existing redaction/config-rejection code, and find nothing new).
+
+If step 3/4 cannot be exercised in the QA environment (no display, no
+`adb`, etc.), that is exactly the `BLOCKED_REAL_ENVIRONMENT` case the
+packet anticipates — steps 1 and 6 (and reading this HANDOFF section)
+should still be possible anywhere.

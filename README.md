@@ -2,12 +2,17 @@
 
 `ldmanager` — LDPlayer 다중 계정(LD1~LD9) 관리 도구.
 
-> **현재 단계: TP-003 — 계정별 ADB 스크린샷 캡처 + 가드된 상대 좌표
-> 터치 기반(foundation).**
-> 이것은 게임 자동화가 아닙니다. OCR/템플릿 매칭/미션 로직/GUI/로그인·
-> 재연결/전역 마우스/웹 DOM/자격증명 저장은 이 프로젝트 어디에도
-> 구현되어 있지 않습니다. 실제 LDPlayer/실제 ADB 장치를 이용한 통합
-> 검증도 수행되지 않았습니다(페이크 러너 기반 자동 테스트만 실행함).
+> **현재 단계: MVP-001 — 실행 가능한, 설정 기반 MVP.**
+> GUI로 LD1~LD9 계정을 개별/전체 시작·정지할 수 있고, 각 계정이 5-슬롯
+> → 200킬 체크 → 보상 수령 → 리셋 미션 사이클을 반복합니다. 인식(OCR/
+> 템플릿)은 **실제로 구현되어 있지 않은 안전한 자리표시자**이며 항상
+> "인식 안 됨"을 반환합니다 — 게임 자동화가 아니라 안전한 실행 가능
+> 골격입니다. 실제 LDPlayer/실제 ADB로는 검증되지 않았습니다(전부
+> 페이크/주입 러너 기반 자동 테스트로만 검증). 빠른 실행법은
+> [`docs/RUN_GUIDE.md`](docs/RUN_GUIDE.md), 실제 게임에 연결하기 전에
+> 해야 할 일은 [`docs/REAL_CAPTURE_CHECKLIST.md`](docs/REAL_CAPTURE_CHECKLIST.md),
+> 미구현/미검증 전체 목록은 [`docs/MVP_UNVERIFIED.md`](docs/MVP_UNVERIFIED.md)
+> 참고.
 
 ## 요구 사항
 
@@ -45,13 +50,24 @@ pip install -e ".[dev]"
    ensure_complete_adb_mapping()`), 누락/중복/9개가 아닌 구성은 ADB를
    호출하기 전에 거부됩니다.
 
+## 빠른 실행 (MVP-001)
+
+```bash
+# configs/config.yaml, configs/mission.yaml 준비 후
+python -m ldmanager.app
+# 또는 Windows에서: scripts\run.bat  /  scripts\run.ps1
+```
+
+자세한 단계별 안내는 [`docs/RUN_GUIDE.md`](docs/RUN_GUIDE.md) 참고.
+Windows 실행 파일 빌드는 `scripts\build_windows.ps1`(PyInstaller).
+
 ## 테스트 실행
 
 ```bash
 pytest
 ```
 
-## 골격 CLI 실행 (참고용)
+## 골격 CLI 실행 (참고용, stage 1부터 존재 — MVP 컨트롤러와 무관)
 
 ```bash
 python -m ldmanager.cli
@@ -59,7 +75,8 @@ python -m ldmanager.cli
 
 설정 파일이 없으면 에러 메시지만 안내하고, 기본 계정 레지스트리
 (LD1~LD9, 상태는 모두 `UNKNOWN`)를 출력합니다. 실제 자동화 동작은
-수행하지 않습니다.
+수행하지 않습니다. MVP GUI/컨트롤러를 실행하려면 위 "빠른 실행" 절의
+`python -m ldmanager.app`을 사용하세요.
 
 ## 프로젝트 구조
 
@@ -81,9 +98,25 @@ src/ldmanager/
   screenshot.py   # 계정별 스크린샷 바이너리 캡처 + PNG 바이트 검증
   guarded_touch.py  # 캡처→사전조건→단일 터치→캡처→사후조건 가드 상태
                     # 머신 (게임 자동화 아님, OCR/템플릿/미션 없음)
-  cli.py          # 최소 CLI 진입점 (실제 자동화 없음)
+  recognition.py  # Recognizer 인터페이스 + PlaceholderRecognizer(항상
+                  # unknown — 실제 OCR/템플릿 매칭 미구현)
+  mission_config.py  # 미션 사이클 ROI/좌표/threshold/재시도/타임아웃
+                      # 설정 로딩(mission.yaml, adb_mapping과 별도)
+  mission.py      # 5-슬롯→200킬 체크→보상→리셋 상태 머신(가드/재시도
+                  # 상한, 게임 로직 없음)
+  controller.py   # 계정별 독립 취소 가능 워커 + 컨트롤러(개별/전체
+                  # 시작·정지, 예외 격리)
+  gui.py          # Tkinter 기반 LD1~LD9 상태/버튼 GUI
+  app.py          # 실행 진입점(config+mission_config+controller+GUI 연결)
+  cli.py          # 최소 CLI 진입점 (stage 1, MVP 컨트롤러와 별개)
 configs/
-  config.example.yaml  # adb_mapping / logging / diagnostics 템플릿
+  config.example.yaml   # adb_mapping / logging / diagnostics 템플릿
+  mission.example.yaml  # ROI/좌표/threshold/재시도/타임아웃 템플릿
+templates/
+  README.md       # 자리표시자 안내(실제 템플릿 자산 없음)
+scripts/
+  run.bat / run.ps1        # 시작 스크립트
+  build_windows.ps1        # PyInstaller Windows 빌드 스크립트
 tests/
   test_models.py
   test_config.py
@@ -97,9 +130,19 @@ tests/
   test_coordinates.py
   test_screenshot.py
   test_guarded_touch.py
-  fakes.py        # FakeAdbRunner/BrokenAdbRunner/ExceptionRaisingCaptureRunner
+  test_recognition.py
+  test_mission_config.py
+  test_mission.py
+  test_controller.py
+  test_gui.py
+  test_app.py
+  fakes.py        # FakeAdbRunner/BrokenAdbRunner/ExceptionRaisingCaptureRunner/
+                  # LabelMappingRecognizer
 docs/
-  HANDOFF_CODE.md  # 단계별 구현/테스트 인수인계 기록
+  HANDOFF_CODE.md          # 단계별 구현/테스트 인수인계 기록
+  RUN_GUIDE.md             # 간단 실행 가이드
+  REAL_CAPTURE_CHECKLIST.md  # 실제 게임 연결 전 체크리스트
+  MVP_UNVERIFIED.md        # 미구현/미검증 목록
 ```
 
 ## 로그 / 진단 스크린샷 (stage 2)
@@ -167,3 +210,42 @@ docs/
   까지만입니다.
 - 이번 단계도 전부 페이크 러너로만 검증되었습니다 — 실제 `adb`/실제
   LDPlayer 화면으로 시험된 바 없습니다.
+
+## 실행 가능한 MVP (MVP-001)
+
+- **컨트롤러/워커** (`controller.py`): 계정(LD1~LD9)마다 독립적인
+  취소 가능 백그라운드 스레드(`AccountWorker`)를 하나씩 가집니다.
+  개별 시작/정지(`start_account`/`stop_account`)와 전체 시작/정지
+  (`start_all`/`stop_all`)를 지원하며, 한 계정을 정지해도 다른 계정에는
+  전혀 영향이 없습니다. 워커 내부에서 예외가 발생해도 그 계정의
+  `last_error`로만 남고 다른 워커나 컨트롤러 전체에는 전파되지
+  않습니다.
+- **미션 사이클** (`mission.py`): 5개 슬롯 각각에 대해 캡처→목표 문구
+  인식→(없으면) 리롤을 반복(상한 있음)하다가 찾으면 다음 슬롯으로
+  넘어갑니다. 5개를 모두 처리하면 200킬 체크(상한 있는 폴링, 터치 없음)
+  → 보상 수령(가드된 터치 재사용) → 리셋(가드된 터치 재사용) 순으로
+  진행하고, 호출자(워커)가 이 사이클을 반복 호출합니다.
+- **인식** (`recognition.py`): `Recognizer` 인터페이스 + 기본 구현
+  `PlaceholderRecognizer` — **실제 OCR/템플릿 매칭이 구현되어 있지
+  않으며, 항상 `UNKNOWN`/신뢰도 0을 반환**합니다. 성공을 하드코딩하지
+  않습니다. 실제 인식기로 교체하는 방법은
+  `docs/REAL_CAPTURE_CHECKLIST.md` 4절 참고.
+- **설정** (`mission_config.py`, `configs/mission.example.yaml`): 경로
+  (`templates_dir`)/ROI/좌표/threshold/재시도 횟수/타임아웃이 전부
+  YAML 설정값입니다 — 코드에 하드코딩된 값 없음.
+- **GUI** (`gui.py`): Tkinter(표준 라이브러리, 별도 의존성 없음) 기반.
+  LD1~LD9 9개 패널 + 전체 Start All/Stop All. 각 패널은 상태(running/
+  stopped)/현재 슬롯/사이클 수·마지막 결과/마지막 오류/최근 로그
+  한 줄과 Start/Stop 버튼을 보여줍니다.
+- **실행 진입점** (`app.py`, `scripts/run.bat`, `scripts/run.ps1`):
+  `python -m ldmanager.app`. 설정 파일이 없거나 잘못되면 GUI를 열지
+  않고 콘솔에 에러만 출력한 뒤 종료 코드 1로 끝납니다.
+- **Windows 실행 파일 빌드** (`scripts/build_windows.ps1`): PyInstaller로
+  `dist\ldmanager\ldmanager.exe`를 생성합니다. 이 세션에서 실제로
+  빌드/검증했는지는 `docs/HANDOFF_CODE.md`의 MVP-001 절을 참고하세요.
+
+**이것은 게임 자동화가 아닙니다.** 실제 인식이 구현되어 있지 않으므로
+실제 화면에 대해 실행하면 매 슬롯에서 상한까지 리롤을 시도하다가
+`slot_recognition_failed`로 안전하게 멈춥니다 — 이는 버그가 아니라
+설계된 안전 기본값입니다. 전체 미구현/미검증 목록은
+[`docs/MVP_UNVERIFIED.md`](docs/MVP_UNVERIFIED.md)를 참고하세요.

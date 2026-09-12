@@ -40,5 +40,18 @@ def test_config_example_yaml_is_not_ignored():
     assert not _is_ignored("configs/config.example.yaml")
 
 
+def test_mission_yaml_is_gitignored():
+    assert _is_ignored("configs/mission.yaml")
+
+
+def test_mission_example_yaml_is_not_ignored():
+    assert not _is_ignored("configs/mission.example.yaml")
+
+
+@pytest.mark.parametrize("relative_path", ["build/ldmanager/ldmanager.exe", "dist/ldmanager.exe", "ldmanager.spec"])
+def test_pyinstaller_build_artifacts_are_gitignored(relative_path):
+    assert _is_ignored(relative_path), f"{relative_path} should be git-ignored"
+
+
 def test_source_files_are_not_accidentally_ignored():
     assert not _is_ignored("src/ldmanager/logs.py")
