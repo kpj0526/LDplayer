@@ -156,3 +156,53 @@ def test_non_sensitive_messages_are_unaffected_by_redaction(tmp_path):
     text = task_log_path(settings, AccountId.LD9).read_text(encoding="utf-8")
     assert "account LD9 transitioned to state=online" in text
     assert "REDACTED" not in text
+
+
+# --- TP-001-RW-03: exc_info/traceback redaction regression coverage -----
+
+
+def test_logger_exception_traceback_marker_absent_from_error_log(tmp_path):
+    """Reproduces the QA-reported failure: logger.exception() must not
+    leak a credential-shaped value via the formatted traceback."""
+
+    settings = LoggingSettings(root_dir=tmp_path / "logs")
+    logger = get_account_logger(AccountId.LD1, settings, force=True)
+    marker = "Tb-ControlMarker-abc123"
+
+    try:
+        raise ValueError(f"login failed password={marker}")
+    except ValueError:
+        logger.exception("unexpected failure")
+    for handler in logger.handlers:
+        handler.flush()
+
+    text = error_log_path(settings, AccountId.LD1).read_text(encoding="utf-8")
+    assert marker not in text
+    assert "password=***REDACTED***" in text
+    # Normal error diagnostics (exception type, traceback framing,
+    # non-sensitive message) must still be present.
+    assert "ValueError" in text
+    assert "unexpected failure" in text
+    assert "Traceback (most recent call last)" in text
+
+
+def test_exc_info_marker_absent_from_task_log_when_logged_below_error(tmp_path):
+    """exc_info=True can be passed at INFO level too (handled, non-fatal
+    case) -- the task.log path through the same filter must redact it."""
+
+    settings = LoggingSettings(root_dir=tmp_path / "logs")
+    logger = get_account_logger(AccountId.LD2, settings, force=True)
+    marker = "Tb-ControlMarker-def456"
+
+    try:
+        raise RuntimeError(f"token={marker}")
+    except RuntimeError:
+        logger.info("handled non-fatal issue", exc_info=True)
+    for handler in logger.handlers:
+        handler.flush()
+
+    text = task_log_path(settings, AccountId.LD2).read_text(encoding="utf-8")
+    assert marker not in text
+    assert "token=***REDACTED***" in text
+    assert "RuntimeError" in text
+    assert "handled non-fatal issue" in text

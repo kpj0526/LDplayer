@@ -2,11 +2,13 @@
 
 Scope: file layout, rotation, and a retention (purge) policy for LD1~LD9
 task/error logs. A credential-shaped value (password/token/api key/
-authorization/cookie) passed into a log call — whether embedded in the
-format string or passed as a ``%``-style argument — is redacted by
+authorization/cookie) is redacted by
 :func:`ldmanager.redaction.redact_sensitive_text` *before* the record
 reaches any handler, so the literal value is never written to
-task.log/error.log. No ADB/LDPlayer/game interaction happens here.
+task.log/error.log — whether it came from the format string, a
+``%``-style argument, or (TP-001-RW-03) an exception message/traceback
+passed via ``exc_info``/``logger.exception()``. No ADB/LDPlayer/game
+interaction happens here.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from __future__ import annotations
 import logging
 import logging.handlers
 import time
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -60,11 +63,25 @@ class SensitiveDataRedactionFilter(logging.Filter):
 
     Attached directly to the per-account *logger* (not to a handler), so
     it runs once in :meth:`logging.Logger.handle` — before the record is
-    dispatched to either the task or error handler. Renders the message
-    (``msg % args``) first so a secret passed as a positional argument
-    (e.g. ``logger.info("password=%s", value)``) is caught too, then
-    clears ``args`` so a handler's own formatting can't re-expose the
-    original value.
+    dispatched to either the task or error handler.
+
+    Three independent surfaces are covered, since any of them can carry
+    a secret into a written log line:
+
+    * The rendered message (``msg % args``) — catches a secret embedded
+      in the format string *or* passed as a ``%``-style argument (e.g.
+      ``logger.info("password=%s", value)``). ``args`` is cleared
+      afterwards so a handler's own formatting can't re-derive the
+      original, unredacted text from them.
+    * ``exc_info`` (set by ``logger.exception()`` or ``exc_info=True``)
+      — the exception type/message/traceback can itself contain a
+      secret (e.g. ``raise ValueError(f"password={value}")``). The
+      traceback is rendered here, redacted, and stored as ``exc_text``;
+      ``exc_info`` is then cleared so :class:`logging.Formatter` uses
+      our redacted text instead of re-formatting the raw traceback from
+      the original exception object.
+    * ``stack_info`` (set via ``stack_info=True``) — redacted in place
+      for the same reason.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003
@@ -73,9 +90,26 @@ class SensitiveDataRedactionFilter(logging.Filter):
         except Exception:
             # Don't block delivery on a formatting error in the caller's
             # message; leave the record as-is for normal error handling.
-            return True
-        record.msg = redact_sensitive_text(rendered)
-        record.args = ()
+            rendered = None
+        if rendered is not None:
+            record.msg = redact_sensitive_text(rendered)
+            record.args = ()
+
+        if record.exc_info:
+            try:
+                tb_text = "".join(traceback.format_exception(*record.exc_info))
+            except Exception:
+                tb_text = record.exc_text or ""
+            record.exc_text = redact_sensitive_text(tb_text)
+            # Clear the raw exception tuple so Formatter.format() (which
+            # only recomputes exc_text when it is falsy) — and any other
+            # code that might inspect exc_info directly — never sees the
+            # unredacted traceback/exception object.
+            record.exc_info = None
+
+        if record.stack_info:
+            record.stack_info = redact_sensitive_text(str(record.stack_info))
+
         return True
 
 
