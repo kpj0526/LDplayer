@@ -1236,6 +1236,13 @@ Untouched (regression preserved): `mission.py`, `mission_config.py`
 `screenshot.py`, `guarded_touch.py`, `coordinates.py`, `recognition.py`,
 `controller.py`, `gui.py`, `models.py`, `cli.py`, all `scripts/*`.
 
+### Commit(s)
+
+- `6f32610` — "MVP-001-CV: free regional-bounty five-slot mission-cycle
+  extension" (branch `kpj0526/Code`, gate `ff6648d`/`f6af8ee`). This
+  HANDOFF hash-record update is the follow-up commit immediately after
+  it. Not merged.
+
 ### Full test command / result
 
 ```
