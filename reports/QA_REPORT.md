@@ -317,3 +317,176 @@ Actual project ACs are not validated by this skeleton-only, no-real-LD/ADB verif
 | Log and diagnostic artifact Git exclusion | **FAIL** |
 | No forbidden executable web/DOM/mouse/ADB path | PASS (static) |
 | Sensitive log message redaction/rejection | **FAIL - Critical** |
+
+---
+
+# QA Report - TP-001-RW-02 Stage 2 Independent Re-verification
+
+## Verdict
+
+**FAIL - TP-001 Stage 2 re-verification scope.** The repair successfully redacts controlled sensitive markers in ordinary literal and percent-argument logging, and generated artifacts are now Git-ignored. However, a controlled `logger.exception()` path writes a password-like value from the exception traceback literally to `error.log`. The mandatory no-credential-logging constraint applies to emitted traceback content as well as the message field; the documented limitation does not exempt it.
+
+## Exact target and QA state
+
+| Item | Actual value |
+| --- | --- |
+| Required cumulative Code target | `1305ba5a8b629e77664566702fb3ffe04eb8ac5e` (`1305ba5`) |
+| Repair implementation | `1acf510622cbc989e51cb95a79e7816c1589ff45` |
+| Previous QA failure report commit | `5cba31e2d09b254166e4dbb79a5786be674e848e` |
+| QA target-integration commit | `ee3c6994a43c2b569b09c6cf60cbd54b43ae97f5` |
+| QA branch and method | `kpj0526/Qa`; non-fast-forward merge preserving the prior QA report history |
+| Environment | Windows; Python 3.12.10; pytest 9.1.1; PyYAML 6.0.3; existing `.venv` refreshed with `pip install -e ".[dev]"` |
+
+The final QA-report commit is supplied to Manager after this report is committed; it is distinct from the exact Code target above.
+
+## Independent test execution
+
+```powershell
+& .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+& .\.venv\Scripts\python.exe -m pytest -v
+```
+
+Actual relevant output:
+
+```text
+Successfully installed ldmanager-0.1.0
+platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.6.0
+collected 64 items
+============================= 64 passed in 0.67s =============================
+```
+
+This result is independent QA execution, not reliance on the Code worktree's prior self-test.
+
+## Sensitive logging evidence
+
+### Ordinary task/error records - PASS
+
+Against a temporary LD1 log root, QA directly called both paths with controlled, non-real markers:
+
+```python
+logger.info('password=' + PW_MARKER)
+logger.info('token: ' + TOKEN_MARKER)
+logger.info('api_key=' + API_KEY_MARKER)
+logger.error('Authorization: Bearer ' + BEARER_MARKER)
+logger.error('Cookie: session=' + COOKIE_MARKER + '; x=1')
+logger.info('password=%s', PERCENT_ARGUMENT_MARKER)
+```
+
+The final call is a separate `%`-argument test, rather than a literal preformatted string. After handler flushes, QA read both emitted files. Actual output:
+
+```text
+ordinary_literal_absent_task=True
+ordinary_literal_absent_error=True
+redaction_placeholder_task=True
+redaction_placeholder_error=True
+```
+
+Thus password, token, api_key, Authorization Bearer, Cookie, and the `%`-argument marker were absent from both task/error logs, while `***REDACTED***` was present.
+
+### Exception traceback path - FAIL
+
+QA then executed this separate controlled exception path against the same temporary logger:
+
+```python
+try:
+    raise RuntimeError('password=TRACEBACK_LITERAL_MARKER_9g')
+except RuntimeError:
+    logger.exception('handled operation failure')
+for handler in logger.handlers:
+    handler.flush()
+assert 'TRACEBACK_LITERAL_MARKER_9g' not in error_log_path(settings, AccountId.LD1).read_text(encoding='utf-8')
+```
+
+Actual output:
+
+```text
+traceback_sensitive_marker_absent=False
+```
+
+| Failure field | Result |
+| --- | --- |
+| Failed constraint | Mandatory no credential/password/authentication value logging; Code handoff maps the normal log requirement to AC-26, but global project AC status remains NOT_TESTED below. |
+| Actual | The controlled `TRACEBACK_LITERAL_MARKER_9g` is present in emitted `error.log` traceback text. |
+| Expected | The marker must be absent from task and error logs, including formatted exception/traceback text. |
+| Severity | Critical - an exception may persist a password-like value despite ordinary-message redaction. |
+| Exact reproduction | Run the code block above with `get_account_logger(AccountId.LD1, LoggingSettings(root_dir=<temporary directory>), force=True)` and inspect `error_log_path(...)`. |
+| Re-verification condition | Redact or prevent sensitive values in `exc_info`/formatted traceback output before file emission; repeat this exact test and require `traceback_sensitive_marker_absent=True`, then rerun all tests. |
+
+The Code handoff explicitly describes `exc_info`/tracebacks as outside its current redaction filter. QA assessed that limitation directly; it is not acceptable under the mandatory no-credential-logging constraint.
+
+## Other Stage 2 re-verification evidence
+
+Independent temporary-file/temporary-directory checks produced:
+
+```text
+nested_sensitive.yaml=REJECTED
+bad_logging.yaml=REJECTED
+bad_diagnostics.yaml=REJECTED
+path_traversal=REJECTED
+diagnostics_json=True diagnostics_png=False metadata_status=pending_capture
+LD1_LD9_isolated_and_separated=True rotation=True retention=True
+forbidden_executable_findings=[]
+target_diff_check=clean
+```
+
+These establish nested sensitive-config-key and invalid logging/diagnostics rejection, path-traversal rejection, JSON metadata without PNG generation, LD1-LD9 task/error isolation with rotation and retention, no forbidden executable web/DOM/global-mouse/real-ADB control finding in an AST scan of `src`, and a clean target diff check. No actual LD/game/ADB operation occurred.
+
+Git ignore verification was run directly, with actual output:
+
+```text
+configs/config.yaml => IGNORED: .gitignore:2:configs/config.yaml configs/config.yaml
+logs/LD1/task.log => IGNORED: .gitignore:5:/logs/ logs/LD1/task.log
+diagnostics/screenshots/LD1/request.json => IGNORED: .gitignore:6:/diagnostics/ diagnostics/screenshots/LD1/request.json
+configs/config.example.yaml => NOT_IGNORED
+```
+
+## Actual project acceptance-criteria status
+
+This no-real-LD/game/ADB verification does not establish the full project requirements. Therefore every global project AC remains `NOT_TESTED`; none is marked PASS. The traceback result above is a failed mandatory security constraint and must be fixed before a Stage 2 scope PASS can be issued.
+
+| AC | QA status |
+| --- | --- |
+| AC-01 | NOT_TESTED |
+| AC-02 | NOT_TESTED |
+| AC-03 | NOT_TESTED |
+| AC-04 | NOT_TESTED |
+| AC-05 | NOT_TESTED |
+| AC-06 | NOT_TESTED |
+| AC-07 | NOT_TESTED |
+| AC-08 | NOT_TESTED |
+| AC-09 | NOT_TESTED |
+| AC-10 | NOT_TESTED |
+| AC-11 | NOT_TESTED |
+| AC-12 | NOT_TESTED |
+| AC-13 | NOT_TESTED |
+| AC-14 | NOT_TESTED |
+| AC-15 | NOT_TESTED |
+| AC-16 | NOT_TESTED |
+| AC-17 | NOT_TESTED |
+| AC-18 | NOT_TESTED |
+| AC-19 | NOT_TESTED |
+| AC-20 | NOT_TESTED |
+| AC-21 | NOT_TESTED |
+| AC-22 | NOT_TESTED |
+| AC-23 | NOT_TESTED |
+| AC-24 | NOT_TESTED |
+| AC-25 | NOT_TESTED |
+| AC-26 | NOT_TESTED |
+| AC-27 | NOT_TESTED |
+| AC-28 | NOT_TESTED |
+| AC-29 | NOT_TESTED |
+| AC-30 | NOT_TESTED |
+
+## Stage 2 re-verification summary
+
+| Check | Result |
+| --- | --- |
+| Complete independent suite | PASS - 64 passed |
+| Ordinary literal sensitive logging | PASS |
+| Percent-argument sensitive logging | PASS |
+| Exception/traceback sensitive logging | **FAIL - Critical** |
+| Config, logs, diagnostics Git exclusion; example remains tracked-capable | PASS |
+| Nested sensitive config and invalid value rejection | PASS |
+| LD1-LD9 logs, rotation, retention | PASS |
+| Safe paths and JSON-only diagnostics | PASS |
+| Forbidden executable control path and clean diff | PASS (static) |
