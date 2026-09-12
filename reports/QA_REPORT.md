@@ -669,3 +669,57 @@ No actual LDPlayer, ADB device, or game environment was exercised. All runner an
 **Stage 3 scope PASS only.** The TP-002-RW-01 blank-serial Major defect is no longer reproducible at `a4dce6d`.
 
 Global AC-01 through AC-30 remain **NOT_TESTED**, including AC-30. This is not a project-delivery PASS.
+
+---
+
+## TP-003 Stage 4 full independent verification (2026-09-12) — PASS
+
+### Target / integration evidence
+
+| Item | Verified result |
+| --- | --- |
+| Exact Code target | `efd3a2f0eb9a2f2b0c32d8e95f006c5028856b2f` on `kpj0526/Code` |
+| Implementation ancestry | `8b1687bc654b383fdfb74e56ffe362054d27f4f1` is an ancestor of the exact target |
+| Cumulative ancestry | `a4dce6d` is an ancestor of the exact target |
+| Code worktree before test | clean |
+| QA integration | explicit non-fast-forward merge `4298d5e` (`QA: merge TP-003 verification target`) |
+| Target diff | `a4dce6d..efd3a2f`: screenshot, relative-coordinate, guarded-touch foundation plus tests/docs; `git diff --check` exit 0 |
+
+### Independent suite execution
+
+```powershell
+& .\.venv\Scripts\python.exe -m pytest -q
+```
+
+Actual result: `159 passed in 0.99s` (Python 3.12, project `.venv`). This was independently executed by QA.
+
+### Independent injected-runner Stage 4 evidence
+
+QA separately exercised the public interfaces with a purpose-built in-memory runner and a patched subprocess call; this was not a rerun of Code's test doubles. Actual probe result:
+
+```text
+INDEPENDENT_TP003_PASS: binary capture validity/errors/serial; coordinate bounds; guarded touch zero-or-one semantics/post timeout-error; account isolation; Stage1-3 and Stage2 regressions; exact argv
+```
+
+| Contract | Independent result |
+| --- | --- |
+| Binary screenshot scope and validation | PASS: valid PNG-magic bytes were accepted only from the exact supplied serial with `('exec-out', 'screencap', '-p')`; nonzero runner result, empty bytes, invalid bytes, and runner exception became structured failures. Empty, spaces, tab, and whitespace-containing serials raised before any capture call. |
+| Screenshot argv | PASS: patched binary subprocess argv exactly `['adb-x', '-s', 'ONLY', 'exec-out', 'screencap', '-p']`, with `text=False`; no inferred device or port. |
+| Relative coordinate / screen boundaries | PASS: 0/1 boundaries clamped to final in-screen pixels; negative, over-1, NaN, and infinity coordinates rejected; zero/negative/non-integer dimensions rejected. |
+| Pre-touch safety | PASS: runner-error/invalid PNG pre-capture and false/raising precondition sent zero touches. |
+| Successful guarded touch | PASS: one valid pre-capture, true precondition, exactly one `('shell', 'input', 'tap', '50', '50')` call scoped to supplied serial, then one post-capture and true postcondition produced `success`. |
+| Bounded post verification | PASS: false postcondition exhausted the configured bound with one touch only; raising postcondition and repeated post-capture failure likewise sent no second touch. |
+| Account containment | PASS: LD1 capture failure sent no touch and did not affect independent LD2 success; LD2 used only its own explicit serial. |
+| Stage 3 regression | PASS: injected parser handled device/offline/unauthorized/unknown/malformed rows; discovery exception was contained; unmapped LD5 was not auto-assigned a visible `EXTRA` device; offline LD2 remained account-local. |
+| Stage 2 regression | PASS: ordinary, percent-argument, exception, `error(exc_info=True)`, and lower-level exception markers were absent from temporary logs while traceback framing remained; secret config rejection, safe paths, JSON-only diagnostics, account logs, rotation/retention passed. |
+| Stage 1-3 suite coverage | PASS via the independent full `159 passed` suite plus the direct Stage 3 injected checks above. |
+| Ignore rules | PASS: `configs/config.yaml`, `logs/LD1/task.log`, `diagnostics/screenshots/LD1/request.json` ignored; `configs/config.example.yaml` not ignored. |
+| Static safety scan | PASS after code review: no inferred device/port, global mouse, desktop/external coordinates, DOM/browser, OCR/template, mission/game, login/reconnect, or credential-control implementation found. The only tap is the bounded, relative-coordinate, explicit-serial `adb -s <serial> shell input tap` foundation; screenshot capture is the explicit-serial binary `exec-out screencap -p` path. |
+
+No actual LDPlayer, ADB device, game, or user environment was used. All process/runner behavior was injected or patched; no real-device claim is made.
+
+### AC traceability and scope conclusion
+
+**Stage 4 scope PASS only.** No failure requiring reproduction, severity, or re-verification condition was found in this target.
+
+Global AC-01 through AC-30 remain **NOT_TESTED**, including AC-30; no project delivery PASS is asserted.
