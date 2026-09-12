@@ -297,9 +297,9 @@ git check-ignore -q configs/config.example.yaml   # exit 1 (추적 대상 유지
 ### 커밋 해시
 
 - 이전(QA FAIL 대상): `ba0e3da` (stage 2 문서 갱신 커밋, QA가 지목한 해시)
-- 이번 교정 커밋: 이 문서 커밋 직후 `git log --oneline -3`으로 확정되는
-  해시를 그대로 인용할 것 — 커밋 완료 후 사용자/Manager에게 보내는
-  응답 메시지에 정확한 해시를 명시함.
+- 이번 교정 커밋: `1acf510` — "TP-001-RW-02: redact log secrets + gitignore
+  generated artifacts" (브랜치 `kpj0526/Code`). 본 문서의 해시 기록 갱신은
+  그 뒤의 후속 커밋.
 
 ### 한계 (Limitations)
 
