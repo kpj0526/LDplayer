@@ -428,8 +428,9 @@ except ValueError:
 ### 커밋 해시
 
 - 이전(QA FAIL 대상): `1305ba5` (TP-001-RW-02 HANDOFF 갱신 커밋, QA가 지목한 해시)
-- 이번 교정 커밋: 커밋 직후 확정되는 해시를 아래 "커밋" 절 및 사용자
-  응답 메시지에 정확히 기록함(플레이스홀더 미사용 원칙).
+- 이번 교정 커밋: `d8a6fcd` — "TP-001-RW-03: redact exc_info/traceback text
+  in account logs" (브랜치 `kpj0526/Code`). 본 문서의 해시 기록 갱신은
+  그 뒤의 후속 커밋.
 
 ### 한계 (Limitations)
 
