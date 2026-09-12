@@ -1411,10 +1411,10 @@ duck-typed), `models.py`, `cli.py`, all `scripts/*`, all `configs/*`.
 
 ### Commit(s)
 
-- Recorded in the follow-up "docs:" commit immediately after the
-  UI-ADB-001 implementation commit, per this repo's established
-  pattern — see `git log --oneline -3` at delivery time or the next
-  entry in this document.
+- `5b0862b` — "UI-ADB-001: GUI-driven LD1-LD9 ADB registration" (branch
+  `kpj0526/Code`, on top of clean `c42289c`). This HANDOFF hash-record
+  update is the follow-up commit immediately after it. Not tagged, not
+  pushed, not published.
 
 ### Full test command / result
 
