@@ -1673,9 +1673,10 @@ suite run, the build, and both live-exe checks.
 
 ### Commit(s)
 
-- Recorded in the follow-up "docs:" commit immediately after the
-  REL-0.1.0-PKG-01 implementation commit, per this repo's established
-  pattern.
+- `58eefc1` — "REL-0.1.0-PKG-01: bootstrap first-run configs, fix ZIP
+  packaging" (branch `kpj0526/Code`, on top of clean `817183b`). This
+  HANDOFF hash-record update is the follow-up commit immediately after
+  it. Not tagged, not pushed, not published.
 
 ### Build artifact (this session)
 
