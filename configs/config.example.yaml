@@ -1,0 +1,18 @@
+# ldmanager configuration (TP-001 stage 1 skeleton)
+#
+# Copy this file to configs/config.yaml (git-ignored) and fill in your own
+# values. Nothing in this project guesses or hardcodes an ADB host:port —
+# every entry below is a placeholder that must be set explicitly per
+# environment before it is used.
+#
+# adb_mapping: LD1..LD9 -> "host:port" string, or null while unassigned.
+adb_mapping:
+  LD1: null
+  LD2: null
+  LD3: null
+  LD4: null
+  LD5: null
+  LD6: null
+  LD7: null
+  LD8: null
+  LD9: null
