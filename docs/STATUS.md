@@ -1,5 +1,13 @@
 # STATUS
 
+## GAME-CAL-001 (2026-09-14)
+
+- Status: `PUBLISHED_MVP_PRERELEASE`.
+- Customer evidence: valid 1280x720 mapped mission screens fail template preflight; completed LD1/LD3 and both in-progress/currency and completed LD4 captures were supplied.
+- QA: `MVP_SMOKE_PASS` at QA `1277b016` over Code `0a0f777`: 345 automated tests, independent injected 1280x720 safety probe, and clean-artifact startup smoke.
+- Publication: GitHub prerelease `v1.0.3-rc.1`, Windows ZIP SHA-256 `4764FE903D4C2F7D5F7D4F1904D4E53D6EE0B964BC2D622D050A4C46960DA959`.
+- Limit: this does not establish real template calibration, LDPlayer/game flow, or live multi-account proof; those remain `NEEDS_REAL_TEST` / `BLOCKED_REAL_ENVIRONMENT`.
+
 ## Corrected v0.1.0 asset (2026-09-12)
 
 - Current phase: `NEEDS_REAL_TEST`

@@ -13,6 +13,19 @@
 9. **OWNER**: Code implements/tests/builds/handoffs; QA verifies; Manager records/release decision.
 10. **NEXT ACTION**: Code receives packet; customer can meanwhile apply explicit `adb_path` workaround only after locating real emulator `adb.exe`.
 
+## GAME-CAL-001: live mission-screen template/state calibration (2026-09-14)
+
+1. **WHO**: Manager coordinates; existing Code implements/commits; existing QA independently verifies. No new agents, roles, or worktrees.
+2. **WHAT**: Correct account-local mission-screen recognition that rejects customer-valid screens.
+3. **WHERE**: Code worktree only: external recognition assets/ROI/threshold configuration, state logic, tests, build, and Code handoff. Manager changes no production code.
+4. **WHEN**: Code starts from this packet; QA receives only an exact Code commit.
+5. **WHY**: Customer's mapped 1280x720 LD1/LD3/LD4 screens fail preflight. Test capture is diagnostic-only, not template editing.
+6. **HOW**: Configure stable anchors for `Mission`, `Region`, and mission-list/detail layout using supplied captures. Distinguish verified completed state from in-progress `130/180`/currency state. Permit a completion touch only on verified completed state, with one explicit account serial and verified pre/postconditions. Dynamic reward amounts/progress cannot be a sole anchor.
+7. **CONSTRAINTS**: No touch on mismatch, unknown, progress, or currency state; specifically never press the `6600` action. No template auto-overwrite, guessed serial/port, global coordinates, login, unbounded loop, or real success claim. Retain global/individual-stop, serial isolation, bounded timeout/retries, worker containment, and GUI startup safety.
+8. **ACCEPTANCE CRITERIA**: completed and in-progress fixtures classify differently; completion is impossible for `130/180`/currency/unknown/mismatch; completion is serial-scoped with pre/postcondition; mismatch stays diagnostic/account-local; tests/build/startup pass. Live-game proof remains `NEEDS_REAL_TEST`.
+9. **OWNER**: Code implements/tests/commits/handoff; QA independently verifies exact hash; Manager records/gates.
+10. **NEXT ACTION**: Code supplies one committed correction; Manager routes its exact hash to QA.
+
 ## REL-UPDATE-003 — import and verify remote `v1.0.1` (2026-09-14)
 
 1. **WHO**: customer receives the macro; Manager coordinates; existing Code imports/builds; existing QA independently verifies.

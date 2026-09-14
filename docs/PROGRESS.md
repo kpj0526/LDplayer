@@ -1,5 +1,13 @@
 # PROGRESS
 
+## GAME-CAL-001 prerelease published (2026-09-14)
+
+- Customer supplied 1280x720 mission-screen evidence after valid mapped accounts failed Test-capture preflight.
+- Code `0a0f777` replaced digit/title-dependent preflight with configurable stable-layout classification and fail-closed completed/in-progress/currency/unknown/mismatch handling.
+- QA `1277b016` recorded `MVP_SMOKE_PASS`: 345 full tests, 52 focused tests, independent injected 1280x720 safety evidence, and a fresh Windows artifact startup smoke.
+- Published prerelease: `https://github.com/kpj0526/LDplayer/releases/tag/v1.0.3-rc.1`; asset `ldmanager-v1.0.3-rc.1-windows.zip`; SHA-256 `4764FE903D4C2F7D5F7D4F1904D4E53D6EE0B964BC2D622D050A4C46960DA959`.
+- Truth boundary: no actual template calibration or live game/LDPlayer cycle has been passed. These remain `NEEDS_REAL_TEST` / `BLOCKED_REAL_ENVIRONMENT`.
+
 ## Release-candidate update: ADB-PATH-001 (2026-09-14)
 
 - Current project stage: `READY_FOR_APPROVAL` for a limited ADB-path release candidate; the overall project is **not** complete.

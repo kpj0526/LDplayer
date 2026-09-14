@@ -1,5 +1,15 @@
 # CURRENT TASK
 
+## Current task: GAME-CAL-001 (2026-09-14)
+
+- Owner: Manager coordinates; existing Code implements/commits; existing QA independently verifies the exact submitted hash.
+- Status: `PUBLISHED_MVP_PRERELEASE`.
+- Evidence: user supplied real 1280x720 captures: LD1/LD3 completed mission; LD4 `130/180` with a `6600` currency action and completed state. Valid mapped accounts currently fail template preflight.
+- Scope: configure real mission-screen template/ROI recognition and safely classify completed versus in-progress/currency state. Test capture remains diagnostic-only.
+- Safety: no input on mismatch, unknown, progress, or currency state; completion only after verified completed state with that account's explicit serial; all real-game results remain `NEEDS_REAL_TEST`.
+- Result: Code `0a0f777`; QA `1277b016` recorded `MVP_SMOKE_PASS`; prerelease `v1.0.3-rc.1` is published with Windows ZIP SHA-256 `4764FE903D4C2F7D5F7D4F1904D4E53D6EE0B964BC2D622D050A4C46960DA959`.
+- Next: customer performs Test capture/preflight with the new artifact. Real LD/game recognition and live automation remain `NEEDS_REAL_TEST`.
+
 ## Current task: REL-0.1.2-RC-01 (2026-09-14)
 
 - Task ID: `REL-0.1.2-RC-01`
