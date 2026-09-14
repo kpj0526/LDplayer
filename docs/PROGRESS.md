@@ -1,5 +1,13 @@
 # PROGRESS
 
+## Customer remote-validation plan prepared (2026-09-14)
+
+- Current phase: `NEEDS_REAL_TEST`.
+- Manager added an evidence-first customer-PC checklist to `docs/TEST_PLAN.md`: LD1-only ADB mapping/capture preflight first, account-isolation checks second, and a controlled live cycle only after safe evidence review.
+- Required retained evidence: GUI mapping/error screenshots, failed capture images, account logs, first-cycle screen recording, and LD display/ADB settings.
+- Safety boundary: refresh/save/Test capture must not cause a game tap. Default safe mode is retained until deliberate later live-input authorization; unexpected input requires immediate Stop All and evidence retention.
+- Next: user remote-connects to customer PC and follows checklist steps 1--4 before live mission action.
+
 ## `v1.0.1` GitHub MVP prerelease published (2026-09-14)
 
 - Current phase: `NEEDS_REAL_TEST`.

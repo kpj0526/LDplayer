@@ -1,5 +1,25 @@
 # MVP smoke plan override (2026-09-12)
 
+## Customer remote-environment validation checklist: `v1.0.1` (2026-09-14)
+
+Record a screenshot and relevant account log after every failed checkpoint. Do not treat prior mock results as real-environment PASS.
+
+| Order | Safe test | Pass evidence | Stop / capture evidence instead |
+| --- | --- | --- | --- |
+| 1 | Set identical LD display/DPI/orientation; enable ADB debugging; start LD1 only. | LD1 is logged in and manually placed at intended mission screen. | Different setting, login/connection screen, frozen LD, or unavailable ADB debug. |
+| 2 | Launch extracted `ldmanager.exe`; click **Refresh ADB devices**. | Device list appears with no global error. | Capture GUI error, especially missing `adb.exe`/no devices. Never guess a port. |
+| 3 | Explicitly save LD1 serial and refresh again. | LD1 shows mapping `OK`; LD2--LD9 unchanged. | Duplicate/offline/error mapping: capture panel; do not Start. |
+| 4 | Click LD1 **Test capture** at a supported mission anchor. | LD1 preflight recognizes screen; only LD1 becomes eligible. | Retain diagnostic capture path/file and LD1 log; do not Start or guess calibration. |
+| 5 | Repeat mapping/Test capture one account at a time. | Each account becomes ready independently. | Any cross-account change/wrong serial/unexpected screen: Stop All and retain evidence. |
+| 6 | Confirm normal/default launch is safe before live authorization. | Refresh/save/Test capture do not send game input. | Any input: Stop All immediately; preserve logs/captures. |
+| 7 | Only after prior evidence review, observe one controlled LD1 live mission cycle. | LD1-only clicks, expected post-screen change, safe low-confidence/unknown stop. | Wrong target/stall/repeat click/disconnect: stop LD1, retain evidence. |
+| 8 | Validate in order: phrase + `/200`; five-slot gate; 0--199 no completion; 200/200 complete → reward → close → return → refresh. | Recording/captures/log per reached state. | Wrong acceptance/click before 200/missing postcondition/retry error: stop LD1. |
+| 9 | Then test LD1 Stop/restart, LD1+LD2, and all mapped accounts. | LD1 stop/error leaves others alive; Stop All leaves no later input. | Cross-click/residual input: Stop All and collect account logs. |
+
+Required return evidence: mapping/error screenshots; `diagnostics/captures/LDx/` failed/unknown images; relevant `logs/`; first controlled LD1 recording; LDPlayer version plus display/DPI/ADB settings.
+
+Safety: `v1.0.1` is QA smoke-tested, not real-game verified. Default safe mode blocks inner ADB tap dispatch until a deployment operator deliberately enables live mode. Do not enable live input or run a mission loop before the mapping/capture evidence is retained.
+
 ## UI-ADB-001 test extension: AC-61..AC-65
 
 | AC | Automated/GUI verification | Required safety evidence |
