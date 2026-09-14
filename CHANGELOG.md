@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.1
+
+- Customer capture preflight gates Start per account and keeps calibration developer-only.
+
 ## v1.0.0
 
 - LD1~LD9 independent ADB worker management and GUI mapping controls.

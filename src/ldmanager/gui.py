@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import tkinter as tk
 import time
+import os
 from pathlib import Path
 from tkinter import ttk
 from typing import Callable, Optional
@@ -71,6 +72,7 @@ class AccountPanel(ttk.LabelFrame):
         self._on_clear_mapping_cb = on_clear_mapping
         self._on_capture_test_cb = on_capture_test
         self._connection_status: Optional[ConnectionStatus] = None
+        self._capture_ready = False
 
         self.status_var = tk.StringVar(value="stopped")
         self.slot_var = tk.StringVar(value="slot: -")
@@ -125,9 +127,9 @@ class AccountPanel(ttk.LabelFrame):
         self.capture_button.pack(side="left")
 
     def _on_start(self) -> None:
-        if self._connection_status is not ConnectionStatus.OK:
+        if self._connection_status is not ConnectionStatus.OK or not self._capture_ready:
             self.mapping_error_var.set(
-                "Cannot start: mapping is not confirmed OK. Click 'Refresh ADB devices'."
+                "Cannot start: confirm ADB mapping and run a successful Test capture first."
             )
             return
         self._controller.start_account(self._account_id)
@@ -177,9 +179,16 @@ class AccountPanel(ttk.LabelFrame):
         status_label = status.value if status is not None else "unknown"
         self.mapping_status_var.set(f"mapping: {serial or '(unmapped)'}  [{status_label}]  {detail}")
         self._connection_status = status
-        if status is ConnectionStatus.OK:
+        if status is ConnectionStatus.OK and self._capture_ready:
             self.start_button.state(["!disabled"])
         else:
+            self.start_button.state(["disabled"])
+
+    def set_capture_ready(self, ready: bool) -> None:
+        self._capture_ready = ready
+        if ready and self._connection_status is ConnectionStatus.OK:
+            self.start_button.state(["!disabled"])
+        elif not ready:
             self.start_button.state(["disabled"])
 
     def show_save_result(self, ok: bool, message: str) -> None:
@@ -197,6 +206,7 @@ class LDManagerApp(tk.Tk):
         config_path: Optional[Path] = None,
         refresh_interval_ms: int = DEFAULT_REFRESH_INTERVAL_MS,
         auto_refresh: bool = True,
+        readiness_check=None,
     ) -> None:
         super().__init__()
         self.title("ldmanager (MVP)")
@@ -207,6 +217,7 @@ class LDManagerApp(tk.Tk):
         self._panels: dict[AccountId, AccountPanel] = {}
         self._discovered_devices: list = []
         self._has_refreshed_once = False
+        self._readiness_check = readiness_check
 
         self.global_error_var = tk.StringVar(value="")
         try:
@@ -222,9 +233,10 @@ class LDManagerApp(tk.Tk):
         ttk.Button(global_row, text="Refresh ADB devices", command=self._on_refresh_devices).pack(
             side="left", padx=(12, 0)
         )
-        ttk.Button(global_row, text="Template calibration", command=self._open_calibration).pack(
-            side="left", padx=(12, 0)
-        )
+        if os.environ.get("LDMANAGER_DEVELOPER_MODE") == "1":
+            ttk.Button(global_row, text="Template calibration", command=self._open_calibration).pack(
+                side="left", padx=(12, 0)
+            )
         ttk.Label(global_row, textvariable=self.global_error_var, foreground="red").pack(
             side="left", padx=(12, 0)
         )
@@ -264,7 +276,14 @@ class LDManagerApp(tk.Tk):
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"capture-{int(time.time())}.png"
         output_path.write_bytes(result.image_bytes)
-        self._panels[account_id].mapping_error_var.set(f"Capture saved: {output_path}")
+        if self._readiness_check is None:
+            self._panels[account_id].mapping_error_var.set(f"Capture saved: {output_path}")
+            return
+        ready, detail = self._readiness_check(result.image_bytes)
+        self._panels[account_id].set_capture_ready(ready)
+        self._panels[account_id].mapping_error_var.set(
+            f"{detail} Capture: {output_path}"
+        )
 
     def _open_calibration(self) -> None:
         """Open a small real-PNG crop tool. Captures are first made with each
@@ -335,6 +354,7 @@ class LDManagerApp(tk.Tk):
         panel = self._panels[account_id]
         panel.show_save_result(result.ok, result.detail)
         if result.ok:
+            panel.set_capture_ready(False)
             self._current_mapping = result.adb_mapping
         self._apply_current_mapping_to_panels()
 
@@ -346,6 +366,7 @@ class LDManagerApp(tk.Tk):
         panel = self._panels[account_id]
         panel.show_save_result(result.ok, result.detail)
         if result.ok:
+            panel.set_capture_ready(False)
             self._current_mapping = result.adb_mapping
         self._apply_current_mapping_to_panels()
 

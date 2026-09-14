@@ -111,6 +111,17 @@ def build_controller() -> AccountController:
     # Runtime dependency exposed for GUI diagnostics/live-mode control; this
     # remains the real subprocess-backed runner behind InputGateAdbRunner.
     controller.adb_runner = runner  # type: ignore[attr-defined]
+    def readiness_check(image_bytes):
+        from .coordinates import RelativeRegion
+        anchors = ("mission_slots_panel", "target_all_monsters_0_of_200", "refresh_confirm_title", "reward_result_header")
+        results = [recognizer.recognize(image_bytes, RelativeRegion(0, 0, 1, 1), label, bounty_cfg.threshold)
+                   for label in anchors if label in bounty_cfg.template_map]
+        matched = [item for item in results if item.matched]
+        if matched:
+            best = max(matched, key=lambda item: item.confidence)
+            return True, f"Screen verified: {best.label} ({best.confidence:.2f})"
+        return False, "Screen does not match the supplied game templates. Send the saved capture for template update."
+    controller.readiness_check = readiness_check  # type: ignore[attr-defined]
     return controller
 
 
@@ -140,6 +151,7 @@ def main() -> int:
         controller,
         adb_runner=controller.adb_runner,  # type: ignore[attr-defined]
         config_path=resolve_config_path(),
+        readiness_check=controller.readiness_check,  # type: ignore[attr-defined]
     )
     app.run()
     return 0
