@@ -2,6 +2,15 @@
 
 ## 2026-09-14 | REL-UPDATE-003-RELEASE | Manager
 
+- Performed: created a ZIP from QA's independently built distribution; pushed QA target as `mvp/v1.0.1`; replaced the pre-existing lightweight source tag with an annotated `v1.0.1` tag pointing to the QA target; created GitHub prerelease and uploaded the ZIP.
+- Changed: remote branch/tag/GitHub release asset; `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
+- Commands/tests: local artifact/config content and SHA-256 verification; remote tag peel/branch verification; GitHub release/asset metadata verification.
+- Result: GitHub prerelease `v1.0.1` is published with uploaded asset `ldmanager-v1.0.1-windows-20260914.zip`, 67,559,364 bytes, SHA-256 `55E6849FAFABF1507CE7EB63B0237C6B7D06D6B6F186AD2C6124CCA5139FEE62`.
+- Related commits: Code `2c47736`; QA `2a13f52`; annotated tag object `48a1868` peels to QA target.
+- Next handoff: customer real LDPlayer/ADB/game validation; no final live-game claim.
+
+## 2026-09-14 | REL-UPDATE-003-RELEASE | Manager
+
 - Performed: recorded explicit user authorization to publish the QA-smoke-passed `v1.0.1` candidate to GitHub.
 - Changed: `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
 - Commands/tests: publication preflight pending; no release/tag/asset mutation yet.

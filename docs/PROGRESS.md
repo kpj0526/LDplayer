@@ -1,5 +1,15 @@
 # PROGRESS
 
+## `v1.0.1` GitHub MVP prerelease published (2026-09-14)
+
+- Current phase: `NEEDS_REAL_TEST`.
+- Published release: [`ldmanager v1.0.1 (MVP)`](https://github.com/kpj0526/LDplayer/releases/tag/v1.0.1), explicitly marked prerelease.
+- Verified provenance: remote annotated tag `v1.0.1` (`48a1868`) peels to QA report target `2a13f52a234430f40c55b91a7ff715f09a4667a4`; remote branch `mvp/v1.0.1` points to the same QA target. Code implementation target is `2c47736`.
+- Download asset: `ldmanager-v1.0.1-windows-20260914.zip` (67,559,364 bytes), SHA-256 `55E6849FAFABF1507CE7EB63B0237C6B7D06D6B6F186AD2C6124CCA5139FEE62`.
+- Release gate evidence: QA `MVP_SMOKE_PASS` at `2a13f52`, independently reporting 302 full tests, 58 focused tests, fresh extracted artifact bootstrap/launch, account-local readiness/isolation, mismatch fail-closed diagnostic, developer-only calibration UI, and no inner touch in default safe mode.
+- Customer use: download the ZIP, extract all contents, and run `ldmanager.exe`. First run creates null LD mappings; explicit GUI mapping and Test capture are required before Start.
+- Truth boundary: this is not final project completion or real-game approval. Actual LDPlayer/ADB, game templates/OCR, mission/reward loop, and live 9-account isolation remain `NEEDS_REAL_TEST` / `BLOCKED_REAL_ENVIRONMENT`.
+
 ## `v1.0.1` GitHub MVP publication authorized (2026-09-14)
 
 - Current phase: `READY_FOR_APPROVAL`.

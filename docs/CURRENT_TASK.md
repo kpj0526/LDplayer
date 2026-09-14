@@ -1,5 +1,18 @@
 # CURRENT TASK
 
+## `v1.0.1` MVP prerelease published (2026-09-14)
+
+- Task ID: `REL-UPDATE-003-RELEASE`
+- Title: Publish QA-smoke-passed Windows MVP candidate
+- Owner: Manager.
+- Status: `PUBLISHED_MVP_PRERELEASE`.
+- QA source: exact Code `2c47736`; QA report `2a13f52` (`MVP_SMOKE_PASS`).
+- Release: `https://github.com/kpj0526/LDplayer/releases/tag/v1.0.1`.
+- Asset: `ldmanager-v1.0.1-windows-20260914.zip`; 67,559,364 bytes; SHA-256 `55E6849FAFABF1507CE7EB63B0237C6B7D06D6B6F186AD2C6124CCA5139FEE62`.
+- Provenance: tag `v1.0.1` was retargeted as annotated tag `48a1868` to QA target `2a13f52`; `mvp/v1.0.1` points to the same target.
+- Result: GitHub asset release is complete. It is an MVP prerelease only; real LD/game validation remains required.
+- Next action: customer installs LDPlayer, maps devices, performs Test capture, and provides real-environment evidence before any live-mode automation use.
+
 ## `v1.0.1` GitHub MVP prerelease publication (2026-09-14)
 
 - Task ID: `REL-UPDATE-003-RELEASE`
