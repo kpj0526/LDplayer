@@ -2560,3 +2560,117 @@ Focused run: `pytest -q tests/test_screen_classification_real_assets.py`
   proof.
 - Confirm the Windows build artifact above launches and packages the 5
   new real template PNGs under `dist\ldmanager\templates\`.
+
+## REL-003: replacement customer-test prerelease (v1.0.3-rc.2)
+
+**Manager task packet**: `REL-003` (approved). User explicitly
+authorized immediate customer-test deployment. Supersedes the
+withdrawn `v1.0.3-rc.1` (see the `GAME-CAL-001 REAL-CAPTURE REWORK`
+section immediately above this one for the fix that made this
+replacement release possible).
+
+### Status: published as a GitHub prerelease. CUSTOMER-TEST / MVP.
+`NEEDS_REAL_TEST` — not final, no claim of live game success.
+
+### Source
+
+- Source commit (exact build input, no src changes since):
+  `c814ae850f3cd89e9c5e0feefc451e9c90d7aeff` (`c814ae8`)
+- Implementation commit: `4688104` (`GAME-CAL-001 REAL-CAPTURE REWORK:
+  calibrate from real customer PNGs`)
+- This section's own commit is tagged along with the release (a
+  docs-only commit -- it changes no `src/` file, so the built artifact
+  is unaffected; verified via `git diff --stat 4688104..HEAD -- src/`
+  before tagging, output empty).
+
+### Release
+
+- Tag: `v1.0.3-rc.2` (did not previously exist; confirmed via `git tag -l`
+  and `gh release list` before creating it)
+- GitHub prerelease URL: https://github.com/kpj0526/LDplayer/releases/tag/v1.0.3-rc.2
+- Marked explicitly: **CUSTOMER-TEST / MVP**, **NEEDS_REAL_TEST**, not
+  final -- see the release body for the exact limitations text (mirrored
+  below).
+- Does **not** republish, retag, or edit the withdrawn `v1.0.3-rc.1` --
+  that release remains untouched, still marked WITHDRAWN, and its asset
+  hash (`4764fe903d4c2f7d5f7d4f1904d4e53d6ee0b964bc2d622d050a4c46960da959`)
+  is not reused anywhere in this one.
+
+### Build + package
+
+- Built via `scripts\build_windows.ps1` from the exact source commit
+  above (clean working tree, no uncommitted changes).
+- `ldmanager.exe`: 4,821,052 bytes, SHA-256
+  `ab693fff9e1a7ba78759add60b11b860ee9ca5d9d561582b574291344f9332bf`
+  -- **distinct** from the withdrawn release's exe/zip hash.
+- Packaged ZIP: `ldmanager-v1.0.3-rc.2-windows.zip`, 67,644,387 bytes,
+  SHA-256 `174c34b625ad2087c5a070e604fbb8880e4f9d2935ec8e85829ab10844a4f6da`.
+  Layout: a single top-level `ldmanager\` folder containing
+  `ldmanager.exe`, `_internal\` (bundled Python/OpenCV/Tk runtime),
+  `configs\*.example.yaml`, `templates\*.png` (**including the 5 real,
+  customer-capture-calibrated crops**: `mission_header.png`,
+  `mission_objective_label.png`, `complete_badge.png`,
+  `currency_action_4400.png`, `mission_target_phrase.png`), `docs\
+  RUN_GUIDE.md` + `docs\REAL_CAPTURE_CHECKLIST.md`, `VERSION`,
+  `CHANGELOG.md`, `README_FIRST_RUN.txt` -- verified present via
+  `unzip -l` before upload (not assumed).
+- Zip and exe hashes both independently confirmed distinct from the
+  withdrawn `v1.0.3-rc.1` asset.
+
+### Commits / tag / push
+
+- This handoff-update commit (docs-only) is on `kpj0526/Code`.
+- Tag `v1.0.3-rc.2` created at this commit.
+- Pushed: `kpj0526/Code` branch and the `v1.0.3-rc.2` tag only -- no
+  other branch/tag was pushed or touched, `main` was not touched.
+
+### Limitations (mirrored in the release body)
+
+1. **CUSTOMER-TEST / MVP build, not a final release.** No claim of
+   real LD/game completion success anywhere in this build, its
+   templates, or this document.
+2. **`NEEDS_REAL_TEST`**: the 5 real calibration templates are verified
+   against 3 static, customer-supplied 1280x720 PNGs offline (see the
+   `GAME-CAL-001 REAL-CAPTURE REWORK` section above) -- not against a
+   live ADB capture from an actual running LDPlayer instance. No live
+   ADB/LDPlayer/game session was operated anywhere in producing this
+   release.
+3. Only one currency-action cost (4400) and one mission-title pairing
+   have real calibration; other missions/costs/screens in the five-slot
+   flow remain placeholder-calibrated (unchanged from the section
+   above).
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this release.
+
+### Customer safe-test steps (mirrored in the release body)
+
+1. Extract the ZIP anywhere and run `ldmanager.exe` -- first launch
+   self-creates `configs\config.yaml`/`configs\bounty.yaml` from the
+   bundled examples; nothing is pre-filled or auto-detected as "ready."
+2. Map **exactly one** account's ADB serial explicitly (Refresh ADB
+   devices, then pick/type the serial for that one LDx panel, Save) --
+   do not map all nine at once for a first test.
+3. Use **Test capture** on that one account before doing anything else,
+   and confirm the panel reports the screen as recognized (not a
+   mismatch) before considering Start.
+4. Begin with that **one** account only -- do not Start All.
+5. **Stop immediately** if the panel reports a mismatch, an unknown
+   screen, or any error -- do not continue running, and save/send the
+   diagnostic capture it writes under `diagnostics\captures\<LDx>\`.
+6. This build does not prove, and must not be treated as proving, that
+   any real in-game action (mission completion, claim, etc.) succeeds
+   on a live account -- treat any observed tap purely as a recognition/
+   calibration test, not a production automation run.
+
+### QA focus points
+
+- Independently verify the exact asset SHA-256 above against the
+  published release download, not against this document alone.
+- Confirm the release is marked prerelease (not "Latest"), and that its
+  body includes the CUSTOMER-TEST/MVP + NEEDS_REAL_TEST language and
+  the safe-test steps above verbatim or equivalently.
+- Confirm `v1.0.3-rc.1` is untouched (still WITHDRAWN, not edited, not
+  retagged) and that its asset hash does not appear anywhere in this
+  release's metadata.
+- Confirm only `kpj0526/Code` and the `v1.0.3-rc.2` tag were pushed --
+  no change to `main` or any other branch/tag.
