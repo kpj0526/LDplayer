@@ -93,7 +93,7 @@ def test_start_is_blocked_before_mapping_verified_ok(monkeypatch, app):
     # guard) still independently refuses to start and surfaces why.
     panel._on_start()
     assert calls == []
-    assert "not confirmed OK" in panel.mapping_error_var.get()
+    assert "confirm ADB mapping" in panel.mapping_error_var.get()
 
 
 def test_panel_start_stop_buttons_call_controller_once_verified_ok(monkeypatch, app):
@@ -103,6 +103,7 @@ def test_panel_start_stop_buttons_call_controller_once_verified_ok(monkeypatch, 
 
     panel = app._panels[AccountId.LD1]
     panel.set_mapping_status("127.0.0.1:5555", ConnectionStatus.OK, "Device present and authorized.")
+    panel.set_capture_ready(True)
 
     panel.start_button.invoke()
     panel.stop_button.invoke()
@@ -132,6 +133,25 @@ def test_refresh_updates_panel_from_status_snapshot(app):
     panel.refresh(status)
 
     assert panel.status_var.get() == "running"
+
+
+def test_capture_readiness_is_account_local(app):
+    first = app._panels[AccountId.LD1]
+    second = app._panels[AccountId.LD2]
+    first.set_mapping_status("127.0.0.1:5555", ConnectionStatus.OK, "ok")
+    second.set_mapping_status("127.0.0.1:5557", ConnectionStatus.OK, "ok")
+    first.set_capture_ready(True)
+    assert "disabled" not in first.start_button.state()
+    assert "disabled" in second.start_button.state()
+
+
+def test_serial_save_clears_capture_readiness(app):
+    panel = app._panels[AccountId.LD1]
+    panel.set_mapping_status("127.0.0.1:5555", ConnectionStatus.OK, "ok")
+    panel.set_capture_ready(True)
+    app._on_save_mapping(AccountId.LD1, "127.0.0.1:6000")
+    assert panel._capture_ready is False
+    assert "disabled" in panel.start_button.state()
     assert "3" in panel.slot_var.get()
     assert panel.error_var.get() == "boom"
     assert "cycle result: ok" in panel.log_var.get()
@@ -170,7 +190,8 @@ def test_save_persists_mapping_and_start_stays_blocked_until_next_refresh(app, f
     app._on_refresh_devices()
 
     assert panel._connection_status is ConnectionStatus.OK
-    assert "disabled" not in panel.start_button.state()
+    # A successful Test capture/template preflight is now also required.
+    assert "disabled" in panel.start_button.state()
 
 
 def test_save_rejects_blank_serial_and_shows_error_on_panel(app):

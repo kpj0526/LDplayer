@@ -33,9 +33,11 @@ explicit design (safety) or an acknowledged scope cut for this MVP.
 
 ## Not implemented (by design — safety)
 
-- **No real recognition.** `PlaceholderRecognizer` always returns
-  `UNKNOWN`, confidence `0.0`. No OCR library, no template-matching
-  library, no ML model of any kind is wired in.
+- **No calibrated customer templates yet.** The production app now uses
+  `OpenCVTemplateRecognizer`, but this repository ships no customer-game
+  PNG crops, measured ROIs, or tuned thresholds. Missing assets fail
+  closed; they must be created through the GUI's Test capture/Template
+  calibration flow before real use.
 - **No real game action.** No touch beyond the guarded single-serial
   `input tap` primitive; no swipe/drag/multi-touch/keyboard input.
 - **No login/reconnect flow.** Nothing authenticates, re-authenticates,
