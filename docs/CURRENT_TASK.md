@@ -1,5 +1,17 @@
 # CURRENT TASK
 
+## `v1.0.1` import preflight (2026-09-14)
+
+- Task ID: `REL-UPDATE-002`
+- Title: Verify whether remote `v1.0.1` can replace the published macro
+- Purpose: review the candidate update before any checkout, build, customer distribution, or release mutation.
+- Owner: Manager performed read-only review; existing Code must import/build; existing QA must independently verify.
+- Status: `BLOCKED`.
+- Actual result: adds per-account capture/template readiness gating and developer-only calibration UI. It has no GitHub release, artifact, published checksum, signed annotated tag, Code handoff, or QA report.
+- Completion: exact `v1.0.1` source is imported by Code, tests/build pass, QA validates its exact commit/artifact, and Manager publishes a truthfully labelled release.
+- Blocker: existing Code/QA agents are unavailable in the current session; Manager cannot perform their implementation or verification roles.
+- Next action: reactivate existing Code and QA only; no substitute agent/worktree and no customer-facing update before that gate.
+
 ## GitHub macro update inspection (2026-09-14)
 
 - Task ID: `REL-UPDATE-001`

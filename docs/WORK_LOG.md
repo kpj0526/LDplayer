@@ -1,5 +1,14 @@
 # WORK LOG
 
+## 2026-09-14 | REL-UPDATE-002 | Manager
+
+- Performed: read-only technical/release review of remote `v1.0.1` after the user requested that it be checked before retrieval.
+- Changed: `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
+- Commands/tests: `git diff --check v1.0.0..v1.0.1`; affected-file/stat/diff inspection; tag verification probe; GitHub `v1.0.1` release-asset query; active-collaborator check.
+- Result: source adds a per-account capture preflight gate and GUI safeguards, but is an unsigned lightweight source tag with no GitHub release/artifact and no independent QA evidence. Existing Code/QA sessions are unavailable.
+- Related commits: remote candidate `299e7a91840505cc90dcbb6b6f9e2ad75ed3b1cf`; no local Code/QA import or verification commit.
+- Next handoff: existing Code imports/builds candidate only after it is available; existing QA then independently verifies.
+
 ## 2026-09-12 | REL-0.1.0 corrected asset replacement | Manager
 
 - Performed: after QA packaging pass, created corrected Windows ZIP, fast-forwarded remote MVP branch, moved the release tag to corrected QA commit, deleted the initial unusable release asset, uploaded the corrected asset, and verified GitHub metadata.

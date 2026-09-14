@@ -1,5 +1,16 @@
 # PROGRESS
 
+## `v1.0.1` source review completed; governed import blocked (2026-09-14)
+
+- Current phase: `BLOCKED`.
+- Review result: `v1.0.1` is a six-file, 83-line source change from `v1.0.0`. It requires a successful account-local `Test capture`/template-anchor preflight in addition to an OK ADB mapping before enabling Start, and resets that readiness when the serial mapping changes.
+- Customer usability change: template-calibration UI is hidden unless developer mode is explicitly enabled; capture failures save an image for support rather than permitting Start.
+- Test evidence in source: `tests/test_gui.py` adds account-local readiness and reset coverage. This is source-provided coverage, not an independently executed QA result.
+- Release/supply-chain evidence: `v1.0.1` is a lightweight tag pointing directly at a commit (not a signed annotated tag); GitHub reports no `v1.0.1` release, executable asset, or checksum.
+- Decision: source was inspected only. It was not checked out, merged, packaged, released, or supplied to a customer.
+- Blocker: the only live collaborator is Manager; existing Code and QA agents are unavailable. Project rules prohibit Manager code integration or substituting a new agent, and prohibit treating unverified source as a customer update.
+- Next: restore the existing Code and QA sessions, then Code imports/builds the exact tag and QA independently executes regression/package safety verification before a new release is created.
+
 ## Remote macro update discovered; integration decision pending (2026-09-14)
 
 - Current phase: `BLOCKED`.
