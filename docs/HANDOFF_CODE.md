@@ -2000,3 +2000,174 @@ copied `dist\ldmanager\` to a clean temp directory (no pre-existing
   QA-side docs/reports arrived via the merge, untouched by this
   session, and should be reviewed (if needed) through whatever process
   produced them.
+
+## ADB-PATH-001: customer-visible ADB executable selection
+
+**Manager packet**: `ADB-PATH-001 — customer-visible ADB executable
+selection (2026-09-14)`, recorded on the `kpj0526/Manager` branch's
+`docs/TASK_PACKET.md` (read there via `git show`, never checked out or
+merged into this Code worktree). Trigger: a real customer screenshot
+showed `Device discovery failed: ADB device listing failed:
+FileNotFoundError` on `v1.0.1` even after manually setting `adb_path`
+in `configs/config.yaml` and restarting.
+
+### Status: implemented, tested, built. Not tagged, not pushed, not
+published, not merged into `main`.
+
+### Root-cause note (not exhaustively reproduced)
+
+`main()`/`build_controller()` already wired one shared
+`InputGateAdbRunner`-wrapped `SubprocessAdbRunner` to both the GUI and
+every worker (fixed earlier, in `REL-UPDATE-003`) — so a "GUI uses a
+different, unpathed runner" theory was ruled out directly by reading
+that wiring. The more likely cause is a manual-YAML-editing pitfall: a
+hand-typed, double-quoted Windows path (e.g.
+`"C:\LDPlayer\LDPlayer14\adb.exe"`) is not valid YAML — `\L` is not a
+recognized escape sequence — so the value that actually loaded may not
+have been the path the customer saw on screen. This was not proven
+with a literal repro in this session; instead, ADB-PATH-001 removes
+the entire manual-YAML-editing step, which is the fix the packet asks
+for regardless of the precise original cause.
+
+### Acceptance criteria
+
+| AC | Description | Status |
+|----|--------------|--------|
+| ADBPATH-01 | GUI shows configured/resolved ADB executable state | Done — new "ADB executable:" row shows the live `configured: ... effective: ... [found/NOT FOUND]` string, recomputed via the existing `resolve_adb_path()` after every load/Save/Clear |
+| ADBPATH-02 | User can choose a real local `adb.exe` without terminal/YAML editing; invalid path visibly rejected | Done — Browse opens a native file picker (`.exe` filter); Save validates the typed/picked path exists as a file before writing anything, else shows the error in a dedicated `adb_path_error_var` label and writes nothing |
+| ADBPATH-03 | Configured path persists locally and enables read-only discovery after restart | Done — persisted via the existing `adb_path` YAML key (`save_adb_path()`/`load_current_adb_path()` in `config_mapping.py`), read back on next `LDManagerApp` construction |
+| ADBPATH-04 | Discovery/path selection produces zero touch/Worker side effects, never assigns a serial automatically | Done — Browse/Save/Clear only ever call `list_devices()` (via the existing `_on_refresh_devices()`), never `run()`/a tap, never start a worker; covered by assertions on `fake_runner.calls` for the new controls specifically |
+| ADBPATH-05 | Regression suite/build pass; QA can verify exact Code hash | Done — see Test results / Build artifact below |
+
+### Actual files changed
+
+- `src/ldmanager/adb.py` — added `SubprocessAdbRunner.set_adb_path()`
+  (re-resolves and updates `self.adb_path` at runtime, no restart
+  needed) and `InputGateAdbRunner.set_adb_path()`/`.adb_path` (a
+  defensive pass-through via `getattr` — a wrapped runner without these
+  is a safe no-op, never an `AttributeError`).
+- `src/ldmanager/config_mapping.py` — added `AdbPathSaveError`,
+  `AdbPathSaveResult`, `load_current_adb_path()`, `save_adb_path()`.
+  Mirrors the existing `save_account_serial()` pattern: reuses
+  `_load_raw_config`/`_write_raw_config`/`resolve_config_path`,
+  fail-closed (rejects blank or a path that isn't an existing file,
+  writes nothing on rejection), preserves every other top-level config
+  section (`adb_mapping`, `logging`, ...) untouched, never deletes any
+  file (clearing only ever writes the YAML value to `null`).
+- `src/ldmanager/gui.py` — new "ADB executable:" row (`Entry` +
+  Browse/Save/Clear buttons) between the global Start All/Stop All row
+  and the per-account panel grid, plus a status label
+  (configured/effective/found-or-not) and an error label. New handlers
+  `_update_adb_path_status()`, `_on_browse_adb_path()`,
+  `_on_save_adb_path()`, `_on_clear_adb_path()`. Save/Clear call the
+  live runner's `set_adb_path()` (no restart) and then re-run the
+  existing, still read-only `_on_refresh_devices()` so the effect is
+  visible immediately.
+- `tests/fakes.py` — added `adb_path`/`set_adb_path()` to
+  `FakeAdbRunner`, mirroring `SubprocessAdbRunner`'s real shape, so GUI
+  tests can assert the runner was reinitialized in place.
+- `tests/test_adb.py` — 4 new tests for `set_adb_path()` on both
+  `SubprocessAdbRunner` and `InputGateAdbRunner`, including that a
+  missing explicit path is kept verbatim (never silently swapped to
+  `"adb"`) so a later real call fails honestly against the path the
+  user actually configured. The one pre-existing no-op test was
+  updated to use a bespoke bare double (since `FakeAdbRunner` now has
+  both attributes) so it still exercises the true no-`set_adb_path`
+  case.
+- `tests/test_config_mapping.py` — 9 new tests for
+  `load_current_adb_path()`/`save_adb_path()`: missing-file default,
+  read-back, blank rejection, missing-file rejection (fail-closed,
+  nothing written), directory-not-a-file rejection, persist + reload,
+  clear (never deletes the real file), and that `adb_mapping` and
+  `adb_path` never clobber each other in the same config file.
+- `tests/test_gui.py` — 4 new tests for the Browse/Save/Clear controls:
+  Browse fills the entry without any tap; Save of a missing path is
+  rejected visibly and persists nothing; Save of a real file persists,
+  reinitializes the live runner (`fake_runner.adb_path`), and updates
+  the status label, all with zero taps; Clear resets to auto-detect,
+  same zero-tap guarantee.
+- `docs/HANDOFF_CODE.md` — this section.
+
+### Test results
+
+```
+python -m pytest -q
+319 passed
+```
+
+Run 3x in a row for stability (consistent with this session's
+established practice) — all 3 runs: `319 passed`, 0 failures, 0
+flakes. (Prior baseline was 302; +4 `test_adb.py`, +9
+`test_config_mapping.py`, +4 `test_gui.py` = +17 -> 319.)
+
+Focused runs also independently confirmed:
+```
+python -m pytest -q tests/test_config_mapping.py       # 24 passed
+python -m pytest -q tests/test_gui.py -k "adb_path"     #  4 passed
+```
+
+### Build artifact (this session)
+
+- Path: `dist\ldmanager\ldmanager.exe` (plus `_internal\`,
+  `configs\*.example.yaml`, `templates\*.png`, `docs\`, `VERSION`,
+  `CHANGELOG.md`, `README_FIRST_RUN.txt`)
+- Size: 4,809,353 bytes (exe only)
+- SHA-256: `5d110c89df7fa23d1a05b62dbcd7caf87214eb7d94d3d2f8b3a751e83e54c56`
+- Built via `scripts\build_windows.ps1`; no live-exe launch
+  verification was performed in this session (build + full test suite
+  were treated as sufficient evidence for this handoff, per the "urgent
+  MVP priority, no extra scope" instruction; QA may perform live-launch
+  verification independently).
+- `dist\`/`build\`/`*.spec` remain git-ignored — not part of any
+  commit.
+
+### Commits
+
+- `5ade5dc` — `ADB-PATH-001: GUI-visible ADB executable path selection`
+  (implementation + tests + this HANDOFF section, in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `5ade5dc`.
+- Not tagged, not pushed, not published, not merged into `main`.
+
+### Limitations
+
+1. **The precise original customer root cause (YAML backslash-escaping
+   during manual editing) was not literally reproduced in this
+   session** — see the root-cause note above. The fix addresses the
+   entire class of problem (no more manual YAML editing needed) rather
+   than a single confirmed mechanism.
+2. **No live-exe launch verification was performed for this packet**
+   (unlike `REL-UPDATE-003`, which did a PID-tracked launch/terminate
+   check) — only `pytest` + the PyInstaller build itself were run, per
+   this task's "urgent MVP priority, no extra scope" instruction. QA
+   should perform an independent live-launch check of the new ADB
+   executable row.
+3. **`resolve_adb_path()`'s common-install-location probing and the
+   real LDPlayer `adb.exe` itself remain unverified against an actual
+   LDPlayer installation in this session** — same limitation as every
+   prior packet; nothing in ADB-PATH-001 changes that.
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by ADB-PATH-001.
+
+### QA focus points
+
+- Reproduce the original customer flow end-to-end: launch the built
+  exe, use Browse to pick a real local `adb.exe`, Save, confirm the
+  status row flips to `[found]` and device discovery (Refresh) now
+  lists real devices with **no** manual YAML editing at any point.
+- Confirm an invalid/missing path (typo, moved file) is rejected
+  visibly (`adb_path_error_var`) and that `configs/config.yaml`'s
+  `adb_path` value is **not** changed by a rejected Save — re-open the
+  file or restart the app to confirm the prior value (or none) is
+  still what's active.
+- Confirm Clear falls back to auto-detection (`resolve_adb_path()`'s
+  PATH/common-install-location search) and that no file on disk is
+  ever deleted by Clear — only the YAML value changes.
+- Confirm zero-touch: across Browse/Save/Clear and the Refresh they
+  trigger, no real ADB tap (`run()`) is ever issued and no worker is
+  ever started — this is the core safety property of this packet and
+  is covered by automated tests, but an independent live check adds
+  confidence.
+- Confirm the Windows build artifact above launches and shows the new
+  "ADB executable:" row without regressing any prior packet's GUI
+  behavior (mapping Save/Clear, Start/Stop gating, Test capture).

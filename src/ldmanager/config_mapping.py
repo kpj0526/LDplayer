@@ -1,4 +1,5 @@
-"""GUI-driven ADB mapping registration (UI-ADB-001).
+"""GUI-driven ADB mapping registration (UI-ADB-001) + ADB executable
+path registration (ADB-PATH-001).
 
 Lets a user register or clear exactly one account's ADB serial at a
 time — from the GUI, never by hand-editing YAML/terminal — while
@@ -7,10 +8,20 @@ reusing the existing explicit-mapping validation
 assigning a discovered device: every value saved here was either typed
 by the user or picked by the user from a list the GUI showed them.
 
+As of ADB-PATH-001, this module also lets the user register (via
+Browse, or typing a path) or clear the local ``adb.exe`` the app should
+use — the exact same ``adb_path`` field :func:`ldmanager.config.load_config`
+already reads, just now writable from the GUI instead of only by hand.
+A path is only ever persisted after confirming it actually exists as a
+file (fail-closed for a typo/missing executable); clearing it always
+succeeds and falls back to :func:`ldmanager.adb.resolve_adb_path`'s
+normal PATH/common-install-location auto-detection.
+
 This module only reads/writes the local, git-ignored config file. It
 never constructs an :class:`~ldmanager.adb.AdbRunner`, never captures a
-screenshot, and never sends an ADB command of any kind — saving/
-clearing a mapping is pure config file I/O + validation.
+screenshot, never deletes any file, and never sends an ADB command of
+any kind — saving/clearing either the mapping or the ADB path is pure
+config file I/O + validation.
 """
 
 from __future__ import annotations
@@ -33,6 +44,28 @@ class MappingSaveError(str, Enum):
     DUPLICATE = "duplicate"
     EXISTING_CONFIG_INVALID = "existing_config_invalid"
     WRITE_FAILED = "write_failed"
+
+
+class AdbPathSaveError(str, Enum):
+    BLANK = "blank"
+    NOT_FOUND = "not_found"
+    EXISTING_CONFIG_INVALID = "existing_config_invalid"
+    WRITE_FAILED = "write_failed"
+
+
+@dataclass(frozen=True)
+class AdbPathSaveResult:
+    """Outcome of one save/clear attempt for the configured ADB path.
+
+    ``adb_path`` is the resulting configured value on success (``None``
+    after a clear), or ``None`` on failure — a failed save never
+    partially applies.
+    """
+
+    ok: bool
+    error: Optional[AdbPathSaveError]
+    detail: str
+    adb_path: Optional[str]
 
 
 @dataclass(frozen=True)
@@ -153,3 +186,67 @@ def save_account_serial(
         return MappingSaveResult(False, MappingSaveError.WRITE_FAILED, str(exc), current_mapping)
 
     return MappingSaveResult(True, None, "Saved." if new_value else "Cleared.", updated_mapping)
+
+
+def load_current_adb_path(explicit_path: Optional[Path] = None) -> Optional[str]:
+    """Read the currently configured ``adb_path`` (may be ``None``,
+    meaning "auto-detect" — see :func:`ldmanager.adb.resolve_adb_path`).
+
+    Returns ``None`` (never raises) if the config file doesn't exist yet
+    or has no ``adb_path`` key, matching this project's usual
+    safe-default behavior. Does **not** validate the value here (that
+    happens at ``load_config()``/``save_adb_path()`` time) — this is a
+    lightweight read for the GUI to display the currently configured
+    value.
+    """
+
+    path = resolve_config_path(explicit_path)
+    try:
+        raw = _load_raw_config(path)
+    except ConfigError:
+        return None
+    value = raw.get("adb_path")
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def save_adb_path(
+    path: Optional[str],
+    explicit_path: Optional[Path] = None,
+) -> AdbPathSaveResult:
+    """Save (``path`` is a non-blank string) or clear (``path`` is
+    ``None``) the configured ``adb.exe`` path (ADB-PATH-001).
+
+    Fail-closed: a save is rejected — nothing is written — unless
+    ``path`` actually exists as a file on disk right now. Clearing
+    always succeeds (falls back to auto-detection); this function never
+    deletes any file, it only ever writes the ``adb_path`` YAML value.
+    Preserves every other top-level section (``adb_mapping``,
+    ``logging``, ``diagnostics``, ...) exactly as read.
+    """
+
+    config_path = resolve_config_path(explicit_path)
+
+    try:
+        raw = _load_raw_config(config_path)
+    except ConfigError as exc:
+        return AdbPathSaveResult(False, AdbPathSaveError.EXISTING_CONFIG_INVALID, str(exc), None)
+
+    if path is not None:
+        stripped = path.strip()
+        if not stripped:
+            return AdbPathSaveResult(False, AdbPathSaveError.BLANK, "Path cannot be blank.", None)
+        if not Path(stripped).is_file():
+            return AdbPathSaveResult(
+                False, AdbPathSaveError.NOT_FOUND, f"File not found: {stripped}", None
+            )
+        new_value: Optional[str] = stripped
+    else:
+        new_value = None
+
+    raw["adb_path"] = new_value
+    try:
+        _write_raw_config(config_path, raw)
+    except OSError as exc:
+        return AdbPathSaveResult(False, AdbPathSaveError.WRITE_FAILED, str(exc), None)
+
+    return AdbPathSaveResult(True, None, "Saved." if new_value else "Cleared.", new_value)

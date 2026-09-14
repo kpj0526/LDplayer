@@ -34,6 +34,12 @@ class FakeAdbRunner:
     calls: list = field(default_factory=list)
     capture_calls: list = field(default_factory=list)
     list_devices_calls: int = 0
+    adb_path: str | None = None
+
+    def set_adb_path(self, adb_path: str | None) -> None:
+        """Mirrors ``SubprocessAdbRunner.set_adb_path`` (ADB-PATH-001) --
+        just records the value, no real resolution/filesystem check."""
+        self.adb_path = adb_path
 
     def list_devices(self) -> str:
         self.list_devices_calls += 1

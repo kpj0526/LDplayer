@@ -174,6 +174,15 @@ class SubprocessAdbRunner:
         self.timeout = timeout
         self._logger = logger
 
+    def set_adb_path(self, adb_path: str | None) -> None:
+        """Re-resolve and update the ADB executable path at runtime
+        (ADB-PATH-001) -- e.g. right after the user Saves a new path
+        from the GUI, with no app restart required. Goes through the
+        same :func:`resolve_adb_path` candidate order as construction.
+        """
+
+        self.adb_path = resolve_adb_path(adb_path)
+
     def list_devices(self) -> str:
         if self._logger:
             self._logger.info("adb devices via %s", self.adb_path)
@@ -249,6 +258,22 @@ class InputGateAdbRunner:
 
     def set_live_enabled(self, enabled: bool) -> None:
         (self._live.set if enabled else self._live.clear)()
+
+    def set_adb_path(self, adb_path: str | None) -> None:
+        """Pass-through to the inner runner's ``set_adb_path`` (ADB-PATH-001),
+        if it has one -- a plain fake/test double without this method is
+        silently a no-op, never an error."""
+
+        inner_setter = getattr(self._inner, "set_adb_path", None)
+        if inner_setter is not None:
+            inner_setter(adb_path)
+
+    @property
+    def adb_path(self) -> str | None:
+        """The inner runner's currently effective ADB path, if it
+        exposes one -- for GUI display only (ADB-PATH-001)."""
+
+        return getattr(self._inner, "adb_path", None)
 
     def list_devices(self) -> str:
         return self._inner.list_devices()
