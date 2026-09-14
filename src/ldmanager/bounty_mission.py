@@ -50,7 +50,8 @@ from .adb import AdbRunner
 from .bounty_config import BountyMissionConfig
 from .coordinates import RelativeCoordinate, RelativeRegion, build_tap_args
 from .models import AccountId
-from .recognition import RecognitionStatus, Recognizer, RecognitionResult
+from .recognition import Recognizer, RecognitionResult
+from .screen_classification import MissionAssessment, assess_mission_target
 from .screenshot import capture_screenshot
 from .runtime import AccountMissionRuntime, SlotState
 
@@ -93,13 +94,6 @@ class BountyCycleResult:
     @property
     def ok(self) -> bool:
         return self.outcome is BountyOutcome.COMPLETED_CYCLE
-
-
-class MissionAssessment(str, Enum):
-    TARGET_CONFIRMED = "target_confirmed"
-    NON_TARGET_CONFIRMED = "non_target_confirmed"
-    RECOGNITION_FAILED = "recognition_failed"
-    CAPTURE_UNAVAILABLE = "capture_unavailable"
 
 
 def _recognize(runner, serial, config, recognizer, roi, label) -> Optional[RecognitionResult]:
@@ -167,43 +161,23 @@ def _tap_any_template(
 
 
 def _mission_is_acceptable(runner, serial, config, recognizer) -> MissionAssessment:
-    """Both the phrase AND the quantity must independently match.
+    """Is the currently-selected mission the configured target objective?
 
-    Returns ``None`` on capture failure (distinct from ``False``, which
-    means "captured fine, but not both conditions held").
-    """
+    GAME-CAL-001: this is now a thin wrapper around the shared
+    :func:`ldmanager.screen_classification.assess_mission_target` --
+    moved there so mission-title/OCR classification has exactly one
+    implementation, shared with
+    :func:`ldmanager.screen_classification.complete_mission_if_verified`'s
+    own completion-target guard, rather than two copies that could
+    silently drift apart. Behavior is unchanged: both the phrase AND the
+    quantity must independently match (or the single combined
+    ``target_all_monsters_0_of_200`` production template), never one
+    signal alone; a confidently non-matching mission title (e.g. any
+    title other than "모든 몬스터 처치") is ``NON_TARGET_CONFIRMED`` --
+    never treated as a screen/layout problem, see
+    ``ldmanager.screen_classification``'s module docstring."""
 
-    # Production target detection is deliberately one exact, combined
-    # customer-video template: "모든 몬스터 처치 (0/200)".  It avoids a
-    # loose phrase match being combined with a number from another area.
-    if "target_all_monsters_0_of_200" in config.template_map:
-        target = _recognize(
-            runner, serial, config, recognizer, _FULL_SCREEN, "target_all_monsters_0_of_200"
-        )
-        if target is None:
-            return MissionAssessment.CAPTURE_UNAVAILABLE
-        if target.matched:
-            return MissionAssessment.TARGET_CONFIRMED
-        if target.status in {RecognitionStatus.UNKNOWN, RecognitionStatus.LOW_CONFIDENCE}:
-            return MissionAssessment.RECOGNITION_FAILED
-        return MissionAssessment.NON_TARGET_CONFIRMED
-
-    # Legacy fixture/config compatibility only. Production configurations
-    # must provide the combined target template above.
-    phrase = _recognize(runner, serial, config, recognizer, config.mission_phrase_roi, config.mission_phrase_label)
-    if phrase is None:
-        return MissionAssessment.CAPTURE_UNAVAILABLE
-    quantity = _recognize(runner, serial, config, recognizer, config.mission_quantity_roi, config.mission_quantity_label)
-    if quantity is None:
-        return MissionAssessment.CAPTURE_UNAVAILABLE
-    if phrase.matched and quantity.matched:
-        return MissionAssessment.TARGET_CONFIRMED
-    # A loaded template recognizer distinguishes unknown/low confidence from
-    # a confidently absent target.  Only the latter may cause a refresh.
-    uncertain = {RecognitionStatus.UNKNOWN, RecognitionStatus.LOW_CONFIDENCE}
-    if config.template_map and (phrase.status in uncertain or quantity.status in uncertain):
-        return MissionAssessment.RECOGNITION_FAILED
-    return MissionAssessment.NON_TARGET_CONFIRMED
+    return assess_mission_target(runner, serial, config, recognizer)
 
 
 def _verify_refresh_popup(runner, serial, config, recognizer) -> Optional[bool]:
