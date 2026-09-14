@@ -1728,3 +1728,275 @@ suite run, the build, and both live-exe checks.
 - Confirm no ADB tap/worker start occurs merely from launching the exe
   fresh (only Refresh/Save/Start, all user-initiated, should ever touch
   ADB or a worker) — consistent with prior packets' same requirement.
+
+---
+
+## REL-UPDATE-003: import + integrate v1.0.1's Test-capture readiness gate
+
+**Manager Task Packet REL-UPDATE-003.** Import candidate from exact
+remote tag `v1.0.1` (`299e7a91840505cc90dcbb6b6f9e2ad75ed3b1cf`) into
+`kpj0526/Code`, non-destructively, integrating the per-account "Test
+capture/template readiness gate" while preserving all existing
+approved work.
+
+**Status: merged, verified, remediated, and self-tested only. Not
+tagged/pushed/published. Not claiming real LD/game success** — see
+Limitations below for exactly what remains unverified.
+
+### Ancestry inspection (done first, per the packet)
+
+```
+git fetch origin tag v1.0.1
+git rev-parse v1.0.1                              # 299e7a91840505cc90dcbb6b6f9e2ad75ed3b1cf (exact match confirmed)
+git merge-base v1.0.1 HEAD                          # a51ef07 (== our HEAD at the time)
+git merge-base --is-ancestor v1.0.1 HEAD  -> NO
+git merge-base --is-ancestor HEAD v1.0.1  -> YES
+```
+
+Our branch HEAD (`a51ef07`, the REL-0.1.0-PKG-01 hash-record commit)
+was a **strict ancestor** of `v1.0.1` — the tag's 22 additional commits
+(mostly `QA: merge X target`/`QA: record X pass/fail` records from a
+parallel QA-side integration branch, plus two `feat:` commits at the
+tip) build linearly on top of exactly our own history, adding nothing
+that conflicts with it. This meant the merge was **structurally
+guaranteed non-destructive**: nothing on `kpj0526/Code` could be lost,
+reordered, or overwritten by merging a strict descendant. No
+`reset`/force-checkout was used or needed; `git merge --no-ff v1.0.1`
+completed with the `ort` strategy and **zero conflicts**.
+
+### What importing v1.0.1 actually brought in
+
+Per `git diff HEAD v1.0.1 --stat` (inspected file-by-file before
+merging, per the packet's "inspect diff first" instruction): 46 files,
++1912/-63 lines. Highlights:
+
+- **The requested feature** (`gui.py`, `controller.py`): per-account
+  "Test capture" button + readiness gate — see Required Outcomes below.
+- **`src/ldmanager/runtime.py`** (new): `AccountMissionRuntime`
+  (per-account slot/phase state) + `click_and_verify()` (capture → tap
+  → require the expected next template or a changed screen, saving a
+  diagnostic capture and failing closed on a stale/unknown screen).
+- **`src/ldmanager/calibration.py`** (new): a developer-mode-only real
+  PNG crop tool (`crop_template()`) for turning a saved Test-capture
+  PNG into a named template asset.
+- **`src/ldmanager/recognition.py`**: adds `OpenCVTemplateRecognizer` —
+  a *real*, working OpenCV template-matching recognizer (grayscale +
+  edge-matching, ROI-scoped, fail-closed on any missing
+  dependency/template/undersized ROI). `PlaceholderRecognizer` is
+  unchanged and still present.
+- **`templates/*.png`** (new, 20 files): real reference screenshots
+  from the customer's game (button/slot/progress states) — these are
+  real assets, not placeholders, bundled by the merge.
+- **`src/ldmanager/adb.py`**: adds `resolve_adb_path()` (PATH/env-var/
+  common-LDPlayer-install discovery, never guesses a port) and
+  `InputGateAdbRunner` (see Remediation #1 below).
+- **`bounty_mission.py`/`bounty_config.py`**: dynamic template-based
+  tapping (`_tap_template`/`_tap_any_template`) with automatic fallback
+  to the existing fixed-coordinate path when `template_map` is empty —
+  **fully backward compatible**, which is why every pre-existing
+  fake-runner/placeholder-recognizer test kept passing unmodified.
+- `pyproject.toml`: new optional `[recognition]` extra
+  (`opencv-python>=4.8`, `numpy>=1.24`) — not a hard dependency.
+- Parallel QA-side docs/reports (`docs/ACCEPTANCE_STATUS.md`,
+  `docs/PROJECT_SPEC.md`, `docs/TASK_PACKET.md`, `docs/TEST_PLAN.md`,
+  `docs/PROGRESS.md`, `reports/QA_REPORT.md`, `CHANGELOG.md`,
+  `VERSION`) — merged in as-is; these belong to a separate
+  QA/Manager-side documentation convention and were not authored or
+  altered by this Code-worktree session. `docs/HANDOFF_CODE.md` itself
+  was **not** touched by v1.0.1 — every prior section above this one is
+  exactly as this worktree left it.
+
+### Required outcomes: confirmation
+
+| # | Outcome | Where / how verified |
+|---|---|---|
+| 1 | Start disabled unless mapping OK **and** successful Test capture; LD1 readiness never enables LD2 | `AccountPanel._capture_ready` is a per-instance attribute, never shared; `_on_start()` checks `connection_status is OK and self._capture_ready`. `tests/test_gui.py::test_capture_readiness_is_account_local` sets LD1 ready and asserts LD2's Start stays disabled |
+| 2 | Saving/clearing mapping resets only that account's readiness | `LDManagerApp._on_save_mapping`/`_on_clear_mapping` call `panel.set_capture_ready(False)` on **that** `AccountId`'s panel only. `tests/test_gui.py::test_serial_save_clears_capture_readiness` |
+| 3 | Capture mismatch saves a diagnostic capture and blocks Start; calibration UI hidden unless developer mode | `LDManagerApp._on_capture_test()` always writes `diagnostics/captures/<LDx>/capture-<ts>.png` before checking the readiness callback, and calls `set_capture_ready(False)` on a non-match. The "Template calibration" button is constructed only `if os.environ.get("LDMANAGER_DEVELOPER_MODE") == "1"` |
+| 4 | Full automated suite passes; Windows build succeeds | **302 passed**, 0 failed (see below). `scripts\build_windows.ps1` completed successfully, producing a working exe (see Build below) |
+| 5 | HANDOFF updated with task ID/tag/files/tests/artifact/commit/limits/QA focus | This section |
+| 6 | Commit on `kpj0526/Code`; no publish/tag/release; no claim of real LD/game success | Done — see Commits below. Explicitly not claimed anywhere in this section |
+
+### Remediation: 3 defects found during diff inspection, fixed before commit
+
+Found by reading the actual diff/content of every changed file before
+merging (not merely trusting the diffstat) — exactly what "inspect
+ancestry/diff first" is for. Fixed in a **separate commit** on top of
+the merge, so the merge commit remains an unmodified record of the
+tag's actual content.
+
+1. **Safety gap — `InputGateAdbRunner` defined but never wired.**
+   `adb.py` fully implements a live-mode input gate (`run()`/taps
+   refused unless `live_enabled`; `list_devices`/`capture_binary`
+   always pass through) — but `git grep -n "InputGateAdbRunner"` across
+   the whole `v1.0.1` tree found it only in its own definition and one
+   comment; `build_controller()` wired the *raw* `SubprocessAdbRunner`
+   directly. Combined with outcome #1-3 (Start now genuinely gates on a
+   real, working recognizer + real templates), this meant a verified
+   Start could already send real ADB taps with **no separate opt-in** —
+   in tension with the packet's explicit "do not claim real LD/game
+   success." **Fixed**: `build_controller()` now always wraps the real
+   runner in `InputGateAdbRunner`, `live_enabled=False` by default,
+   opt-in only via a new `LDMANAGER_LIVE_MODE=1` environment variable
+   (mirrors the existing `LDMANAGER_DEVELOPER_MODE` pattern already
+   used for the calibration UI). Discovery/Refresh/Test-capture are
+   unaffected either way (never gated). 5 new unit tests
+   (`tests/test_adb.py`) + 3 integration tests (`tests/test_app.py`).
+2. **Dead code — runtime-status sync unreachable.** In
+   `controller.py`'s `AccountWorker._loop`, the block that copies
+   `phase`/`locked_slots`/`slot_states` from the account's
+   `AccountMissionRuntime` into `AccountWorkerStatus` (what feeds the
+   GUI's phase line) sat *after* an unconditional `break` in the
+   error-outcome branch — unreachable on literally every cycle, error
+   or not. **Fixed**: moved into the same locked block as the other
+   per-cycle status fields, so it runs on every cycle as clearly
+   intended. 2 new regression tests (`tests/test_controller.py`),
+   covering both a normal and an error-outcome cycle.
+3. **Test-file corruption.** `tests/test_gui.py`'s
+   `test_refresh_updates_panel_from_status_snapshot` had 3 of its 4
+   assertions missing; they turned up appended to the end of an
+   unrelated test, `test_serial_save_clears_capture_readiness`, where
+   they passed only by accident (shared module-scoped `app` fixture +
+   specific execution order left the referenced widgets in the right
+   state anyway) — neither test actually verified what its name
+   claimed. **Fixed**: each assertion restored to its correct test.
+
+### Actual files changed
+
+**By the merge** (46 files — see diffstat above for the complete,
+verbatim list; not re-listed here to avoid duplication).
+
+**By the remediation commit** (`a241c5f`, on top of the merge):
+```
+ src/ldmanager/app.py         (InputGateAdbRunner wiring + LDMANAGER_LIVE_MODE)
+ src/ldmanager/controller.py  (runtime-status sync moved out of dead code)
+ tests/test_adb.py            (+5: InputGateAdbRunner unit tests)
+ tests/test_app.py            (+3: build_controller() live-mode wiring)
+ tests/test_controller.py     (+2: runtime-status sync regression guards)
+ tests/test_gui.py            (test content corruption fixed, no new tests)
+```
+
+### Test command / result
+
+```
+.venv\Scripts\python.exe -m pytest -v
+```
+
+Result: **302 passed**, 0 failed, 0 skipped (266 before this packet +
+36 net: the merge itself added test_runtime.py [4] and modified
+test_gui.py [net +2, before my content-corruption fix] = 292 total
+right after merging, then this session's remediation added 10 more
+[5 adb + 3 app + 2 controller] = 302). Re-run 4× consecutively
+post-merge and again post-remediation: stable every time.
+
+### Build + launch verification (this session)
+
+```
+scripts\build_windows.ps1
+```
+completed successfully — now installs `.[build,recognition]` (adds
+`opencv-python`/`numpy`), and PyInstaller's `hook-cv2.py`/`hook-numpy.py`
+processed cleanly (bundling the real OpenCV/numpy DLLs this time,
+unlike the REL-0.1.0-PKG-01 build). `dist\ldmanager\` now also carries
+`configs\*.example.yaml`, `templates\*.png` (real reference images),
+`docs\RUN_GUIDE.md`, `docs\REAL_CAPTURE_CHECKLIST.md`, `VERSION`,
+`CHANGELOG.md`, and `README_FIRST_RUN.txt`.
+
+**Fresh-extraction launch test** (same protocol as REL-0.1.0-PKG-01):
+copied `dist\ldmanager\` to a clean temp directory (no pre-existing
+`config.yaml`/`bounty.yaml`), launched `ldmanager.exe` via
+`Start-Process` (tracked by exact PID):
+
+- Still running 5 seconds later, `MainWindowTitle = 'ldmanager (MVP)'`
+  — GUI genuinely opened, including with the much larger
+  OpenCV-bundled build.
+- `configs\config.yaml`/`configs\bounty.yaml` both freshly bootstrapped;
+  `config.yaml`'s `adb_mapping` verified to have all nine entries
+  (`LD1`..`LD9`) as `null`.
+- No `LDMANAGER_LIVE_MODE` set — confirmed by design/tests that Start
+  therefore cannot issue a real tap even once mapping+capture are
+  verified.
+- Cleanly terminated via `Stop-Process -Id <PID> -Force`; confirmed
+  gone via `Get-Process` afterward; no lingering process (`tasklist`
+  clean). Temp simulation directory removed afterward.
+
+### Build artifact (this session)
+
+- Path: `dist\ldmanager\ldmanager.exe` (plus `_internal\` [now
+  including bundled OpenCV/numpy], `configs\*.example.yaml`,
+  `templates\*.png`, `docs\`, `VERSION`, `CHANGELOG.md`,
+  `README_FIRST_RUN.txt`)
+- Size: 4,784,289 bytes (exe only); ~170 MB total `dist\ldmanager\`
+  folder (OpenCV/numpy DLLs account for the large jump vs. prior
+  packets' ~2 MB exe / ~28 MB folder)
+- SHA-256: `8939124e3ad958fb47e39979a39bce93437f7ecc86f406f30239f81c331ebd9f`
+- `dist\`/`build\`/`*.spec` remain git-ignored — not part of any commit.
+
+### Commits
+
+- `e67fcad` — `Merge tag 'v1.0.1' (299e7a9) into kpj0526/Code --
+  REL-UPDATE-003` (the tag's content, unmodified, via `git merge
+  --no-ff`, zero conflicts)
+- `a241c5f` — `REL-UPDATE-003: remediate 3 defects found during v1.0.1
+  diff inspection` (the three fixes above)
+- This HANDOFF hash-record update is the follow-up commit immediately
+  after `a241c5f`. Not tagged, not pushed, not published, not merged
+  into `main`.
+
+### Limitations
+
+1. **Real recognition/template matching is entirely unverified against
+   a real game in this session.** `OpenCVTemplateRecognizer` and the 20
+   bundled real template PNGs came from the imported candidate; no
+   automated test (and no action in this session) exercised them
+   against a real captured frame from a real device. Every automated
+   test still uses `LabelMappingRecognizer`/`FakeAdbRunner`/
+   `PlaceholderRecognizer`-shaped fakes.
+2. **`InputGateAdbRunner`'s remediation makes real taps opt-in, not
+   impossible.** Setting `LDMANAGER_LIVE_MODE=1` fully re-enables real
+   ADB input the moment mapping+Test-capture succeed — this is a
+   deliberate, minimal, reversible safety default, not a hard
+   architectural barrier. Whoever controls deployment/distribution of a
+   real build controls whether that env var is ever set.
+3. **No real customer/LDPlayer environment was used anywhere in this
+   session** — build + launch verification confirms the packaged exe
+   *starts* and *self-bootstraps safely*, not that mission automation,
+   recognition accuracy, or the calibration workflow work correctly
+   against a real game. This session makes no such claim.
+4. **The QA-side parallel documentation** (`docs/ACCEPTANCE_STATUS.md`,
+   `docs/PROJECT_SPEC.md`, `docs/TASK_PACKET.md`, `docs/TEST_PLAN.md`,
+   `docs/PROGRESS.md`, `reports/QA_REPORT.md`, `CHANGELOG.md`,
+   `VERSION`) was imported verbatim and not reviewed/audited by this
+   session beyond confirming it doesn't break anything — its content is
+   attributable to whatever process produced `v1.0.1`, not to this
+   Code-worktree session.
+5. **`resolve_adb_path()`'s common-install-location probing**
+   (`C:\LDPlayer`, `C:\Program Files\LDPlayer`,
+   `C:\Program Files\dnplayerext2`) has not been verified against an
+   actual LDPlayer installation in this session.
+6. All limitations recorded in every prior TP-00x/RW-0x/MVP-001/
+   MVP-001-CV/UI-ADB-001/REL-0.1.0-PKG-01 section of this document
+   remain valid and are not superseded by REL-UPDATE-003.
+
+### QA focus points
+
+- Re-verify Required Outcomes 1-3 directly (per-account isolation,
+  save/clear resets readiness, calibration hidden without developer
+  mode) independently of this session's own test run.
+- Confirm `LDMANAGER_LIVE_MODE` is **unset** in whatever environment QA
+  smoke-tests in, and confirm that a verified Start (mapping OK +
+  successful Test capture, if reachable) does **not** produce any real
+  ADB tap in that state — this is the specific gap this session found
+  and closed; re-verifying it independently is high-value.
+- If a real device/game environment becomes available: this is the
+  first packet where `OpenCVTemplateRecognizer` + real templates could
+  be meaningfully exercised — but doing so is explicitly **not** claimed
+  or requested as complete by this session.
+- Confirm the Windows build artifact above launches and self-bootstraps
+  identically to the REL-0.1.0-PKG-01 artifact, just larger (OpenCV
+  bundled) — no new first-run friction introduced.
+- Spot-check that `docs/HANDOFF_CODE.md` (this file) is the only
+  Code-worktree documentation convention touched by this session — the
+  QA-side docs/reports arrived via the merge, untouched by this
+  session, and should be reviewed (if needed) through whatever process
+  produced them.
