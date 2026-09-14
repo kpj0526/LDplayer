@@ -2290,9 +2290,10 @@ suites are unmodified and still pass unchanged.)
 
 ### Commits
 
-- Implementation + tests + this handoff section, then a short
-  follow-up "docs: record GAME-CAL-001 commit hash in handoff" commit
-  recording the exact hash, per this session's established pattern.
+- `6fa6d39` — `GAME-CAL-001: configurable mission-screen recognition/calibration`
+  (implementation + tests + this HANDOFF section, in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `6fa6d39`.
 - Not tagged, not pushed, not published, not merged into `main`.
 
 ### Limitations -- NEEDS_REAL_TEST
