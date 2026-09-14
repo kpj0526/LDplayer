@@ -10,9 +10,17 @@
 # -- never by reading the displayed refresh cost, which changes each
 # time. Do not repurpose these two fields for a cost value.
 
+# GAME-CAL-001 (real-capture rework): the customer's actual LDPlayer
+# client captures are 1280x720 (verified against 3 real supplied PNGs --
+# see tests/fixtures/game_cal_001/source/ and its PROVENANCE.md). Every
+# stable_screen_anchors/complete_state/currency_action ROI and template
+# below is calibrated against that real 1280x720 resolution -- if your
+# own instance renders at a different resolution, re-measure screen_size
+# with `adb shell wm size` (see docs/REAL_CAPTURE_CHECKLIST.md) and
+# recalibrate the ROIs below to match your own captures.
 screen_size:
-  width: 960
-  height: 540
+  width: 1280
+  height: 720
 
 templates_dir: templates
 threshold: 0.8
@@ -46,6 +54,19 @@ template_map:
   button_complete: "button_complete.png"
   button_claim_reward: "button_claim_reward.png"
   button_close_reward: "button_close_reward.png"
+  # GAME-CAL-001 (real-capture rework): calibrated from 3 real, supplied
+  # 1280x720 customer captures of the 임무 (Mission) > 지역 (Region)
+  # detail screen -- see tests/fixtures/game_cal_001/ (source PNGs +
+  # PROVENANCE.md) and tests/test_screen_classification_real_assets.py
+  # (loads these exact files and proves the expected classification).
+  # Used by stable_screen_anchors (screen-layout confirmation), the
+  # completed-state check, the currency-action check, and the
+  # mission-target-phrase fast path, respectively.
+  mission_header: "mission_header.png"
+  mission_objective_label: "mission_objective_label.png"
+  complete_badge: "complete_badge.png"
+  currency_action_4400: "currency_action_4400.png"
+  mission_target_phrase: "mission_target_phrase.png"
 
 # Tap points to select/check each of the 5 bounty slots. Exactly 5
 # entries expected by the state machine (config itself allows any
@@ -82,8 +103,13 @@ refresh_confirm_point: {x: 0.55, y: 0.60}
 # never trigger complete/claim.
 kill_progress_roi: {x: 0.40, y: 0.05, width: 0.20, height: 0.06}
 kill_progress_complete_label: "200/200"
-complete_state_roi: {x: 0.05, y: 0.05, width: 0.15, height: 0.06}
-complete_state_label: "완료"
+# GAME-CAL-001 (real-capture rework): complete_state_roi/label below are
+# calibrated from the real completed capture's "완료" badge (see
+# template_map's complete_badge entry above) -- confirmed to correctly
+# NOT match the two real non-completed captures (their "(16/165)"/
+# "(0/450)" counters occupy this same ROI instead).
+complete_state_roi: {x: 0.4375, y: 0.7083, width: 0.1172, height: 0.0694}
+complete_state_label: "complete_badge"
 
 # Complete -> reward -> claim -> result -> close -> mission list.
 select_complete_point: {x: 0.10, y: 0.20}
@@ -108,43 +134,56 @@ max_result_verify_attempts: 3
 max_mission_list_verify_attempts: 3
 retry_delay_seconds: 1.0
 
-# --- GAME-CAL-001: screen classification (all optional; omit any/all of
-# this section and that check is simply skipped, never fabricated). See
-# ldmanager/screen_classification.py's module docstring for the full
-# contract. Calibrate every ROI/label below from real captures -- values
-# here are PLACEHOLDERS, same as the rest of this file.
+# --- GAME-CAL-001 (real-capture rework): screen classification --------
 #
-# Stable, STATIC screen-layout chrome only (Mission tab / Region tab /
-# mission-list-or-detail panel FRAME) -- e.g. never a mission-list PANEL
-# TITLE like "자유 토벌작전"/"Free Subjugation", which only appears for
-# one specific objective type and would wrongly reject every other
-# mission's screen as a MISMATCH. Never a reward amount or a dynamic
-# progress counter either. At least min_stable_anchor_matches (default:
-# all of them) must match, or the screen is classified MISMATCH.
+# Calibrated from 3 REAL, customer-supplied 1280x720 captures of the
+# 임무 (Mission) > 지역 (Region) detail screen -- not guesses. See
+# tests/fixtures/game_cal_001/ (source PNGs + PROVENANCE.md) and
+# tests/test_screen_classification_real_assets.py, which loads these
+# exact source images (not a fake always-match recognizer) and proves
+# each expected classification. See
+# ldmanager/screen_classification.py's module docstring for the full
+# contract. This section is still optional overall (omit it and the
+# corresponding check is simply skipped, never fabricated) -- but every
+# value actually present below is real, not a placeholder.
+#
+# Stable, STATIC screen-layout chrome only -- the 임무 (Mission) modal
+# header icon+text, and the 임무 목표 ("Mission Objective") row label.
+# Deliberately NEVER a mission-list PANEL TITLE like "자유
+# 토벌작전"/"야왕궁 토벌작전" ("Free Subjugation"/whatever other
+# objective), which only appears for one specific mission and would
+# wrongly reject every other mission's valid screen as a MISMATCH --
+# confirmed directly: both a target ("자유 토벌작전") and a non-target
+# ("야왕궁 토벌작전") real capture match both anchors below identically.
+# Never a reward amount or a dynamic progress counter either. Both
+# anchors are required (min_stable_anchor_matches defaults to "all").
 stable_screen_anchors:
-  - {roi: {x: 0.0, y: 0.0, width: 0.15, height: 0.06}, label: "mission_screen"}
-  - {roi: {x: 0.0, y: 0.90, width: 0.15, height: 0.08}, label: "region_tab"}
-# min_stable_anchor_matches: 2
+  - {roi: {x: 0.0, y: 0.0, width: 0.1172, height: 0.1111}, label: "mission_header"}
+  - {roi: {x: 0.2344, y: 0.6389, width: 0.1250, height: 0.0833}, label: "mission_objective_label"}
 
-# Whole-button refresh/reroll variants (OR-matched) that mark the screen
-# as showing a currency/refresh action -- e.g. the customer's "6600"
-# refresh button. Defaults to the four button_refresh_* labels already
-# used above; only listed here if you want to override that default.
-# currency_action_labels: ["button_refresh_4400", "button_refresh_6600", "button_refresh_9900", "button_refresh_14900"]
+# Whole-widget crop of the currency-cost action box (counter + cost +
+# icon) that appears on any active (not-yet-completed) mission in this
+# screen -- confirmed present, at this same location, on both the real
+# 16/165 target-in-progress capture and the real 0/450 non-target
+# capture. Both supplied real examples show a cost of 4400; a mission
+# with a different displayed cost is not yet covered by this one crop
+# (NEEDS_REAL_TEST -- add further currency_action_<cost> crops/labels,
+# OR-matched the same way button_refresh_4400/6600/9900/14900 already
+# are above, once real captures of other costs are available).
+currency_action_labels: ["currency_action_4400"]
 
-# ONE generic, non-digit-specific "mission in progress" indicator (e.g.
-# a progress-bar frame graphic) -- deliberately never a fixed "x/y"
-# digit crop tied to one mission's specific target quantity (a
-# "130/180" mission and a "0/200" mission must both be recognized as
-# in-progress by the SAME template, not two different digit-specific
-# ones).
+# No distinct, non-digit-specific "in progress" graphic (separate from
+# the currency-action box above) was present in either real
+# not-yet-completed capture -- left uncalibrated rather than guessed.
+# Both real non-completed examples classify safely as CURRENCY_ACTION
+# instead (still zero-touch either way).
 # in_progress_roi: {x: 0.40, y: 0.05, width: 0.20, height: 0.06}
 # in_progress_label: "in_progress"
 
 # NOTE: whether the CURRENTLY SELECTED mission is the required "모든
-# 몬스터 처치" objective is a completely separate check, driven by the
-# EXISTING mission_phrase_roi/mission_phrase_label +
-# mission_quantity_roi/mission_quantity_label (or target_all_monsters_
-# 0_of_200) fields above -- never by stable_screen_anchors. A different,
-# non-target mission title is a normal, valid screen (never a MISMATCH),
-# just not one this project will ever act on.
+# 몬스터 처치" objective is a completely separate check (never by
+# stable_screen_anchors) -- driven by template_map's mission_target_phrase
+# entry above (a real crop of that exact phrase, confirmed to correctly
+# NOT match the real non-target capture's different phrase, "냉혈사
+# 처치"). A non-target mission title is a normal, valid screen (never a
+# MISMATCH), just not one this project will ever act on.

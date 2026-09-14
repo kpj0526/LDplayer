@@ -171,7 +171,7 @@ def _mission_is_acceptable(runner, serial, config, recognizer) -> MissionAssessm
     own completion-target guard, rather than two copies that could
     silently drift apart. Behavior is unchanged: both the phrase AND the
     quantity must independently match (or the single combined
-    ``target_all_monsters_0_of_200`` production template), never one
+    ``mission_target_phrase`` production template), never one
     signal alone; a confidently non-matching mission title (e.g. any
     title other than "모든 몬스터 처치") is ``NON_TARGET_CONFIRMED`` --
     never treated as a screen/layout problem, see

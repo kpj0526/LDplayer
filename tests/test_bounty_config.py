@@ -38,7 +38,10 @@ def test_missing_bounty_config_file_raises_clear_error(tmp_path):
 def test_example_bounty_config_loads_successfully():
     config = load_bounty_config(EXAMPLE_BOUNTY_CONFIG)
     assert config.slot_count == 5
-    assert config.screen_size.width == 960
+    # GAME-CAL-001 (real-capture rework): 1280x720 matches the real
+    # customer captures used to calibrate this file's screen-layout/
+    # completion/currency anchors -- see tests/fixtures/game_cal_001/.
+    assert config.screen_size.width == 1280
     assert config.mission_phrase_label == "모든 몬스터 처치"
     assert config.mission_quantity_label == "200"
     assert config.kill_progress_complete_label == "200/200"
@@ -93,7 +96,7 @@ def test_invalid_threshold_is_rejected(tmp_path):
 
 def test_invalid_screen_size_is_rejected(tmp_path):
     text = EXAMPLE_BOUNTY_CONFIG.read_text(encoding="utf-8")
-    bad = text.replace("width: 960", "width: 0", 1)
+    bad = text.replace("width: 1280", "width: 0", 1)
     path = tmp_path / "bounty.yaml"
     path.write_text(bad, encoding="utf-8")
     with pytest.raises(BountyConfigError):

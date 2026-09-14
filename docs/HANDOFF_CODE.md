@@ -2352,3 +2352,209 @@ suites are unmodified and still pass unchanged.)
   evidence screenshots.
 - Confirm the Windows build artifact above launches without regressing
   any prior packet's GUI behavior.
+
+## GAME-CAL-001 REAL-CAPTURE REWORK: calibrate from real customer PNGs
+
+**Trigger**: `v1.0.3-rc.1` was withdrawn — the actual customer Test
+capture still reported "Only 0/2 stable screen anchors matched" against
+the prior GAME-CAL-001 commit's `stable_screen_anchors`, which had never
+been calibrated against any real image (only mock/fake-recognizer
+fixtures existed at that point). Manager/customer supplied 3 real,
+original, unmodified 1280x720 LDPlayer captures and required real-asset
+calibration + a reproducible test proving them recognized before any
+completion claim.
+
+### Status: implemented, tested (against real assets), built. Not
+tagged, not pushed, not published, not merged into `main`.
+
+### Real captures used (documented provenance)
+
+Copied verbatim into `tests/fixtures/game_cal_001/source/` — see that
+directory's `PROVENANCE.md` for the full table (exact pixel regions,
+what each derived crop is used for, what remains uncalibrated):
+
+| File | Shows |
+|---|---|
+| `completed_target.png` | 임무 > 지역 > 자유 토벌작전 detail, 모든 몬스터 처치, **완료** (completed), 완료 button visible |
+| `in_progress_target.png` | Same mission type, different instance: 모든 몬스터 처치, **(16/165)**, currency action cost 4400 |
+| `non_target.png` | A **different** mission: 야왕궁 토벌작전, 냉혈사 처치, **(0/450)**, currency action cost 4400, plus a 순간 이동 (teleport) button |
+
+### Root cause of the withdrawal (real measurement, not guesswork)
+
+Direct measurement against the real captures found the true defect:
+`OpenCVTemplateRecognizer`'s per-image `cv2.equalizeHist` normalization
+(applied independently to a small template and to the much larger
+frame/ROI it's searched in) *degrades* an otherwise-exact match — a
+pixel-perfect crop matched via raw (non-equalized) grayscale scored
+`0.9999`/`1.0`, the *same* match after equalization scored only
+`0.68`-`0.81` (below the `0.8` threshold). Simply recalibrating ROIs
+against real pixels was not sufficient by itself; the recognizer's own
+matching method needed the same real-data proof.
+
+### Fixes
+
+1. **`src/ldmanager/recognition.py`** — `OpenCVTemplateRecognizer.recognize()`
+   now evaluates a third candidate: plain (non-equalized) grayscale
+   `TM_CCOEFF_NORMED`, alongside the existing histogram-equalized and
+   Canny-edge candidates, taking whichever of the three scores highest
+   (never averaged, never removing either existing candidate — pure
+   addition, so no existing behavior can regress). Verified against the
+   3 real captures: true matches now score `~0.9994-1.0`, confidently
+   different content scores `~0.45-0.52` — a huge, real margin at the
+   existing `0.8` threshold.
+2. **`configs/bounty.example.yaml`** — `screen_size` corrected to
+   `1280x720` (the real captures' actual resolution; was a placeholder
+   `960x540`, which would have produced wrongly-scaled real tap
+   coordinates). `stable_screen_anchors` replaced with the two real,
+   calibrated anchors (`mission_header`, `mission_objective_label`) —
+   confirmed present, identically, on all 3 real captures regardless of
+   mission title. `complete_state_roi`/`complete_state_label`
+   recalibrated to the real "완료" badge crop and its real ROI.
+   `currency_action_labels` set to the real `currency_action_4400` crop
+   (confirmed present on both real non-completed captures).
+   `template_map` gained the 5 new real-crop entries. The pre-existing
+   `button_complete` template (from an earlier, separately-sourced
+   packet) was independently confirmed, via direct measurement against
+   these same 3 real captures, to also correctly detect the real
+   completed state (`0.90` vs `~0.69`) — a useful cross-check, left in
+   place as the (still-correct) primary completed-signal path.
+3. **New real template crops**, derived (cropped, lossless) from the
+   real captures, added to both `tests/fixtures/game_cal_001/templates/`
+   and the shipped `templates/`: `mission_header.png`,
+   `mission_objective_label.png`, `complete_badge.png`,
+   `currency_action_4400.png`, `mission_target_phrase.png` (the "모든
+   몬스터 처치" objective phrase alone, no digits/quantity — wired via
+   `screen_classification.py`'s single-template target fast path,
+   renamed from the old, misleadingly-digit-specific
+   `target_all_monsters_0_of_200` key to `mission_target_phrase` to
+   match what it actually is now).
+4. **`src/ldmanager/screen_classification.py` / `bounty_mission.py`** —
+   only the key rename above; no behavioral logic changes beyond what
+   REAL-CAPTURE REWORK's prior GAME-CAL-001 commit already established.
+5. **`tests/fixtures/game_cal_001/`** — the 3 real source PNGs +
+   `PROVENANCE.md` (exact pixel regions, what's still `NEEDS_REAL_TEST`)
+   + the 5 derived template crops, as controlled fixture resources.
+6. **`templates/README.md`** — corrected a stale claim ("nothing reads
+   from this directory yet") and documented which files are real vs.
+   still-placeholder.
+
+### Preserved safety requirements (all verified against the real captures)
+
+- Variable mission titles never cause `MISMATCH`: `completed_target.png`
+  and `in_progress_target.png` share one title ("자유 토벌작전"),
+  `non_target.png` has a completely different one ("야왕궁 토벌작전") —
+  all three classify as not-`MISMATCH` (test-proven).
+- Both real non-completed captures (16/165 target-in-progress, 0/450
+  non-target) produce **zero** ADB calls of any kind through
+  `complete_mission_if_verified()` (test-proven, `runner.calls == []`).
+- 순간 이동 (the teleport button visible only in `non_target.png`) is
+  not a configured/searched label anywhere in this project — it cannot
+  be tapped by any code path here, real or mock.
+- Only the real completed + target-confirmed capture produces a tap,
+  scoped to the one explicit serial passed in (test-proven).
+
+### Actual files changed
+
+- `src/ldmanager/recognition.py` — raw-grayscale third matching
+  candidate (additive).
+- `src/ldmanager/screen_classification.py`,
+  `src/ldmanager/bounty_mission.py` — `mission_target_phrase` key
+  rename (prose/key only).
+- `configs/bounty.example.yaml` — real `screen_size`,
+  `stable_screen_anchors`, `complete_state_roi/label`,
+  `currency_action_labels`, and 5 new `template_map` entries.
+- `templates/mission_header.png`, `templates/mission_objective_label.png`,
+  `templates/complete_badge.png`, `templates/currency_action_4400.png`,
+  `templates/mission_target_phrase.png` (new, real crops).
+- `templates/README.md` — corrected stale claim.
+- `tests/fixtures/game_cal_001/` (new) — `source/` (3 real captures),
+  `templates/` (5 derived crops), `PROVENANCE.md`.
+- `tests/test_screen_classification_real_assets.py` (new, 13 tests) —
+  loads the real source PNGs + the real `OpenCVTemplateRecognizer` +
+  the real shipped `configs/bounty.example.yaml`; proves: real captures
+  are genuine 1280x720 PNGs; none of the 3 ever `MISMATCH`; the
+  completed capture classifies `COMPLETED`+`TARGET_CONFIRMED` and the
+  other two never do; both non-completed captures are `TARGET_CONFIRMED`
+  or correctly `NON_TARGET_CONFIRMED` as appropriate; and
+  `complete_mission_if_verified()` taps only the real completed capture
+  (exactly once, correct serial) and produces zero calls for both real
+  non-completed captures.
+- `tests/test_bounty_config.py` — 2 existing tests updated for the
+  corrected real `screen_size` (960->1280); no other existing test
+  files touched, and no existing test's *assertions* changed beyond
+  that literal resolution value.
+
+### Test results
+
+```
+python -m pytest -q
+358 passed
+```
+
+Run 3x in a row: `358 passed` every time, 0 failures, 0 flakes. (Prior
+baseline 345 + 13 new `test_screen_classification_real_assets.py` = 358.)
+Focused run: `pytest -q tests/test_screen_classification_real_assets.py`
+→ `13 passed`, confirming the real-asset proof independently.
+
+### Build artifact (this session)
+
+- Path: `dist\ldmanager\ldmanager.exe` (plus `_internal\`,
+  `configs\*.example.yaml`, `templates\*.png` — including the 5 new
+  real crops — `docs\`, `VERSION`, `CHANGELOG.md`,
+  `README_FIRST_RUN.txt`)
+- Size: 4,821,052 bytes
+- SHA-256: `c7ff93fdfa2823381aa306a32b35f0696bc311451db86d20b85c67d02a8cbf3c`
+- Built via `scripts\build_windows.ps1`. No live-exe launch or real
+  LDPlayer/ADB run was performed.
+- `dist\`/`build\`/`*.spec` remain git-ignored — not part of any commit.
+
+### Commits
+
+- Implementation + real-asset fixtures + tests + this handoff section,
+  then a short follow-up "docs: record GAME-CAL-001 REAL-CAPTURE REWORK
+  commit hash in handoff" commit recording the exact hash.
+- Not tagged, not pushed, not published, not merged into `main`.
+
+### Limitations -- NEEDS_REAL_TEST (unchanged posture, narrower gaps)
+
+1. **Only one currency cost (4400) has a real example.** A mission
+   whose currency-action cost differs is not covered by
+   `currency_action_4400.png` alone — same OR-list pattern as
+   `button_refresh_4400/6600/9900/14900` would need more real crops to
+   extend. See `PROVENANCE.md`.
+2. **No distinct real "in progress" (non-currency) indicator exists**
+   in the supplied captures; `in_progress_roi`/`in_progress_label`
+   remain uncalibrated by design (both real non-completed examples
+   safely classify as `CURRENCY_ACTION` instead — still zero-touch).
+3. **Only the initial Mission > Region > detail view is covered.** The
+   refresh-popup/reward/claim/result/mission-list screens used by the
+   rest of `bounty_mission.run_one_cycle` have no real capture in this
+   fixture set and remain placeholder-calibrated.
+4. **No live device, no real ADB pipeline, and no real completion tap
+   against an actual LDPlayer instance was exercised anywhere in this
+   packet** — every test in `test_screen_classification_real_assets.py`
+   loads a static real PNG entirely offline; `FakeAdbRunner` stands in
+   for the ADB transport (it is real *image* data flowing through a
+   real recognizer, not a real *device*).
+5. All limitations recorded in every prior section of this document
+   (including the earlier `GAME-CAL-001` section immediately above)
+   remain valid except where explicitly narrowed here.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `358 passed`) and
+  `tests/test_screen_classification_real_assets.py` specifically (13
+  tests) — these load the real supplied PNGs directly from disk, so a
+  broken calibration in `configs/bounty.example.yaml` will fail this
+  file, not just a mock-based one.
+- On a real device at the customer's actual 1280x720 resolution,
+  confirm Test capture reports `stable screen anchors matched` (not
+  MISMATCH) for a real, live captured frame of this same screen —
+  this session's evidence is from 3 static supplied PNGs, not a live
+  ADB capture.
+- Confirm zero real ADB taps for a real 16/165-style in-progress screen
+  and a real non-target-title screen, matching this session's offline
+  proof.
+- Confirm the Windows build artifact above launches and packages the 5
+  new real template PNGs under `dist\ldmanager\templates\`.

@@ -55,7 +55,7 @@ frame itself). Whether the *currently selected* mission is the required
 only by :func:`assess_mission_target` (mission-title/OCR
 classification, driven by ``mission_phrase_roi``/``mission_phrase_label``
 + ``mission_quantity_roi``/``mission_quantity_label``, or the combined
-``target_all_monsters_0_of_200`` template) -- never by
+``mission_target_phrase`` template) -- never by
 :func:`classify_screen`'s layout gate. A screen showing a different,
 non-target mission title is exactly as valid a screen (never a
 ``MISMATCH``) as one showing the target title; it is simply
@@ -257,7 +257,7 @@ def assess_mission_target(
     """Is the *currently selected* mission the configured target
     objective (e.g. "모든 몬스터 처치")? Both required conditions
     (phrase AND quantity, or the single combined
-    ``target_all_monsters_0_of_200`` production template) must
+    ``mission_target_phrase`` production template) must
     independently match -- never one signal alone. A confidently
     non-matching title is ``NON_TARGET_CONFIRMED``, not a layout
     problem: a screen showing a different mission's title is just as
@@ -268,8 +268,8 @@ def assess_mission_target(
     check and :func:`complete_mission_if_verified`'s completion-target
     guard, so both agree on what counts as the target mission."""
 
-    if "target_all_monsters_0_of_200" in config.template_map:
-        target = _recognize_in_roi(runner, serial, config, recognizer, _FULL_SCREEN, "target_all_monsters_0_of_200")
+    if "mission_target_phrase" in config.template_map:
+        target = _recognize_in_roi(runner, serial, config, recognizer, _FULL_SCREEN, "mission_target_phrase")
         if target is None:
             return MissionAssessment.CAPTURE_UNAVAILABLE
         if target.matched:

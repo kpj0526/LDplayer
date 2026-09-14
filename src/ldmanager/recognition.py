@@ -180,14 +180,41 @@ class OpenCVTemplateRecognizer:
                 RecognitionStatus.UNKNOWN, None, 0.0,
                 f"ROI {crop.shape[1]}x{crop.shape[0]} is smaller than template {template_width}x{template_height}.",
             )
-        # Normalized grayscale handles ordinary variants.  Edge matching is
-        # evaluated as a second candidate for dimmed/modal-overlay frames
-        # (notably the customer 9,900 refresh-button reference) where text
-        # brightness changes but the button outline remains stable.
+        # Three candidate methods are evaluated, and the single highest-
+        # confidence one wins (whichever it is -- never averaged).
+        #
+        # 1. Raw grayscale (GAME-CAL-001, real-capture calibration): most
+        #    UI chrome in an ordinary (non-dimmed) frame is rendered
+        #    pixel-identically run to run, so a plain, unnormalized
+        #    TM_CCOEFF_NORMED match against a real, tightly-cropped
+        #    template is the *most* reliable signal available -- verified
+        #    against real customer 1280x720 captures at ~1.00 confidence
+        #    for a true match vs. ~0.45-0.52 for a confidently different
+        #    one, a far larger margin than histogram-equalized matching
+        #    gives for the same crops (see docs/HANDOFF_CODE.md).
+        # 2. Normalized (histogram-equalized) grayscale handles ordinary
+        #    lighting/brightness variants that raw matching would miss.
+        # 3. Edge matching is a further candidate for dimmed/modal-overlay
+        #    frames (notably the customer 9,900 refresh-button reference)
+        #    where text brightness changes but the button outline remains
+        #    stable.
+        #
+        # Equalizing a small template against its own tiny histogram and
+        # equalizing a large searched region against ITS OWN (very
+        # different) histogram independently can distort an otherwise
+        # perfect match -- candidate 1 exists specifically so that
+        # distortion can never make a real, exact match score *lower*
+        # than an equalized/edge-based one would.
+        raw_scores = self._cv2.matchTemplate(crop, template, self._cv2.TM_CCOEFF_NORMED)
+        _raw_min, confidence, _raw_min_location, location = self._cv2.minMaxLoc(raw_scores)
+
         normalized_crop = self._cv2.equalizeHist(crop)
         normalized_template = self._cv2.equalizeHist(template)
         scores = self._cv2.matchTemplate(normalized_crop, normalized_template, self._cv2.TM_CCOEFF_NORMED)
-        _minimum, confidence, _min_location, location = self._cv2.minMaxLoc(scores)
+        _minimum, normalized_confidence, _min_location, normalized_location = self._cv2.minMaxLoc(scores)
+        if normalized_confidence > confidence:
+            confidence, location = normalized_confidence, normalized_location
+
         crop_edges = self._cv2.Canny(normalized_crop, 60, 160)
         template_edges = self._cv2.Canny(normalized_template, 60, 160)
         edge_scores = self._cv2.matchTemplate(crop_edges, template_edges, self._cv2.TM_CCOEFF_NORMED)
