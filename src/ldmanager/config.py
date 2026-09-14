@@ -53,7 +53,7 @@ _SENSITIVE_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 
-_KNOWN_TOP_LEVEL_KEYS = {"adb_mapping", "logging", "diagnostics"}
+_KNOWN_TOP_LEVEL_KEYS = {"adb_mapping", "adb_path", "logging", "diagnostics"}
 _KNOWN_LOGGING_KEYS = {"root_dir", "retention_days", "max_bytes", "backup_count"}
 _KNOWN_DIAGNOSTICS_KEYS = {"screenshot_dir"}
 
@@ -74,6 +74,7 @@ class AppConfig:
     """
 
     adb_mapping: dict[str, Optional[str]] = field(default_factory=dict)
+    adb_path: Optional[str] = None
     logging: LoggingSettings = field(default_factory=LoggingSettings)
     diagnostics: DiagnosticsSettings = field(default_factory=DiagnosticsSettings)
 
@@ -209,6 +210,14 @@ def _validate_diagnostics_section(raw: Optional[dict]) -> DiagnosticsSettings:
     return DiagnosticsSettings(screenshot_dir=Path(screenshot_dir))
 
 
+def _validate_adb_path(raw: object) -> Optional[str]:
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not raw.strip():
+        raise ConfigError("'adb_path' must be a non-empty executable path or null.")
+    return raw.strip()
+
+
 def load_config(explicit_path: Optional[Path] = None) -> AppConfig:
     """Load :class:`AppConfig` from disk.
 
@@ -253,6 +262,7 @@ def load_config(explicit_path: Optional[Path] = None) -> AppConfig:
 
     return AppConfig(
         adb_mapping=adb_mapping,
+        adb_path=_validate_adb_path(raw.get("adb_path")),
         logging=logging_settings,
         diagnostics=diagnostics_settings,
     )

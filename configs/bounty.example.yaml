@@ -17,6 +17,36 @@ screen_size:
 templates_dir: templates
 threshold: 0.8
 
+# Map each configured label to a lossless crop from an actual LDPlayer
+# screenshot.  Files are relative to templates_dir.  Populate every label
+# used below before enabling Start; absent files fail closed (no tap).
+template_map:
+  # Customer-video initial assets. The target crop contains BOTH the
+  # phrase and 0/200, so it is deliberately used for both positive checks.
+  "모든 몬스터 처치": "target_all_monsters_0_of_200.png"
+  "200": "target_all_monsters_0_of_200.png"
+  target_all_monsters_0_of_200: "target_all_monsters_0_of_200.png"
+  "지역 퀘스트 갱신": "refresh_confirm_title.png"
+  "확인": "refresh_confirm_title.png"
+  # Do not map a generic active mission to 200/200. A future native ADB
+  # capture should provide an exact completed-progress crop; until then the
+  # independently matched complete button is the completion gate.
+  "완료": "button_complete.png"
+  "보상 획득": "reward_result_header.png"
+  "결과": "reward_result_header.png"
+  "자유 토벌작전": "mission_slots_panel.png"
+  mission_slot_unselected: "mission_slot_unselected.png"
+  mission_slot_selected: "mission_slot_selected.png"
+  button_refresh_confirm: "button_refresh_confirm.png"
+  button_refresh_4400: "button_refresh_4400.png"
+  button_refresh_6600: "button_refresh_6600.png"
+  button_refresh_9900: "button_refresh_9900.png"
+  button_refresh_14900: "button_refresh_14900.png"
+  button_accept_mission: "button_accept_mission.png"
+  button_complete: "button_complete.png"
+  button_claim_reward: "button_claim_reward.png"
+  button_close_reward: "button_close_reward.png"
+
 # Tap points to select/check each of the 5 bounty slots. Exactly 5
 # entries expected by the state machine (config itself allows any
 # non-empty list; ldmanager.bounty_mission iterates whatever it's given).

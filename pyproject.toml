@@ -17,6 +17,10 @@ dependencies = [
 dev = [
     "pytest>=7.4",
 ]
+recognition = [
+    "numpy>=1.24",
+    "opencv-python>=4.8",
+]
 build = [
     "pyinstaller>=6.0",
 ]

@@ -46,7 +46,8 @@ from .config import ConfigError, load_config, resolve_config_path
 from .controller import AccountController, AccountWorker
 from .logs import get_account_logger
 from .models import AccountId
-from .recognition import PlaceholderRecognizer
+from .recognition import OpenCVTemplateRecognizer
+from .runtime import AccountMissionRuntime
 
 #: Delay between mission cycles for one account's worker, in seconds.
 #: Deliberately not zero, so a misconfigured/always-failing account
@@ -54,7 +55,7 @@ from .recognition import PlaceholderRecognizer
 DEFAULT_IDLE_DELAY_SECONDS = 1.0
 
 
-def _make_cycle_fn(account_id, serial, runner, recognizer, bounty_cfg):
+def _make_cycle_fn(account_id, serial, runner, recognizer, bounty_cfg, runtime):
     def _cycle(should_stop):
         return run_one_cycle(
             account_id=account_id,
@@ -63,6 +64,7 @@ def _make_cycle_fn(account_id, serial, runner, recognizer, bounty_cfg):
             recognizer=recognizer,
             config=bounty_cfg,
             should_stop=should_stop,
+            runtime=runtime,
         )
 
     return _cycle
@@ -82,14 +84,20 @@ def build_controller() -> AccountController:
 
     app_config = load_config()
     bounty_cfg = load_bounty_config()
-    runner = SubprocessAdbRunner()
-    recognizer = PlaceholderRecognizer(templates_dir=bounty_cfg.templates_dir)
+    # Production always uses a subprocess-backed ADB runner. Start in the
+    # GUI therefore sends real, serial-scoped ADB input after recognition.
+    runner = SubprocessAdbRunner(adb_path=app_config.adb_path)
+    recognizer = OpenCVTemplateRecognizer(
+        templates_dir=bounty_cfg.templates_dir,
+        template_map=bounty_cfg.template_map,
+    )
 
     workers: Dict[AccountId, AccountWorker] = {}
     for account_id in AccountId:
         serial = app_config.adb_serial_for(account_id) or ""
         logger = get_account_logger(account_id, app_config.logging)
-        cycle_fn = _make_cycle_fn(account_id, serial, runner, recognizer, bounty_cfg)
+        runtime = AccountMissionRuntime()
+        cycle_fn = _make_cycle_fn(account_id, serial, runner, recognizer, bounty_cfg, runtime)
         workers[account_id] = AccountWorker(
             account_id,
             cycle_fn,
@@ -97,8 +105,13 @@ def build_controller() -> AccountController:
             idle_delay_seconds=DEFAULT_IDLE_DELAY_SECONDS,
             sleep_fn=time.sleep,
         )
+        workers[account_id].runtime = runtime
 
-    return AccountController(workers)
+    controller = AccountController(workers)
+    # Runtime dependency exposed for GUI diagnostics/live-mode control; this
+    # remains the real subprocess-backed runner behind InputGateAdbRunner.
+    controller.adb_runner = runner  # type: ignore[attr-defined]
+    return controller
 
 
 def main() -> int:
@@ -123,8 +136,11 @@ def main() -> int:
     # (just an AccountController) unchanged. Used only for the GUI's
     # read-only "Refresh ADB devices" button (list_devices()) -- never
     # for a tap, never for starting a worker.
-    adb_runner_for_gui = SubprocessAdbRunner()
-    app = LDManagerApp(controller, adb_runner=adb_runner_for_gui, config_path=resolve_config_path())
+    app = LDManagerApp(
+        controller,
+        adb_runner=controller.adb_runner,  # type: ignore[attr-defined]
+        config_path=resolve_config_path(),
+    )
     app.run()
     return 0
 

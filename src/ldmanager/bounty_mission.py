@@ -48,12 +48,14 @@ from typing import Callable, Optional
 
 from .adb import AdbRunner
 from .bounty_config import BountyMissionConfig
-from .coordinates import build_tap_args
+from .coordinates import RelativeCoordinate, RelativeRegion, build_tap_args
 from .models import AccountId
-from .recognition import Recognizer, RecognitionResult
+from .recognition import RecognitionStatus, Recognizer, RecognitionResult
 from .screenshot import capture_screenshot
+from .runtime import AccountMissionRuntime, SlotState
 
 ShouldStop = Callable[[], bool]
+_FULL_SCREEN = RelativeRegion(x=0.0, y=0.0, width=1.0, height=1.0)
 
 
 def _default_should_stop() -> bool:
@@ -71,6 +73,7 @@ class BountyOutcome(str, Enum):
     RESULT_VERIFY_FAILED = "result_verify_failed"
     MISSION_LIST_VERIFY_FAILED = "mission_list_verify_failed"
     RE_ACCEPT_FAILED = "re_accept_failed"
+    RECOGNITION_FAILED = "recognition_failed"
 
 
 @dataclass(frozen=True)
@@ -92,6 +95,13 @@ class BountyCycleResult:
         return self.outcome is BountyOutcome.COMPLETED_CYCLE
 
 
+class MissionAssessment(str, Enum):
+    TARGET_CONFIRMED = "target_confirmed"
+    NON_TARGET_CONFIRMED = "non_target_confirmed"
+    RECOGNITION_FAILED = "recognition_failed"
+    CAPTURE_UNAVAILABLE = "capture_unavailable"
+
+
 def _recognize(runner, serial, config, recognizer, roi, label) -> Optional[RecognitionResult]:
     """Capture once and recognize ``roi``/``label``; ``None`` means the
     capture itself failed (never means "recognized but no match")."""
@@ -102,20 +112,98 @@ def _recognize(runner, serial, config, recognizer, roi, label) -> Optional[Recog
     return recognizer.recognize(capture.image_bytes, roi, label, config.threshold)
 
 
-def _mission_is_acceptable(runner, serial, config, recognizer) -> Optional[bool]:
+def _tap_template(
+    runner: AdbRunner, serial: str, config: BountyMissionConfig, recognizer: Recognizer, label: str,
+) -> Optional[bool]:
+    """Find one configured button in the current ADB frame and tap its
+    matched rectangle center on this same serial.
+
+    ``None`` is an unavailable template/capture, ``False`` is a valid frame
+    with no confident match, and ``True`` means the real ADB tap succeeded.
+    Fixed config points are retained only for legacy fake-test configs that
+    have an empty template map; production config must provide this key.
+    """
+    if label not in config.template_map:
+        # A populated production map must never silently fall back to a
+        # fixed coordinate for an asset it does not contain.  Empty maps are
+        # retained exclusively for legacy fixture tests.
+        return False if config.template_map else None
+    match = _recognize(runner, serial, config, recognizer, _FULL_SCREEN, label)
+    if match is None or not match.matched or match.match_center is None:
+        return False
+    x, y = match.match_center
+    result = runner.run(
+        serial,
+        build_tap_args(config.screen_size, RelativeCoordinate(x=x, y=y)),
+    )
+    return result.ok
+
+
+def _tap_any_template(
+    runner: AdbRunner, serial: str, config: BountyMissionConfig, recognizer: Recognizer, labels: tuple[str, ...],
+) -> Optional[bool]:
+    """One-frame OR search across equivalent button variants.
+
+    The refresh price is not parsed or compared.  Each supplied label is a
+    whole-button image variant; the highest confident match supplies the
+    center point for one serial-scoped ADB tap.
+    """
+    configured = tuple(label for label in labels if label in config.template_map)
+    if not configured:
+        return False if config.template_map else None
+    capture = capture_screenshot(runner, serial, config.capture_args)
+    if not capture.ok:
+        return False
+    matches = [
+        recognizer.recognize(capture.image_bytes, _FULL_SCREEN, label, config.threshold)
+        for label in configured
+    ]
+    valid = [match for match in matches if match.matched and match.match_center is not None]
+    if not valid:
+        return False
+    best = max(valid, key=lambda match: match.confidence)
+    x, y = best.match_center
+    return runner.run(serial, build_tap_args(config.screen_size, RelativeCoordinate(x=x, y=y))).ok
+
+
+def _mission_is_acceptable(runner, serial, config, recognizer) -> MissionAssessment:
     """Both the phrase AND the quantity must independently match.
 
     Returns ``None`` on capture failure (distinct from ``False``, which
     means "captured fine, but not both conditions held").
     """
 
+    # Production target detection is deliberately one exact, combined
+    # customer-video template: "모든 몬스터 처치 (0/200)".  It avoids a
+    # loose phrase match being combined with a number from another area.
+    if "target_all_monsters_0_of_200" in config.template_map:
+        target = _recognize(
+            runner, serial, config, recognizer, _FULL_SCREEN, "target_all_monsters_0_of_200"
+        )
+        if target is None:
+            return MissionAssessment.CAPTURE_UNAVAILABLE
+        if target.matched:
+            return MissionAssessment.TARGET_CONFIRMED
+        if target.status in {RecognitionStatus.UNKNOWN, RecognitionStatus.LOW_CONFIDENCE}:
+            return MissionAssessment.RECOGNITION_FAILED
+        return MissionAssessment.NON_TARGET_CONFIRMED
+
+    # Legacy fixture/config compatibility only. Production configurations
+    # must provide the combined target template above.
     phrase = _recognize(runner, serial, config, recognizer, config.mission_phrase_roi, config.mission_phrase_label)
     if phrase is None:
-        return None
+        return MissionAssessment.CAPTURE_UNAVAILABLE
     quantity = _recognize(runner, serial, config, recognizer, config.mission_quantity_roi, config.mission_quantity_label)
     if quantity is None:
-        return None
-    return phrase.matched and quantity.matched
+        return MissionAssessment.CAPTURE_UNAVAILABLE
+    if phrase.matched and quantity.matched:
+        return MissionAssessment.TARGET_CONFIRMED
+    # A loaded template recognizer distinguishes unknown/low confidence from
+    # a confidently absent target.  Only the latter may cause a refresh.
+    uncertain = {RecognitionStatus.UNKNOWN, RecognitionStatus.LOW_CONFIDENCE}
+    if config.template_map and (phrase.status in uncertain or quantity.status in uncertain):
+        return MissionAssessment.RECOGNITION_FAILED
+    return MissionAssessment.NON_TARGET_CONFIRMED
 
 
 def _verify_refresh_popup(runner, serial, config, recognizer) -> Optional[bool]:
@@ -152,8 +240,13 @@ def _accept_or_refresh_slot(
             BountyOutcome.STOPPED, (), f"Stopped before slot {slot_index}."
         )
 
-    select = runner.run(serial, build_tap_args(config.screen_size, config.slot_select_points[slot_index - 1]))
-    if not select.ok:
+    dynamic_select = _tap_template(runner, serial, config, recognizer, "mission_slot_unselected")
+    if dynamic_select is None:
+        select = runner.run(serial, build_tap_args(config.screen_size, config.slot_select_points[slot_index - 1]))
+        selected_ok = select.ok
+    else:
+        selected_ok = dynamic_select
+    if not selected_ok:
         return None, BountyCycleResult(
             BountyOutcome.CAPTURE_UNAVAILABLE, (),
             f"Slot {slot_index}: select tap failed (rc={select.returncode}).",
@@ -165,22 +258,41 @@ def _accept_or_refresh_slot(
         )
 
     already_ok = _mission_is_acceptable(runner, serial, config, recognizer)
-    if already_ok is None:
+    if already_ok is MissionAssessment.CAPTURE_UNAVAILABLE:
         return None, BountyCycleResult(
             BountyOutcome.CAPTURE_UNAVAILABLE, (), f"Slot {slot_index}: capture failed while checking mission."
         )
-    if already_ok:
+    if already_ok is MissionAssessment.RECOGNITION_FAILED:
+        return None, BountyCycleResult(
+            BountyOutcome.RECOGNITION_FAILED, (), f"Slot {slot_index}: target recognition is uncertain; no refresh sent."
+        )
+    if already_ok is MissionAssessment.TARGET_CONFIRMED:
         return SlotOutcome(slot_index, True, 0, "Already acceptable; no refresh needed."), None
 
     detail = ""
-    for attempt in range(1, config.max_refresh_attempts + 1):
+    # Customer production mode does not impose an arbitrary currency/reroll
+    # count.  A non-target is retried until target, Stop, or a real error.
+    # The finite legacy branch exists only for the older empty-template test
+    # fixtures, which cannot exercise production image recognition.
+    attempt = 0
+    production_templates = bool(config.template_map)
+    while production_templates or attempt < config.max_refresh_attempts:
+        attempt += 1
         if should_stop():
             return None, BountyCycleResult(
                 BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (refresh attempt {attempt})."
             )
 
-        open_popup = runner.run(serial, build_tap_args(config.screen_size, config.refresh_button_point))
-        if not open_popup.ok:
+        dynamic_refresh = _tap_any_template(
+            runner, serial, config, recognizer,
+            ("button_refresh_4400", "button_refresh_6600", "button_refresh_9900", "button_refresh_14900"),
+        )
+        if dynamic_refresh is None:
+            open_popup = runner.run(serial, build_tap_args(config.screen_size, config.refresh_button_point))
+            refresh_ok = open_popup.ok
+        else:
+            refresh_ok = dynamic_refresh
+        if not refresh_ok:
             return None, BountyCycleResult(
                 BountyOutcome.CAPTURE_UNAVAILABLE, (),
                 f"Slot {slot_index}: refresh-open tap failed (rc={open_popup.returncode}).",
@@ -217,8 +329,13 @@ def _accept_or_refresh_slot(
                 BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (before confirm)."
             )
 
-        confirm = runner.run(serial, build_tap_args(config.screen_size, config.refresh_confirm_point))
-        if not confirm.ok:
+        dynamic_confirm = _tap_template(runner, serial, config, recognizer, "button_refresh_confirm")
+        if dynamic_confirm is None:
+            confirm = runner.run(serial, build_tap_args(config.screen_size, config.refresh_confirm_point))
+            confirm_ok = confirm.ok
+        else:
+            confirm_ok = dynamic_confirm
+        if not confirm_ok:
             return None, BountyCycleResult(
                 BountyOutcome.CAPTURE_UNAVAILABLE, (),
                 f"Slot {slot_index}: refresh-confirm tap failed (rc={confirm.returncode}).",
@@ -230,16 +347,27 @@ def _accept_or_refresh_slot(
             )
 
         acceptable = _mission_is_acceptable(runner, serial, config, recognizer)
-        if acceptable is None:
+        if acceptable is MissionAssessment.CAPTURE_UNAVAILABLE:
             return None, BountyCycleResult(
                 BountyOutcome.CAPTURE_UNAVAILABLE, (),
                 f"Slot {slot_index}: capture failed while inspecting refreshed mission.",
             )
-        if acceptable:
+        if acceptable is MissionAssessment.RECOGNITION_FAILED:
+            return None, BountyCycleResult(
+                BountyOutcome.RECOGNITION_FAILED, (),
+                f"Slot {slot_index}: refreshed mission recognition is uncertain; no further refresh sent.",
+            )
+        if acceptable is MissionAssessment.TARGET_CONFIRMED:
+            accepted = _tap_template(runner, serial, config, recognizer, "button_accept_mission")
+            if accepted is False or (accepted is None and config.template_map):
+                return None, BountyCycleResult(
+                    BountyOutcome.RECOGNITION_FAILED, (),
+                    f"Slot {slot_index}: target found but accept button was not confidently located.",
+                )
             return SlotOutcome(slot_index, True, attempt, "Accepted after refresh."), None
         detail = f"attempt {attempt}: phrase/quantity not both matched"
 
-    return SlotOutcome(slot_index, False, config.max_refresh_attempts, detail), None
+    return SlotOutcome(slot_index, False, attempt, detail), None
 
 
 def run_one_cycle(
@@ -251,6 +379,7 @@ def run_one_cycle(
     config: BountyMissionConfig,
     should_stop: ShouldStop = _default_should_stop,
     on_phase: Optional[Callable[[str], None]] = None,
+    runtime: Optional[AccountMissionRuntime] = None,
 ) -> BountyCycleResult:
     """Run exactly one bounty cycle for one account/serial.
 
@@ -263,6 +392,8 @@ def run_one_cycle(
     slot_outcomes: list[SlotOutcome] = []
 
     for slot_index in range(1, config.slot_count + 1):
+        if runtime is not None and runtime.slots[slot_index - 1] is SlotState.TARGET_LOCKED:
+            continue
         if on_phase:
             on_phase(f"slot {slot_index}: select/check")
         slot_outcome, abort = _accept_or_refresh_slot(
@@ -274,11 +405,18 @@ def run_one_cycle(
 
         slot_outcomes.append(slot_outcome)
         if not slot_outcome.accepted:
+            if runtime is not None:
+                runtime.slots[slot_index - 1] = SlotState.NON_TARGET
             return BountyCycleResult(
                 BountyOutcome.SLOT_ACCEPT_FAILED, tuple(slot_outcomes),
                 f"Slot {slot_index}: no acceptable target within "
                 f"{config.max_refresh_attempts} refresh(es).",
             )
+        if runtime is not None:
+            runtime.slots[slot_index - 1] = SlotState.TARGET_LOCKED
+
+    if runtime is not None:
+        runtime.phase = "WAITING_KILL_PROGRESS"
 
     # --- Kill-progress: bounded polling, 0-199/200 never touches anything. ---
     if on_phase:
@@ -295,7 +433,13 @@ def run_one_cycle(
         if progress is not None and progress.matched:
             eligible = True
             break
-        complete_badge = _recognize(runner, serial, config, recognizer, config.complete_state_roi, config.complete_state_label)
+        # A completed active mission exposes the actual Complete button.
+        # Locate that button by image (not by a fixed coordinate) before
+        # allowing the completion transition.
+        if "button_complete" in config.template_map:
+            complete_badge = _recognize(runner, serial, config, recognizer, _FULL_SCREEN, "button_complete")
+        else:
+            complete_badge = _recognize(runner, serial, config, recognizer, config.complete_state_roi, config.complete_state_label)
         if complete_badge is not None and complete_badge.matched:
             eligible = True
             break
@@ -313,15 +457,25 @@ def run_one_cycle(
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before completing.")
 
-    select_complete = runner.run(serial, build_tap_args(config.screen_size, config.select_complete_point))
-    if not select_complete.ok:
+    dynamic_complete_select = _tap_template(runner, serial, config, recognizer, "mission_slot_selected")
+    if dynamic_complete_select is None:
+        select_complete = runner.run(serial, build_tap_args(config.screen_size, config.select_complete_point))
+        complete_select_ok = select_complete.ok
+    else:
+        complete_select_ok = dynamic_complete_select
+    if not complete_select_ok:
         return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), "Select-complete tap failed.")
 
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before complete button.")
 
-    complete_tap = runner.run(serial, build_tap_args(config.screen_size, config.complete_button_point))
-    if not complete_tap.ok:
+    dynamic_complete = _tap_template(runner, serial, config, recognizer, "button_complete")
+    if dynamic_complete is None:
+        complete_tap = runner.run(serial, build_tap_args(config.screen_size, config.complete_button_point))
+        complete_ok = complete_tap.ok
+    else:
+        complete_ok = dynamic_complete
+    if not complete_ok:
         return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), "Complete tap failed.")
 
     if should_stop():
@@ -346,8 +500,13 @@ def run_one_cycle(
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before claim.")
 
-    claim = runner.run(serial, build_tap_args(config.screen_size, config.claim_point))
-    if not claim.ok:
+    dynamic_claim = _tap_template(runner, serial, config, recognizer, "button_claim_reward")
+    if dynamic_claim is None:
+        claim = runner.run(serial, build_tap_args(config.screen_size, config.claim_point))
+        claim_ok = claim.ok
+    else:
+        claim_ok = dynamic_claim
+    if not claim_ok:
         return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), "Claim tap failed.")
 
     if should_stop():
@@ -372,8 +531,13 @@ def run_one_cycle(
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before closing result.")
 
-    close = runner.run(serial, build_tap_args(config.screen_size, config.close_result_point))
-    if not close.ok:
+    dynamic_close = _tap_template(runner, serial, config, recognizer, "button_close_reward")
+    if dynamic_close is None:
+        close = runner.run(serial, build_tap_args(config.screen_size, config.close_result_point))
+        close_ok = close.ok
+    else:
+        close_ok = dynamic_close
+    if not close_ok:
         return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), "Close-result tap failed.")
 
     if should_stop():
@@ -393,7 +557,13 @@ def run_one_cycle(
             f"Mission list never verified within {config.max_mission_list_verify_attempts} attempt(s).",
         )
 
-    # --- Re-refresh each slot and accept a new target, ready to repeat. ---
+    # Only after verified close + mission-list return is it legal to forget
+    # locked slots and start a new five-slot configuration.
+    if runtime is not None:
+        runtime.reset_after_verified_return()
+        return BountyCycleResult(BountyOutcome.COMPLETED_CYCLE, tuple(slot_outcomes), "Verified reward cycle complete; slots reset.")
+
+    # --- Legacy stateless re-refresh path. ---
     if on_phase:
         on_phase("re-refreshing slots for new targets")
     re_accepted: list[SlotOutcome] = []

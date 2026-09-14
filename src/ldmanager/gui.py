@@ -31,16 +31,19 @@ by the caller, e.g. ``app.py``, for the Refresh button only).
 from __future__ import annotations
 
 import tkinter as tk
+import time
 from pathlib import Path
 from tkinter import ttk
 from typing import Callable, Optional
 
 from .adb import AdbRunner
+from .calibration import TEMPLATE_SLOTS, crop_template
 from .config import ConfigError
 from .config_mapping import load_current_adb_mapping, save_account_serial
 from .controller import AccountController, AccountWorkerStatus
 from .discovery import ConnectionStatus, compute_account_connection_statuses, discover_devices
 from .models import AccountId
+from .screenshot import capture_screenshot
 
 #: How often the GUI polls the controller for fresh status, in ms.
 DEFAULT_REFRESH_INTERVAL_MS = 500
@@ -59,12 +62,14 @@ class AccountPanel(ttk.LabelFrame):
         *,
         on_save_mapping: Callable[[AccountId, str], None],
         on_clear_mapping: Callable[[AccountId], None],
+        on_capture_test: Callable[[AccountId, str], None],
     ) -> None:
         super().__init__(parent, text=account_id.value)
         self._controller = controller
         self._account_id = account_id
         self._on_save_mapping_cb = on_save_mapping
         self._on_clear_mapping_cb = on_clear_mapping
+        self._on_capture_test_cb = on_capture_test
         self._connection_status: Optional[ConnectionStatus] = None
 
         self.status_var = tk.StringVar(value="stopped")
@@ -72,6 +77,7 @@ class AccountPanel(ttk.LabelFrame):
         self.progress_var = tk.StringVar(value="cycles: 0")
         self.error_var = tk.StringVar(value="")
         self.log_var = tk.StringVar(value="")
+        self.phase_var = tk.StringVar(value="phase: IDLE  locked: 0/5")
 
         ttk.Label(self, textvariable=self.status_var).grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(self, textvariable=self.slot_var).grid(row=1, column=0, sticky="w")
@@ -82,6 +88,7 @@ class AccountPanel(ttk.LabelFrame):
         ttk.Label(self, textvariable=self.log_var, foreground="gray30").grid(
             row=3, column=0, columnspan=2, sticky="w"
         )
+        ttk.Label(self, textvariable=self.phase_var).grid(row=10, column=0, columnspan=2, sticky="w")
 
         button_row = ttk.Frame(self)
         button_row.grid(row=4, column=0, columnspan=2, sticky="we")
@@ -114,6 +121,8 @@ class AccountPanel(ttk.LabelFrame):
         self.save_button.pack(side="left")
         self.clear_button = ttk.Button(mapping_button_row, text="Clear", command=self._on_clear_clicked)
         self.clear_button.pack(side="left")
+        self.capture_button = ttk.Button(mapping_button_row, text="Test capture", command=self._on_capture_clicked)
+        self.capture_button.pack(side="left")
 
     def _on_start(self) -> None:
         if self._connection_status is not ConnectionStatus.OK:
@@ -132,12 +141,22 @@ class AccountPanel(ttk.LabelFrame):
     def _on_clear_clicked(self) -> None:
         self._on_clear_mapping_cb(self._account_id)
 
+    def _on_capture_clicked(self) -> None:
+        if self._connection_status is not ConnectionStatus.OK:
+            self.mapping_error_var.set("Cannot capture: mapping is not confirmed OK.")
+            return
+        self._on_capture_test_cb(self._account_id, self.serial_var.get())
+
     def refresh(self, status: AccountWorkerStatus) -> None:
-        self.status_var.set("running" if status.running else "stopped")
+        self.status_var.set("running" if status.running else ("ERROR" if status.errored else "stopped"))
         self.slot_var.set(f"slot: {status.current_slot if status.current_slot is not None else '-'}")
         self.progress_var.set(f"cycles: {status.cycles_completed} last: {status.last_outcome or '-'}")
         self.error_var.set(status.last_error or "")
         self.log_var.set(status.recent_log[-1] if status.recent_log else "")
+        self.phase_var.set(
+            f"phase: {status.phase}  locked: {status.locked_slots}/5  "
+            f"slots: {'/'.join(status.slot_states) or '-'}"
+        )
 
     def set_discovered_serials(self, serials: list[str]) -> None:
         self.serial_combo["values"] = serials
@@ -203,6 +222,9 @@ class LDManagerApp(tk.Tk):
         ttk.Button(global_row, text="Refresh ADB devices", command=self._on_refresh_devices).pack(
             side="left", padx=(12, 0)
         )
+        ttk.Button(global_row, text="Template calibration", command=self._open_calibration).pack(
+            side="left", padx=(12, 0)
+        )
         ttk.Label(global_row, textvariable=self.global_error_var, foreground="red").pack(
             side="left", padx=(12, 0)
         )
@@ -214,6 +236,7 @@ class LDManagerApp(tk.Tk):
                 grid, controller, account_id,
                 on_save_mapping=self._on_save_mapping,
                 on_clear_mapping=self._on_clear_mapping,
+                on_capture_test=self._on_capture_test,
             )
             panel.grid(row=index // 3, column=index % 3, padx=4, pady=4, sticky="nsew")
             self._panels[account_id] = panel
@@ -228,6 +251,51 @@ class LDManagerApp(tk.Tk):
 
     def _on_stop_all(self) -> None:
         self._controller.stop_all()
+
+    def _on_capture_test(self, account_id: AccountId, serial: str) -> None:
+        if self._adb_runner is None:
+            self.global_error_var.set("No ADB runner configured; cannot capture.")
+            return
+        result = capture_screenshot(self._adb_runner, serial)
+        if not result.ok:
+            self._panels[account_id].mapping_error_var.set(f"Capture failed: {result.detail}")
+            return
+        output_dir = Path("diagnostics") / "captures" / account_id.value
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"capture-{int(time.time())}.png"
+        output_path.write_bytes(result.image_bytes)
+        self._panels[account_id].mapping_error_var.set(f"Capture saved: {output_path}")
+
+    def _open_calibration(self) -> None:
+        """Open a small real-PNG crop tool. Captures are first made with each
+        panel's Test capture button, then their pixel crop becomes a template."""
+        window = tk.Toplevel(self)
+        window.title("Template calibration")
+        values = {name: tk.StringVar() for name in ("source", "slot", "output", "x", "y", "width", "height")}
+        values["slot"].set(TEMPLATE_SLOTS[0])
+        values["output"].set(f"{TEMPLATE_SLOTS[0]}.png")
+        for row, key in enumerate(("source", "slot", "output", "x", "y", "width", "height")):
+            ttk.Label(window, text=key).grid(row=row, column=0, sticky="w", padx=6, pady=3)
+            if key == "slot":
+                widget = ttk.Combobox(window, textvariable=values[key], values=TEMPLATE_SLOTS)
+            else:
+                widget = ttk.Entry(window, textvariable=values[key], width=48)
+            widget.grid(row=row, column=1, sticky="we", padx=6, pady=3)
+        result = tk.StringVar(value="Use a saved Test capture PNG; coordinates are pixels in that image.")
+        ttk.Label(window, textvariable=result, foreground="gray30").grid(row=8, column=0, columnspan=2, sticky="w", padx=6)
+
+        def save_crop() -> None:
+            try:
+                source = Path(values["source"].get())
+                output = Path("templates") / values["output"].get()
+                crop_template(source, output, *(int(values[k].get()) for k in ("x", "y", "width", "height")))
+            except Exception as exc:
+                result.set(f"Template not saved: {exc}")
+            else:
+                result.set(f"Saved {output}; map this filename in bounty.yaml template_map.")
+
+        ttk.Button(window, text="Crop and save template", command=save_crop).grid(row=9, column=0, columnspan=2, pady=6)
+        window.columnconfigure(1, weight=1)
 
     def _apply_current_mapping_to_panels(self) -> None:
         statuses = compute_account_connection_statuses(self._current_mapping, self._discovered_devices)

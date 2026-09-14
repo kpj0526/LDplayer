@@ -14,7 +14,7 @@ python -m venv .venv
 # macOS/Linux
 source .venv/bin/activate
 
-pip install -e ".[dev]"
+pip install -e ".[dev,recognition]"
 ```
 
 (Skip this step entirely if you're running the **built Windows exe**
@@ -135,6 +135,16 @@ until it hits its bounded retry limit and stop with a
 `slot_accept_failed` status (or, if the popup itself can never be
 structurally verified, `refresh_popup_not_verified`) — safely, with no
 runaway input. That is expected until a real recognizer is wired in.
+
+### 4.1 Real template setup
+
+The production app uses OpenCV template matching, not the old placeholder.
+For each configured label, add an actual PNG crop to `templates/` and map
+that exact label to its filename in `bounty.yaml` under `template_map`.
+Use each panel's **Test capture** button to save a real ADB screenshot,
+then **Template calibration** to crop it. Missing/unreadable templates,
+invalid frames, and below-threshold scores fail closed. The shipped ROI and
+tap values are examples: measure them on the customer's screen before Start.
 
 ## 5. Stop
 
