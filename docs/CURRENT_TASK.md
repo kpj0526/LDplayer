@@ -1,5 +1,18 @@
 # CURRENT TASK
 
+## `v1.0.1` independent QA release-candidate verification (2026-09-14)
+
+- Task ID: `REL-UPDATE-003-QA`
+- Title: Independently verify Code's `v1.0.1` import/candidate build
+- Purpose: establish whether Code target `2c47736` is eligible for a future customer release without claiming real-game proof.
+- Owner: existing QA.
+- Status: `VERIFYING`.
+- Target: Code `2c47736` (implementation/remediation `a241c5f`, source import merge `e67fcad`).
+- Code-reported result: `302 passed`; Windows build and clean extracted EXE launch passed. This is not yet independent approval.
+- Completion: QA runs independent regression/safety/package checks, documents evidence in `reports/QA_REPORT.md`, commits PASS/FAIL, and names the exact verified target.
+- Blocker: actual LD/game validation is not available; it must remain `NEEDS_REAL_TEST` even if MVP smoke passes.
+- Next action: QA verification; no customer action pending.
+
 ## `v1.0.1` governed import and candidate build (2026-09-14)
 
 - Task ID: `REL-UPDATE-003`

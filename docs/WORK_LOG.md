@@ -2,6 +2,15 @@
 
 ## 2026-09-14 | REL-UPDATE-003 | Manager
 
+- Performed: reviewed the existing Code terminal submission, exact branch/head, clean status, and Code handoff before QA dispatch.
+- Changed: `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
+- Commands/tests: Code terminal/evidence review; `git status` and log verification of Code/QA worktrees. Manager ran no production test or input action.
+- Result: Code target `2c47736` is submitted with self-reported `302 passed`, Windows build, and safe clean-extraction launch evidence. It is now QA's exact target.
+- Related commits: Code `e67fcad`, `a241c5f`, `2c47736`.
+- Next handoff: existing QA independent verification.
+
+## 2026-09-14 | REL-UPDATE-003 | Manager
+
 - Performed: verified existing Code and QA terminal handles are connected; authorized reviewed `v1.0.1` source to enter the governed Code→QA workflow.
 - Changed: `docs/TASK_PACKET.md`, `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
 - Commands/tests: Orca worktree/terminal inventory and read-only Code/QA terminal review; no code, ADB, Worker, or game-input action by Manager.

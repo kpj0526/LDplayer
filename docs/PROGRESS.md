@@ -1,5 +1,15 @@
 # PROGRESS
 
+## `v1.0.1` Code submission; independent QA active (2026-09-14)
+
+- Current phase: `VERIFYING`.
+- Code submitted exact target `2c47736` (implementation/remediation `a241c5f`, imported tag merge `e67fcad`) on the existing Code branch; worktree is clean.
+- Code evidence: `302 passed, 0 failed` over repeated runs; Windows build completed; built EXE was safely launched from a clean extracted simulation, self-bootstrapped null mappings/configs, opened `ldmanager (MVP)`, and was closed without ADB/game input.
+- Candidate artifact: `dist\ldmanager\ldmanager.exe`, SHA-256 `8939124e3ad958fb47e39979a39bce93437f7ecc86f406f30239f81c331ebd9f`; artifact is not published.
+- Code-reported remediation: per-account readiness gating, mapping-local readiness reset, customer-hidden calibration UI by default, and an opt-in live-input gate. These are not QA approval.
+- QA target: exact Code commit `2c47736`. QA must independently validate isolation/readiness/reset/default-no-live-input/package launch and issue `MVP_SMOKE_PASS`, `MVP_SMOKE_FAIL`, or `BLOCKED_REAL_ENVIRONMENT`.
+- User action: none while QA runs. Later, only a real LDPlayer/customer environment is needed for live device/game validation.
+
 ## `v1.0.1` governed import started (2026-09-14)
 
 - Current phase: `IMPLEMENTING`.
