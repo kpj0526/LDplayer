@@ -191,3 +191,58 @@ def test_all_statuses_covers_every_account_independently():
     for aid, status in statuses.items():
         assert status.account_id is aid
         assert status.running is False
+
+
+# --- REL-UPDATE-003: runtime (phase/locked_slots/slot_states) sync ----------
+
+
+class _FakeRuntime:
+    """Minimal stand-in for ldmanager.runtime.AccountMissionRuntime."""
+
+    def __init__(self) -> None:
+        self.phase = "CONFIGURING"
+        self.locked_count = 2
+
+        class _Slot:
+            def __init__(self, value: str) -> None:
+                self.value = value
+
+        self.slots = [_Slot("target_locked"), _Slot("target_locked"), _Slot("unknown")]
+
+
+def test_runtime_status_syncs_on_a_normal_non_error_cycle():
+    """Regression guard: the runtime-status sync previously sat after an
+    unconditional `break` in the error branch, making it dead code -- it
+    never ran on an ordinary (non-error) cycle. Import candidate fix
+    (REL-UPDATE-003): verify phase/locked_slots/slot_states now reach
+    AccountWorkerStatus on a ordinary successful cycle, not just never."""
+
+    def cycle(should_stop):
+        return _DummyOutcome("completed_cycle")  # not one of the error outcomes
+
+    worker = _make_worker(AccountId.LD2, cycle)
+    worker.runtime = _FakeRuntime()
+    worker.start()
+    time.sleep(0.05)
+    worker.stop(join_timeout=1.0)
+
+    status = worker.status()
+    assert status.phase == "CONFIGURING"
+    assert status.locked_slots == 2
+    assert status.slot_states == ["target_locked", "target_locked", "unknown"]
+
+
+def test_runtime_status_also_syncs_on_an_error_cycle():
+    def cycle(should_stop):
+        return _DummyOutcome("adb_error")
+
+    worker = _make_worker(AccountId.LD4, cycle)
+    worker.runtime = _FakeRuntime()
+    worker.start()
+    time.sleep(0.05)
+    worker.stop(join_timeout=1.0)
+
+    status = worker.status()
+    assert status.errored is True
+    assert status.phase == "CONFIGURING"  # synced before the error break, not lost
+    assert status.locked_slots == 2

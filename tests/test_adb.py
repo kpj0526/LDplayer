@@ -2,6 +2,7 @@ import pytest
 
 from ldmanager.adb import (
     AdbDeviceState,
+    InputGateAdbRunner,
     SubprocessAdbRunner,
     build_adb_command,
     parse_adb_devices_output,
@@ -232,3 +233,67 @@ def test_fake_runner_rejects_empty_serial():
     runner = FakeAdbRunner()
     with pytest.raises(ValueError):
         runner.run("", ["devices"])
+
+
+# --- InputGateAdbRunner: real taps refused outside live mode (REL-UPDATE-003) --
+#
+# Found unused/unwired during v1.0.1 candidate diff inspection (defined in
+# adb.py but never instantiated anywhere -- app.py wired the raw
+# SubprocessAdbRunner directly, so a verified Start could already send real
+# taps with no separate live-mode opt-in). Wired into app.py's
+# build_controller() as part of REL-UPDATE-003; these are the missing unit
+# tests for the gate class itself.
+
+
+def test_input_gate_blocks_run_by_default():
+    inner = FakeAdbRunner()
+    gate = InputGateAdbRunner(inner)
+
+    assert gate.live_enabled is False
+    result = gate.run("SERIAL-A", ["shell", "input", "tap", "1", "2"])
+
+    assert result.ok is False
+    assert inner.calls == []  # the tap never reached the inner runner
+
+
+def test_input_gate_allows_list_devices_and_capture_regardless_of_live_mode():
+    inner = FakeAdbRunner(devices_output="List of devices attached\n")
+    gate = InputGateAdbRunner(inner)  # live_enabled=False (default)
+
+    assert gate.list_devices() == "List of devices attached\n"
+    gate.capture_binary("SERIAL-A", ["exec-out", "screencap", "-p"])
+
+    assert inner.list_devices_calls == 1
+    assert inner.capture_calls == [("SERIAL-A", ("exec-out", "screencap", "-p"))]
+
+
+def test_input_gate_allows_run_once_constructed_live():
+    inner = FakeAdbRunner()
+    gate = InputGateAdbRunner(inner, live_enabled=True)
+
+    result = gate.run("SERIAL-A", ["shell", "input", "tap", "1", "2"])
+
+    assert result.ok is True
+    assert inner.calls == [("SERIAL-A", ("shell", "input", "tap", "1", "2"))]
+
+
+def test_input_gate_set_live_enabled_toggles_at_runtime():
+    inner = FakeAdbRunner()
+    gate = InputGateAdbRunner(inner)
+
+    gate.run("SERIAL-A", ["shell", "true"])
+    assert inner.calls == []  # still blocked
+
+    gate.set_live_enabled(True)
+    gate.run("SERIAL-A", ["shell", "true"])
+    assert inner.calls == [("SERIAL-A", ("shell", "true"))]
+
+    gate.set_live_enabled(False)
+    gate.run("SERIAL-A", ["shell", "true"])
+    assert inner.calls == [("SERIAL-A", ("shell", "true"))]  # no new call while blocked
+
+
+def test_input_gate_still_validates_serial_even_when_blocked():
+    gate = InputGateAdbRunner(FakeAdbRunner())
+    with pytest.raises(ValueError):
+        gate.run("", ["shell", "true"])

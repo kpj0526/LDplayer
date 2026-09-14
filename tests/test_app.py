@@ -91,6 +91,54 @@ def test_build_controller_succeeds_with_valid_configs_and_covers_all_accounts(
         assert controller.worker(aid).is_running is False
 
 
+# --- REL-UPDATE-003: InputGateAdbRunner wiring (real taps opt-in only) -----
+
+
+def test_build_controller_wires_input_gate_blocking_taps_by_default(tmp_path, monkeypatch):
+    """build_controller() previously wired the raw SubprocessAdbRunner
+    directly (a gap found while integrating the v1.0.1 candidate: its
+    InputGateAdbRunner class existed but was never actually used). Fixed
+    as part of REL-UPDATE-003 -- verify the real runner is always the
+    gate, and defaults closed (no LDMANAGER_LIVE_MODE set)."""
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("LDMANAGER_LIVE_MODE", raising=False)
+    config_path, bounty_path = _write_configs(tmp_path, _nine_null_mapping_yaml())
+    monkeypatch.setenv("LDMANAGER_CONFIG", str(config_path))
+    monkeypatch.setenv("LDMANAGER_BOUNTY_CONFIG", str(bounty_path))
+
+    controller = build_controller()
+
+    from ldmanager.adb import InputGateAdbRunner
+
+    assert isinstance(controller.adb_runner, InputGateAdbRunner)
+    assert controller.adb_runner.live_enabled is False
+
+
+def test_build_controller_honors_live_mode_env_var(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LDMANAGER_LIVE_MODE", "1")
+    config_path, bounty_path = _write_configs(tmp_path, _nine_null_mapping_yaml())
+    monkeypatch.setenv("LDMANAGER_CONFIG", str(config_path))
+    monkeypatch.setenv("LDMANAGER_BOUNTY_CONFIG", str(bounty_path))
+
+    controller = build_controller()
+
+    assert controller.adb_runner.live_enabled is True
+
+
+def test_build_controller_live_mode_env_var_requires_exact_value(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LDMANAGER_LIVE_MODE", "true")  # not the exact "1"
+    config_path, bounty_path = _write_configs(tmp_path, _nine_null_mapping_yaml())
+    monkeypatch.setenv("LDMANAGER_CONFIG", str(config_path))
+    monkeypatch.setenv("LDMANAGER_BOUNTY_CONFIG", str(bounty_path))
+
+    controller = build_controller()
+
+    assert controller.adb_runner.live_enabled is False
+
+
 def test_main_returns_error_code_and_does_not_raise_when_config_missing(
     tmp_path, monkeypatch, capsys
 ):

@@ -14,9 +14,9 @@ flow.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Mapping, Optional
 
 import yaml
 
@@ -97,6 +97,9 @@ class BountyMissionConfig:
     max_mission_list_verify_attempts: int = 3
     retry_delay_seconds: float = 0.0
     capture_args: tuple[str, ...] = DEFAULT_CAPTURE_ARGS
+    # Optional for backwards-compatible construction in focused state-machine
+    # tests; production config supplies this from ``template_map``.
+    template_map: Mapping[str, str] = field(default_factory=dict)
 
     @property
     def slot_count(self) -> int:
@@ -158,6 +161,21 @@ def _positive_int(raw: dict, key: str, default: int, path: Path) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 1:
         raise BountyConfigError(f"'{key}' in {path} must be a positive integer, got {value!r}.")
     return value
+
+
+def _template_map(raw: dict, path: Path) -> dict[str, str]:
+    value = raw.get("template_map", {})
+    if not isinstance(value, dict):
+        raise BountyConfigError(f"'template_map' in {path} must be a mapping of label to PNG filename.")
+    result: dict[str, str] = {}
+    for label, filename in value.items():
+        if not isinstance(label, str) or not label.strip() or not isinstance(filename, str) or not filename.strip():
+            raise BountyConfigError(f"'template_map' in {path} contains an invalid label or filename.")
+        candidate = Path(filename)
+        if candidate.is_absolute() or ".." in candidate.parts:
+            raise BountyConfigError(f"Template filename must stay under templates_dir: {filename!r}.")
+        result[label] = filename
+    return result
 
 
 def load_bounty_config(explicit_path: Optional[Path] = None) -> BountyMissionConfig:
@@ -239,6 +257,7 @@ def load_bounty_config(explicit_path: Optional[Path] = None) -> BountyMissionCon
         mission_list_label=_label(raw, "mission_list_label", path),
         screen_size=screen_size,
         templates_dir=Path(templates_dir_raw),
+        template_map=_template_map(raw, path),
         threshold=float(threshold),
         max_capture_attempts=_positive_int(raw, "max_capture_attempts", 3, path),
         max_refresh_attempts=_positive_int(raw, "max_refresh_attempts", 5, path),
