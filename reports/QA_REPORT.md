@@ -989,3 +989,58 @@ It completed PyInstaller and packaged the candidate executable with safe example
 ### Verdict and limits
 
 **BLOCKED.** Automated regression, injected safety behavior, and fresh artifact launch passed, but the mandatory literal customer-path reproduction cannot be marked PASS because `C:\LDPlayer\LDPlayer14\adb.exe` is absent in this QA environment. No live device/game action, real ADB command, or release publication occurred. This report does not mark any global/final AC as PASS; AC-58 through AC-60 remain **BLOCKED_REAL_ENVIRONMENT / NOT_TESTED**.
+
+---
+
+## GAME-CAL-001-QA mission-screen classification smoke (2026-09-14) — MVP_SMOKE_PASS
+
+### Target, integration, and regression
+
+| Item | Verified result |
+| --- | --- |
+| Exact Code target | `0a0f777aa7d44d6507a8a557fcbba33ae6007a7f` on `kpj0526/Code` |
+| Required implementation | `6fa6d39ece894b41735f5250ff498c1ad7d670f1` is an ancestor |
+| Code worktree before QA | clean |
+| QA integration | non-fast-forward merge `e7be6f00b0b696a86c2b63629c4a4122630e5f08` (`QA: merge GAME-CAL-001 target`) |
+| Diff check | `git diff --check HEAD^1 HEAD` exit 0 |
+
+```powershell
+& .\.venv\Scripts\python.exe -m pytest -q
+& .\.venv\Scripts\python.exe -m pytest -q tests\test_screen_classification.py tests\test_gui.py tests\test_app.py
+```
+
+Actual results: independent full regression **`345 passed in 2.56s`**; focused classification/app/GUI coverage **`52 passed in 0.57s`**.
+
+### Independent 1280×720 injected evidence
+
+QA independently constructed a `BountyMissionConfig` at 1280×720 with stable Mission/Region layout anchors, a generic progress-frame indicator, a currency-action button label, and separate phrase/quantity target labels. The recognizer and ADB runner were QA-controlled in-memory doubles; no submitted scenario fixture, live serial, device, or image-template calibration was used.
+
+```text
+INDEPENDENT_GAME_CAL_PROBE_PASS: 1280x720 layout states; 130/180/currency/unknown/mismatch/capture/blank/stop fail closed; completed+target fresh single-serial tap/postcondition; title-independent layout; account isolation
+```
+
+| Mandatory condition | Actual result |
+| --- | --- |
+| Stable-layout classification | PASS: stable anchors + generic progress classified `IN_PROGRESS` (the 130/180 case); stable anchors + currency action classified `CURRENCY_ACTION`; anchors only `UNKNOWN`; one-of-two stable anchors `MISMATCH`. |
+| Fail-closed completion exclusions | PASS: 130/180, currency/6600, unknown, mismatch, capture failure, blank/whitespace serial, and `should_stop=True` all yielded zero `run()` calls. Blank serial and pre-capture stop also yielded zero capture calls. |
+| Only permitted completion path | PASS: completed signal plus independently matching phrase **and** quantity target caused one and only one serial-scoped tap. The injected runner recorded every capture and tap under explicit `QA-1280-A`; a fresh post-tap capture changed state away from `COMPLETED`, producing `ok=True`. |
+| Fresh guards and bounded postcondition | PASS: precondition was captured in-call, target assessment separately re-captured in-call, button location re-captured in-call, and postcondition was freshly captured after the one tap. Existing suite additionally covers bounded non-transition behavior. |
+| Variable title safety | PASS: classifier calls contained no `자유 토벌작전` label; a title variation did not cause layout `MISMATCH` or a tap. Target-objective assessment remains a separate required gate. |
+| Account containment | PASS: a successful `QA-1280-A` completion emitted only `QA-1280-A`; a separate `QA-1280-B` mismatch emitted zero calls and did not affect the first runner. |
+| Mismatch diagnostics / GUI startup | PASS under focused suite: mismatch/capture paths stay fail-closed and GUI/app construction starts no worker/mainloop action. |
+
+### Windows artifact smoke
+
+QA ran:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1
+```
+
+The PyInstaller/package build completed. QA ZIP-created and freshly extracted the new `dist\ldmanager`, verified no generated config before launch, then launched the extracted executable without UI interaction. It bootstrapped local `config.yaml` and `bounty.yaml` with null LD1–LD9 mappings and exposed native window `ldmanager (MVP)` (artifact PID `12912`, window id `524590`). The temporary window was normally closed (`CloseRequested=True`, `Exited=True`).
+
+A system-wide `adb.exe` was observed during this check, but its creation time was 21:38, before the 22:53 artifact run, and it was not an artifact child; it is recorded as pre-existing host state and was neither invoked nor controlled by QA. No live device/game action, capture, touch, worker operation, or calibration action occurred.
+
+### Verdict and real-environment limit
+
+**MVP_SMOKE_PASS.** The fixture/injected safety and artifact-startup scope passed. This is not real template calibration, actual 1280×720 customer capture recognition, LDPlayer, or live-game proof. No global/final project AC is marked PASS; AC-58 through AC-60 remain **BLOCKED_REAL_ENVIRONMENT / NOT_TESTED**.
