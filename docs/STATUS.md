@@ -88,6 +88,14 @@
 - Target: Code `c814ae8` / implementation `4688104`; prior `v1.0.3-rc.1` is withdrawn.
 - Next: Code builds and publishes a new customer-test prerelease; QA independently checks the exact release asset. No final PASS claim.
 
+## REL-003 published and independently smoke-checked (2026-09-14)
+
+- Current phase: `CUSTOMER_TEST_RELEASED`
+- Release: `v1.0.3-rc.2` — https://github.com/kpj0526/LDplayer/releases/tag/v1.0.3-rc.2
+- Asset SHA-256: `174C34B625AD2087C5A070E604FBB8880E4F9D2935EC8E85829AB10844A4F6DA`
+- Code release record: `e7e6898`; QA report: `3f08fee` (`MVP_SMOKE_PASS`).
+- Scope limit: customer-test prerelease only; live LDPlayer/ADB/game validation and AC-58--AC-60 remain `BLOCKED_REAL_ENVIRONMENT / NOT_TESTED`.
+
 - Current phase: `VERIFYING`
 - Owner: `qa`
 - Target: Code `a4dce6d` / repair `5ea24e3`

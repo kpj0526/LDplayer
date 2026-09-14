@@ -264,6 +264,13 @@
 - Release rule: publish a new prerelease only; `v1.0.3-rc.1` remains withdrawn and must not be re-enabled or supplied.
 - Completion: Code records a newly built/tagged/published asset and SHA-256; QA independently verifies that exact asset before any customer-ready report. Final project PASS remains prohibited.
 
+## REL-003 result (2026-09-14)
+
+- Status: `CUSTOMER_TEST_RELEASED`.
+- Published prerelease: `v1.0.3-rc.2`; exact verified asset SHA-256: `174C34B625AD2087C5A070E604FBB8880E4F9D2935EC8E85829AB10844A4F6DA`.
+- QA `3f08fee` independently downloaded, inspected, freshly extracted, and startup-smoke-checked the published ZIP: `MVP_SMOKE_PASS`.
+- Customer next step: configure one explicit nonblank serial, use Test capture/mapping before Start, and stop on mismatch/unknown/error. No final project PASS or real-environment claim.
+
 - Task ID: `MVP-001`
 - Title: Connected executable MVP draft for nine-account mission automation
 - Purpose: deliver a runnable, configurable end-to-end draft that can be calibrated and smoke-tested on the user's real environment later.

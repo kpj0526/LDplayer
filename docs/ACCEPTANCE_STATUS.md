@@ -79,6 +79,12 @@ Total ACs: `60`. Strict committed implementation: `4/60`; global final QA verifi
 | Serial-scoped capture/guarded touch | MVP_IMPLEMENTED | NOT_TESTED | NEEDS_REAL_TEST | Code `efd3a2f`; QA scope `d69bc0b` | Foundation only; no live LD device. |
 | Connected worker/GUI/mission MVP | IN_PROGRESS | NOT_TESTED | NEEDS_REAL_TEST | `MVP-001` assigned | No completion assertion before Code commit and smoke test. |
 
+## REL-003 customer-test release status (2026-09-14)
+
+| Scope | Implementation status | QA status | Evidence | Limit |
+| --- | --- | --- | --- | --- |
+| Published Windows customer-test prerelease | RELEASED | MVP_SMOKE_PASS | `v1.0.3-rc.2`; Code `e7e6898`; QA `3f08fee`; SHA-256 `174C34B625AD2087C5A070E604FBB8880E4F9D2935EC8E85829AB10844A4F6DA` | No live LDPlayer, ADB, or game test; no global/final AC PASS. AC-58--AC-60 remain `BLOCKED_REAL_ENVIRONMENT / NOT_TESTED`. |
+
 ## Stage 3 scope PASS / Stage 4 start override (2026-09-12)
 
 | AC ID | Verification item | Implementation status | QA status | Evidence | Note |

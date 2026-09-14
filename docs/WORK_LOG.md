@@ -369,6 +369,13 @@
 - Evidence: `v1.0.3-rc.1` is explicitly WITHDRAWN and its ZIP SHA-256 is `4764FE903D4C2F7D5F7D4F1904D4E53D6EE0B964BC2D622D050A4C46960DA959`; real-capture rework is Code `4688104` / handoff `c814ae8`; independent QA result `761f7c5` is `MVP_SMOKE_PASS` only.
 - Decision: do not republish the withdrawn asset. Queue a new prerelease package and independent QA validation under `REL-003`; real customer LDPlayer/ADB/game evidence remains required.
 
+## 2026-09-14 | REL-003 published | Manager
+
+- Performed: verified the new GitHub prerelease exists, then routed the published asset to independent QA.
+- Release: `v1.0.3-rc.2`, asset `ldmanager-v1.0.3-rc.2-windows.zip`, SHA-256 `174C34B625AD2087C5A070E604FBB8880E4F9D2935EC8E85829AB10844A4F6DA`.
+- Evidence: Code record `e7e6898`; QA `3f08fee` independently downloaded the public ZIP, confirmed its digest differs from withdrawn rc.1, verified its templates/config/docs, launched a fresh extraction without any control input, and ran the exact-target suite (`358 passed`).
+- Result: `MVP_SMOKE_PASS` for a customer-test prerelease. It is not final delivery; live LDPlayer/ADB/game validation remains customer-environment work.
+
 - Performed: fetched and inspected the configured GitHub remote to resolve the user's request for the macro update.
 - Changed: `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
 - Commands/tests: `git fetch --prune origin`; remote tag/ref, commit metadata/stat, and GitHub release-list inspection.
