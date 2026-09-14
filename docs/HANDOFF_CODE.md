@@ -2123,11 +2123,10 @@ python -m pytest -q tests/test_gui.py -k "adb_path"     #  4 passed
 
 ### Commits
 
-- Implementation + tests commit: see the commit immediately following
-  this handoff entry's own commit in `git log` on `kpj0526/Code` (this
-  file records the exact hash in a short follow-up commit, per this
-  session's established two-commit pattern, since the hash can't be
-  known before the file itself is committed).
+- `5ade5dc` — `ADB-PATH-001: GUI-visible ADB executable path selection`
+  (implementation + tests + this HANDOFF section, in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `5ade5dc`.
 - Not tagged, not pushed, not published, not merged into `main`.
 
 ### Limitations
