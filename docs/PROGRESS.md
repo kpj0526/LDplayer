@@ -1,5 +1,14 @@
 # PROGRESS
 
+## `v1.0.1` governed import started (2026-09-14)
+
+- Current phase: `IMPLEMENTING`.
+- User authorized retrieval after review. Existing Code and QA terminals were re-confirmed connected; no replacement agent or worktree was created.
+- Active packet: `REL-UPDATE-003`. Code imports exact tag `299e7a9`, preserves approved work, runs full tests/Windows build, commits, and writes a handoff. QA then independently verifies Code's exact submitted commit.
+- Scope: account-local capture/template readiness gate before Start; capture mismatch remains a safe stop/diagnostic path. This does not validate an actual LD/game screen.
+- Release boundary: `v1.0.1` remains unpublished and unverified until Code submission plus QA verdict. Customer artifact remains the previously published release.
+- Next: await Code committed target/evidence; then dispatch to existing QA.
+
 ## `v1.0.1` source review completed; governed import blocked (2026-09-14)
 
 - Current phase: `BLOCKED`.

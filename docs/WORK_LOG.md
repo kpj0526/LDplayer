@@ -1,5 +1,14 @@
 # WORK LOG
 
+## 2026-09-14 | REL-UPDATE-003 | Manager
+
+- Performed: verified existing Code and QA terminal handles are connected; authorized reviewed `v1.0.1` source to enter the governed Code→QA workflow.
+- Changed: `docs/TASK_PACKET.md`, `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
+- Commands/tests: Orca worktree/terminal inventory and read-only Code/QA terminal review; no code, ADB, Worker, or game-input action by Manager.
+- Result: Code implementation is active; QA is reserved for independent verification of a future exact Code commit.
+- Related commits: candidate source `299e7a9`; no Code/QA integration evidence yet.
+- Next handoff: existing Code.
+
 ## 2026-09-14 | REL-UPDATE-002 | Manager
 
 - Performed: read-only technical/release review of remote `v1.0.1` after the user requested that it be checked before retrieval.

@@ -1,5 +1,18 @@
 # TASK PACKET — TP-001 (통합본)
 
+## REL-UPDATE-003 — import and verify remote `v1.0.1` (2026-09-14)
+
+1. **WHO**: customer receives the macro; Manager coordinates; existing Code imports/builds; existing QA independently verifies.
+2. **WHAT**: safely incorporate remote source tag `v1.0.1` (`299e7a91840505cc90dcbb6b6f9e2ad75ed3b1cf`) into the existing Code branch and prepare a candidate Windows artifact.
+3. **WHERE**: Code worktree/branch only. No new agent, worktree, or role.
+4. **WHEN**: immediately after this packet; QA starts only after Code submits an exact committed target.
+5. **WHY**: the candidate adds an account-local screen-capture/template preflight that prevents Start until an explicitly mapped account's game screen is recognized.
+6. **HOW**: Code inspects ancestry/diff, uses a non-destructive integration method preserving existing committed work, resolves any conflict without discarding user changes, runs the full suite and Windows build, records precise artifact/test evidence in `docs/HANDOFF_CODE.md`, and commits. QA checks the exact Code hash independently.
+7. **CONSTRAINTS**: no reset/checkout that discards work; no auto-mapping, touch, Worker, game input, release publish, credentials, or real-game success claim. No agents/subagents/worktrees. The tag itself is not an executable release or QA evidence.
+8. **ACCEPTANCE CRITERIA**: `REL-003-AC-01` Code imports only reviewed `v1.0.1` change set and preserves approved work. `REL-003-AC-02` Start stays disabled until this account's mapping is OK and Test capture passes; LD1 readiness must not enable LD2. `REL-003-AC-03` saving/clearing a mapping resets only that account's capture readiness. `REL-003-AC-04` capture mismatch saves diagnostic capture/prevents Start and calibration UI is hidden by default. `REL-003-AC-05` full tests and Windows build succeed; no publication pending QA.
+9. **OWNER**: Code implementation/build/handoff; QA independent regression/package verification; Manager records/release decision.
+10. **NEXT ACTION**: Code receives this packet, submits exact commit, Manager routes that target to QA.
+
 ## UI-ADB-001: Customer-friendly LD registration
 
 1. **WHO**: Windows customer who does not use terminals or edit configuration files; existing `code` implements; existing `qa` independently verifies; Manager coordinates. No other agents or worktrees.

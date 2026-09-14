@@ -1,5 +1,19 @@
 # CURRENT TASK
 
+## `v1.0.1` governed import and candidate build (2026-09-14)
+
+- Task ID: `REL-UPDATE-003`
+- Title: Import reviewed remote source tag into the Code branch
+- Purpose: produce a testable, packageable candidate with safe per-account capture preflight before any customer release.
+- Owner: existing Code now; existing QA after Code commit.
+- Status: `IMPLEMENTING`.
+- Planned changes: Code-selected application/GUI/test/build/handoff files required to integrate exact source tag `299e7a9` safely.
+- Actual changes: none submitted yet.
+- Completion: exact Code commit, full test and Windows-build evidence, artifact details, Code handoff; then QA independently validates exact target.
+- Current result: Manager reviewed the tag and confirmed existing Code/QA terminals are connected.
+- Blocker: none for Code integration; live LD/game validation remains separate `NEEDS_REAL_TEST`.
+- Next action: Code imports/builds without publishing; Manager passes submitted hash to QA.
+
 ## `v1.0.1` import preflight (2026-09-14)
 
 - Task ID: `REL-UPDATE-002`
