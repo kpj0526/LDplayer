@@ -90,6 +90,15 @@ AC-01~AC-30을 적용한다. 명세·진행 상태는 `docs/ACCEPTANCE_STATUS.md
 
 ## 10. NEXT ACTION
 
+## REL-003: customer-test replacement prerelease
+
+1. **WHO**: Existing `code` packages and publishes; existing `qa` independently smoke-checks the exact packaged result; Manager coordinates. No new agent, subagent, role, or worktree.
+2. **WHAT**: Replace the withdrawn `v1.0.3-rc.1` customer artifact with a new Windows prerelease built from Code commit `c814ae850f3cd89e9c5e0feefc451e9c90d7aeff` (implementation `4688104067bbb90cdc5e5cb1d74579be770a5c1a`).
+3. **HOW**: Use a new version/tag (do not alter or re-enable `v1.0.3-rc.1`); build the Windows ZIP from the exact target; verify ZIP/executable hash, packaged real-calibration templates, clean Git state, and release asset; push only the Code branch/tag and create a GitHub prerelease with the explicit customer-test limitations. Record exact commit/tag/asset SHA-256/URL in `docs/HANDOFF_CODE.md` and commit the release-record update.
+4. **SAFETY / RELEASE NOTES**: State that this is a customer-test prerelease, not final delivery. The customer must configure an explicit nonblank ADB serial per account, begin with one account, use Test capture/mapping verification before Start, and stop immediately on mismatch/unknown/error. No automatic input after global stop; no live-game/LDPlayer validation has been performed by QA. `AC-58`--`AC-60` remain `BLOCKED_REAL_ENVIRONMENT / NOT_TESTED`.
+5. **ACCEPTANCE**: The published asset must derive from the named target, must not be the withdrawn hash `4764FE903D4C2F7D5F7D4F1904D4E53D6EE0B964BC2D622D050A4C46960DA959`, and must be independently smoke-checked by QA before Manager reports the customer download link. QA does not claim final project PASS.
+6. **NEXT**: Code submits the exact release commit/tag/hash/URL; QA independently checks the published artifact and records `MVP_SMOKE_PASS`, `MVP_SMOKE_FAIL`, or `BLOCKED_REAL_ENVIRONMENT`.
+
 ## MVP-001-CV: customer-video free-bounty mission-cycle extension
 
 1. **WHO**: Customer operates nine LDPlayer accounts and supplies real game assets/environment; existing `code` implements; existing `qa` independently smoke-tests; Manager coordinates. No new agents, subagents, roles, or worktrees.

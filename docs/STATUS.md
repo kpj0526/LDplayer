@@ -81,6 +81,13 @@
 
 ## TP-002-RW-01 QA handoff (2026-09-12)
 
+## REL-003 (2026-09-14)
+
+- Current phase: `PACKAGING`
+- Owner: `code`
+- Target: Code `c814ae8` / implementation `4688104`; prior `v1.0.3-rc.1` is withdrawn.
+- Next: Code builds and publishes a new customer-test prerelease; QA independently checks the exact release asset. No final PASS claim.
+
 - Current phase: `VERIFYING`
 - Owner: `qa`
 - Target: Code `a4dce6d` / repair `5ea24e3`

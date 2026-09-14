@@ -254,6 +254,16 @@
 
 ## Current authoritative task (2026-09-12)
 
+## Current authoritative task (2026-09-14)
+
+- Task ID: `REL-003`
+- Title: customer-test replacement prerelease
+- Owner: existing `code`; independent post-submission check: existing `qa`.
+- Status: `PACKAGING`.
+- Source target: Code `c814ae850f3cd89e9c5e0feefc451e9c90d7aeff` (implementation `4688104067bbb90cdc5e5cb1d74579be770a5c1a`).
+- Release rule: publish a new prerelease only; `v1.0.3-rc.1` remains withdrawn and must not be re-enabled or supplied.
+- Completion: Code records a newly built/tagged/published asset and SHA-256; QA independently verifies that exact asset before any customer-ready report. Final project PASS remains prohibited.
+
 - Task ID: `MVP-001`
 - Title: Connected executable MVP draft for nine-account mission automation
 - Purpose: deliver a runnable, configurable end-to-end draft that can be calibrated and smoke-tested on the user's real environment later.

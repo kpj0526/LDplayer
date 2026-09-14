@@ -363,6 +363,12 @@
 - Next handoff: customer device-refresh/mapping screenshot and any displayed error; existing Code/QA only for a required correction and independent verification.
 ## 2026-09-14 | REL-UPDATE-001 | Manager
 
+## 2026-09-14 | REL-003 | Manager
+
+- Performed: received authorization to deploy a customer-test release; inspected the published prerelease and current Code/QA evidence.
+- Evidence: `v1.0.3-rc.1` is explicitly WITHDRAWN and its ZIP SHA-256 is `4764FE903D4C2F7D5F7D4F1904D4E53D6EE0B964BC2D622D050A4C46960DA959`; real-capture rework is Code `4688104` / handoff `c814ae8`; independent QA result `761f7c5` is `MVP_SMOKE_PASS` only.
+- Decision: do not republish the withdrawn asset. Queue a new prerelease package and independent QA validation under `REL-003`; real customer LDPlayer/ADB/game evidence remains required.
+
 - Performed: fetched and inspected the configured GitHub remote to resolve the user's request for the macro update.
 - Changed: `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
 - Commands/tests: `git fetch --prune origin`; remote tag/ref, commit metadata/stat, and GitHub release-list inspection.
