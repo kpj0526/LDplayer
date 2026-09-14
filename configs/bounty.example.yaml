@@ -107,3 +107,44 @@ max_reward_verify_attempts: 3
 max_result_verify_attempts: 3
 max_mission_list_verify_attempts: 3
 retry_delay_seconds: 1.0
+
+# --- GAME-CAL-001: screen classification (all optional; omit any/all of
+# this section and that check is simply skipped, never fabricated). See
+# ldmanager/screen_classification.py's module docstring for the full
+# contract. Calibrate every ROI/label below from real captures -- values
+# here are PLACEHOLDERS, same as the rest of this file.
+#
+# Stable, STATIC screen-layout chrome only (Mission tab / Region tab /
+# mission-list-or-detail panel FRAME) -- e.g. never a mission-list PANEL
+# TITLE like "자유 토벌작전"/"Free Subjugation", which only appears for
+# one specific objective type and would wrongly reject every other
+# mission's screen as a MISMATCH. Never a reward amount or a dynamic
+# progress counter either. At least min_stable_anchor_matches (default:
+# all of them) must match, or the screen is classified MISMATCH.
+stable_screen_anchors:
+  - {roi: {x: 0.0, y: 0.0, width: 0.15, height: 0.06}, label: "mission_screen"}
+  - {roi: {x: 0.0, y: 0.90, width: 0.15, height: 0.08}, label: "region_tab"}
+# min_stable_anchor_matches: 2
+
+# Whole-button refresh/reroll variants (OR-matched) that mark the screen
+# as showing a currency/refresh action -- e.g. the customer's "6600"
+# refresh button. Defaults to the four button_refresh_* labels already
+# used above; only listed here if you want to override that default.
+# currency_action_labels: ["button_refresh_4400", "button_refresh_6600", "button_refresh_9900", "button_refresh_14900"]
+
+# ONE generic, non-digit-specific "mission in progress" indicator (e.g.
+# a progress-bar frame graphic) -- deliberately never a fixed "x/y"
+# digit crop tied to one mission's specific target quantity (a
+# "130/180" mission and a "0/200" mission must both be recognized as
+# in-progress by the SAME template, not two different digit-specific
+# ones).
+# in_progress_roi: {x: 0.40, y: 0.05, width: 0.20, height: 0.06}
+# in_progress_label: "in_progress"
+
+# NOTE: whether the CURRENTLY SELECTED mission is the required "모든
+# 몬스터 처치" objective is a completely separate check, driven by the
+# EXISTING mission_phrase_roi/mission_phrase_label +
+# mission_quantity_roi/mission_quantity_label (or target_all_monsters_
+# 0_of_200) fields above -- never by stable_screen_anchors. A different,
+# non-target mission title is a normal, valid screen (never a MISMATCH),
+# just not one this project will ever act on.

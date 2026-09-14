@@ -2171,3 +2171,184 @@ python -m pytest -q tests/test_gui.py -k "adb_path"     #  4 passed
 - Confirm the Windows build artifact above launches and shows the new
   "ADB executable:" row without regressing any prior packet's GUI
   behavior (mapping Save/Clear, Start/Stop gating, Test capture).
+
+## GAME-CAL-001: configurable mission-screen recognition/calibration correction
+
+**Manager task packet**: `GAME-CAL-001` (approved). Customer evidence
+(1280x720 captures): LD1/LD3 valid completed Mission > Region > Free
+Subjugation screen; LD4 in-progress "130/180" with a "6600" currency
+action, plus a completed state. Current Test capture reported a
+template mismatch even for valid mapped screens.
+
+### Status: implemented, tested, built. Not tagged, not pushed, not
+published, not merged into `main`. Narrowly scoped per Manager's
+mid-task priority update -- no reroll/popup automation changes, no new
+live automation.
+
+### Root cause (customer-reported mismatch)
+
+The existing Test-capture readiness gate (`app.py`'s `readiness_check`)
+only ever looked for four very *specific*, sub-state-only templates (a
+refresh-popup title, a reward-result header, a fixed "0/200" quantity
+crop). None of those are present on a plain mission-list/detail screen,
+and the "0/200" crop is tied to one specific mission's target quantity
+-- it can never match a mission whose target is a different number
+(e.g. the customer's real "130/180", target 180 not 200). A
+correctly-mapped screen therefore reported MISMATCH essentially always.
+
+### Customer clarification (mid-task, addressed in this same commit)
+
+"자유 토벌작전" ("Free Subjugation") is a **mission-list panel title**,
+not a global layout anchor -- it only appears for that one objective
+type; other mission types show other titles. It must never be used as
+a stable screen-layout anchor (that would reject every other mission's
+valid screen as a MISMATCH). This is now an explicit, enforced
+architectural separation -- see Actual files changed below.
+
+### Acceptance criteria
+
+| Requirement | Status |
+|---|---|
+| Configurable templates/ROIs/thresholds, calibrated to stable static anchors (Mission/Region/list-detail layout); never reward amount or dynamic progress as sole anchor | Done -- new `stable_screen_anchors`/`min_stable_anchor_matches` (`bounty_config.py`), consulted only for screen-layout confirmation, never for sub-state. Mission-*title* text (e.g. "자유 토벌작전") is explicitly excluded/documented as unsafe for this field. |
+| Explicit completed vs. in-progress/currency/unknown/mismatch classification | Done -- `MissionScreenState` enum (`screen_classification.classify_screen`), five-way, ordered COMPLETED > CURRENCY_ACTION > IN_PROGRESS > UNKNOWN, with MISMATCH gated separately by layout anchors. |
+| Completion touch only after verified completed state, per-account explicit serial, fresh precondition, verified postcondition | Done -- `complete_mission_if_verified()`: validates serial, freshly captures + classifies COMPLETED, **additionally** freshly verifies the selected mission is the target objective (`assess_mission_target`), re-checks `should_stop()` immediately before the tap, then bounded-retries a fresh postcondition capture confirming the screen left the completed state. |
+| Zero touch for 130/180 (progress), 6600/currency, unknown, mismatch; mismatch stays diagnostic/account-local | Done -- each state returns before any capture/tap beyond the precondition check; see fixture tests below. `readiness_check`'s MISMATCH path only ever sets that one account's Test-capture error label. |
+| Target acceptance gate explicitly recognizes "모든 몬스터 처치" (configured phrase/criteria); other titles safely non-target/no-touch or follow the bounded flow | Done -- `assess_mission_target()` (shared implementation; `bounty_mission._mission_is_acceptable` now delegates to it) requires phrase AND quantity (or the combined template) to independently match; a different title is `NON_TARGET_CONFIRMED` (bounded reroll in the live cycle) or `RECOGNITION_FAILED` (fail-closed) -- never a screen-layout MISMATCH. |
+| Preserve individual/global stop safety, no input after global stop, bounded retries/timeouts, worker containment, GUI startup | Preserved -- `run_one_cycle`/`AccountWorker`/`AccountController` untouched; `complete_mission_if_verified` checks `should_stop()` before every capture and immediately before the tap; postcondition loop is bounded by `max_postcondition_attempts`. |
+| Fixture/mock tests: differentiation, no-touch (progress/currency/unknown/mismatch), serial scope, title variation, regression; Windows build | Done -- see Test results below. |
+| `docs/HANDOFF_CODE.md` updated, `NEEDS_REAL_TEST` retained; no push/tag/publish; no live game-success claim | This section; see Limitations. |
+
+### Actual files changed
+
+- `src/ldmanager/screen_classification.py` (**new**) -- `MissionScreenState`
+  (COMPLETED/IN_PROGRESS/CURRENCY_ACTION/UNKNOWN/MISMATCH),
+  `classify_screen()`, `capture_and_classify()`, `MissionAssessment` +
+  `assess_mission_target()` (mission-title/OCR classification, shared
+  with `bounty_mission.py`), `complete_mission_if_verified()` (the
+  gated completion-touch primitive). No frame capture or tap happens
+  anywhere in this module except that one function's own explicitly
+  guarded tap.
+- `src/ldmanager/bounty_config.py` -- new optional `BountyMissionConfig`
+  fields: `stable_screen_anchors` (+ `AnchorSpec`), `min_stable_anchor_matches`,
+  `currency_action_labels` (defaults to the existing four
+  `button_refresh_*` variants), `in_progress_roi`/`in_progress_label`.
+  All optional/backward-compatible (empty/unset = that check is
+  skipped, never fabricated); `load_bounty_config()` parses and
+  validates each, including that `in_progress_roi`/`in_progress_label`
+  are only ever set together.
+- `src/ldmanager/bounty_mission.py` -- `MissionAssessment` and
+  `_mission_is_acceptable()`'s body moved to `screen_classification.py`
+  (single shared implementation instead of two copies that could
+  silently drift); `_mission_is_acceptable()` is now a one-line
+  delegation, behavior unchanged (confirmed by the full, unmodified
+  `test_bounty_mission.py` suite still passing). `run_one_cycle()`
+  itself was **not** otherwise modified -- zero regression risk to its
+  large existing tested state machine.
+- `src/ldmanager/app.py` -- `readiness_check` (the customer-reported
+  Test-capture gate) now calls `classify_screen()` instead of the old
+  four-specific-template OR-check; MISMATCH is the only case reported
+  as not-ready, with the specific anchor-count reason in the message.
+- `configs/bounty.example.yaml` -- documents the new optional fields
+  with placeholder values/commented examples, explicitly warning
+  against using a mission-title panel label (e.g. "자유 토벌작전") as a
+  `stable_screen_anchors` entry.
+- `tests/test_screen_classification.py` (**new**, 26 tests) --
+  `classify_screen` five-way differentiation (including priority
+  ordering, partial `min_stable_anchor_matches`, legacy
+  no-anchors-configured passthrough, and that a different mission title
+  never causes MISMATCH); `capture_and_classify` capture-failure vs.
+  success; `complete_mission_if_verified` zero-touch for
+  in-progress/currency/unknown/mismatch/capture-failure/blank-serial/
+  should-stop (both before capture and after precondition), a
+  confirmed-target-and-completed real touch with verified postcondition,
+  bounded postcondition failure (tap sent, `ok=False`), per-account
+  serial isolation, and two title-variation no-touch regressions
+  (uncertain-recognition fail-closed, and confident non-match).
+
+### Test results
+
+```
+python -m pytest -q
+345 passed
+```
+
+Run 3x in a row: `345 passed` every time, 0 failures, 0 flakes. (Prior
+baseline 319 + 26 new `test_screen_classification.py` tests = 345; the
+full existing `test_bounty_mission.py`/`test_app.py`/`test_gui.py`
+suites are unmodified and still pass unchanged.)
+
+### Build artifact (this session)
+
+- Path: `dist\ldmanager\ldmanager.exe` (plus `_internal\`,
+  `configs\*.example.yaml`, `templates\*.png`, `docs\`, `VERSION`,
+  `CHANGELOG.md`, `README_FIRST_RUN.txt`)
+- Size: 4,820,957 bytes
+- SHA-256: `f389375ebe37de00950ec2fc1035229bf301dd0df9b54a8f6611bcc1f2aeef37`
+- Built via `scripts\build_windows.ps1`. No live-exe launch verification
+  or real-device run was performed (see Limitations/NEEDS_REAL_TEST).
+- `dist\`/`build\`/`*.spec` remain git-ignored -- not part of any commit.
+
+### Commits
+
+- `6fa6d39` — `GAME-CAL-001: configurable mission-screen recognition/calibration`
+  (implementation + tests + this HANDOFF section, in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `6fa6d39`.
+- Not tagged, not pushed, not published, not merged into `main`.
+
+### Limitations -- NEEDS_REAL_TEST
+
+1. **No real device, no real template/anchor calibration, and no real
+   game screen was used anywhere in this session.** `classify_screen`,
+   `assess_mission_target`, and `complete_mission_if_verified` are
+   exercised exclusively by in-memory fake/mock recognizers
+   (`LabelMappingRecognizer` and small bespoke test doubles) against a
+   minimal placeholder PNG. Real-device recognition accuracy against
+   the customer's actual 1280x720 captures -- including whether the
+   *new* `stable_screen_anchors`/`in_progress_*` templates this packet
+   introduces can even be reliably calibrated from those screens --
+   remains **`NEEDS_REAL_TEST`**, exactly as it has for every prior
+   recognition-related packet in this document.
+2. **No `stable_screen_anchors`/`in_progress_roi`/`in_progress_label`
+   values were added to the real, git-ignored `configs/bounty.yaml`** --
+   only the tracked `configs/bounty.example.yaml` documents the new
+   optional fields with placeholders. A customer/QA environment must
+   still calibrate real crops from real captures before these new
+   checks do anything beyond "skipped" in a live run.
+3. **This session makes no claim that the customer's original
+   FileNotFoundError-adjacent Test-capture mismatch is now resolved
+   end-to-end against their real client** -- only that the specific,
+   identified *class* of bug (readiness gated on sub-state-only/
+   digit-specific templates instead of stable screen-layout anchors) is
+   fixed in code and covered by fixture tests. QA/customer must
+   recalibrate real anchor templates and re-verify against the actual
+   LD1/LD3/LD4 captures.
+4. **`run_one_cycle()`'s live completion path was intentionally left
+   unmodified** in this narrowly-scoped packet -- it already
+   independently satisfies "no touch below completion, bounded" (prior,
+   already-tested behavior) but does not yet call the new
+   `complete_mission_if_verified()` primitive itself. Wiring that in is
+   future work, not claimed done here.
+5. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by GAME-CAL-001.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `345 passed`) and `tests/test_screen_classification.py`
+  specifically (26 tests) to confirm the five-way classification,
+  zero-touch guarantees, and title-variation regressions.
+- Using the real customer captures (LD1/LD3/LD4), manually crop real
+  `stable_screen_anchors` (Mission tab / Region tab / list-detail
+  frame -- explicitly NOT the "자유 토벌작전" panel title) and a real
+  `in_progress_roi`/`in_progress_label` template, add them to a local
+  `configs/bounty.yaml`, and confirm Test-capture now reports the
+  correct classification (not MISMATCH) for all three real screens.
+- Confirm a non-"모든 몬스터 처치" mission (different title) on a real
+  device is never tapped by `complete_mission_if_verified`, even if it
+  visually shows a completed badge.
+- Confirm zero real ADB taps occur for the 130/180 in-progress screen
+  and the 6600-currency screen specifically, matching the customer's
+  evidence screenshots.
+- Confirm the Windows build artifact above launches without regressing
+  any prior packet's GUI behavior.

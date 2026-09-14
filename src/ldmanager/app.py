@@ -61,6 +61,7 @@ from .logs import get_account_logger
 from .models import AccountId
 from .recognition import OpenCVTemplateRecognizer
 from .runtime import AccountMissionRuntime
+from .screen_classification import MissionScreenState, classify_screen
 
 #: Real ADB taps are refused by InputGateAdbRunner unless this env var
 #: is exactly "1" -- mirrors the existing LDMANAGER_DEVELOPER_MODE
@@ -135,15 +136,21 @@ def build_controller() -> AccountController:
     # remains the real subprocess-backed runner behind InputGateAdbRunner.
     controller.adb_runner = runner  # type: ignore[attr-defined]
     def readiness_check(image_bytes):
-        from .coordinates import RelativeRegion
-        anchors = ("mission_slots_panel", "target_all_monsters_0_of_200", "refresh_confirm_title", "reward_result_header")
-        results = [recognizer.recognize(image_bytes, RelativeRegion(0, 0, 1, 1), label, bounty_cfg.threshold)
-                   for label in anchors if label in bounty_cfg.template_map]
-        matched = [item for item in results if item.matched]
-        if matched:
-            best = max(matched, key=lambda item: item.confidence)
-            return True, f"Screen verified: {best.label} ({best.confidence:.2f})"
-        return False, "Screen does not match the supplied game templates. Send the saved capture for template update."
+        # GAME-CAL-001: previously checked four very specific sub-state-
+        # only templates (a refresh-popup title, a reward-result header,
+        # a fixed "0/200" quantity crop) -- none of which are present on
+        # a plain mission-list/detail screen, and the quantity crop is
+        # tied to one specific mission target count. That caused a real
+        # customer's valid, correctly-mapped screen to report a template
+        # mismatch. classify_screen() instead confirms the screen from
+        # stable Mission/Region/list-or-detail layout chrome (if
+        # calibrated) and separately, explicitly classifies the mission
+        # sub-state -- readiness only requires the *screen* to match, not
+        # any specific sub-state.
+        result = classify_screen(image_bytes, bounty_cfg, recognizer)
+        if result.state is MissionScreenState.MISMATCH:
+            return False, f"{result.detail} Send the saved capture for template/anchor calibration."
+        return True, f"Screen verified: {result.state.value} ({', '.join(result.matched_labels) or 'no specific sub-state template'})"
     controller.readiness_check = readiness_check  # type: ignore[attr-defined]
     return controller
 

@@ -29,6 +29,28 @@ from .coordinates import (
 )
 from .screenshot import DEFAULT_CAPTURE_ARGS
 
+#: Default whole-button refresh/reroll variants treated as a
+#: CURRENCY_ACTION signal by ``ldmanager.screen_classification`` (each is
+#: a full button image, never a parsed cost number -- see GAME-CAL-001).
+DEFAULT_CURRENCY_ACTION_LABELS: tuple[str, ...] = (
+    "button_refresh_4400", "button_refresh_6600", "button_refresh_9900", "button_refresh_14900",
+)
+
+
+@dataclass(frozen=True)
+class AnchorSpec:
+    """One static-UI-chrome anchor: a ROI + the template label expected
+    there. Used by ``ldmanager.screen_classification`` only for
+    screen-layout confirmation (Mission tab / Region tab / mission-list-
+    or-detail panel frame) -- never for reward/progress sub-state
+    classification. Defined here (not in ``screen_classification.py``)
+    so both that module and this one can depend on it without an import
+    cycle: ``screen_classification`` already needs ``BountyMissionConfig``
+    from this module."""
+
+    roi: RelativeRegion
+    label: str
+
 BOUNTY_CONFIG_PATH_ENV_VAR = "LDMANAGER_BOUNTY_CONFIG"
 DEFAULT_BOUNTY_CONFIG_RELPATH = Path("configs") / "bounty.yaml"
 
@@ -100,6 +122,28 @@ class BountyMissionConfig:
     # Optional for backwards-compatible construction in focused state-machine
     # tests; production config supplies this from ``template_map``.
     template_map: Mapping[str, str] = field(default_factory=dict)
+
+    # --- GAME-CAL-001: screen classification (all optional, backward
+    # compatible -- an empty/unset value simply skips that check rather
+    # than ever fabricating a stricter or looser result). ---
+    #
+    # Stable, static screen-layout anchors (Mission tab / Region tab /
+    # mission-list-or-detail panel chrome) -- never a reward amount or a
+    # dynamic progress counter. Empty tuple = layout gate skipped
+    # entirely (legacy/minimal config).
+    stable_screen_anchors: tuple[AnchorSpec, ...] = field(default_factory=tuple)
+    # How many of ``stable_screen_anchors`` must match; ``None`` (default)
+    # means "all of them".
+    min_stable_anchor_matches: Optional[int] = None
+    # Whole-button refresh/reroll variants (OR-matched) treated as a
+    # CURRENCY_ACTION signal -- e.g. the customer's "6600" refresh
+    # button. Never a parsed cost number.
+    currency_action_labels: tuple[str, ...] = DEFAULT_CURRENCY_ACTION_LABELS
+    # One generic, non-digit-specific "mission in progress" indicator
+    # (e.g. a progress-bar frame graphic) -- deliberately never a fixed
+    # "x/y" digit template tied to one specific target quantity.
+    in_progress_roi: Optional[RelativeRegion] = None
+    in_progress_label: Optional[str] = None
 
     @property
     def slot_count(self) -> int:
@@ -178,6 +222,52 @@ def _template_map(raw: dict, path: Path) -> dict[str, str]:
     return result
 
 
+def _stable_screen_anchors(raw: dict, path: Path) -> tuple[AnchorSpec, ...]:
+    value = raw.get("stable_screen_anchors", [])
+    if not isinstance(value, list):
+        raise BountyConfigError(f"'stable_screen_anchors' in {path} must be a list.")
+    anchors: list[AnchorSpec] = []
+    for i, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise BountyConfigError(f"'stable_screen_anchors[{i}]' in {path} must be a mapping with roi/label.")
+        roi = _region(item, "roi", path) if "roi" in item else None
+        if roi is None:
+            raise BountyConfigError(f"'stable_screen_anchors[{i}]' in {path} is missing 'roi'.")
+        label = _label(item, "label", path)
+        anchors.append(AnchorSpec(roi=roi, label=label))
+    return tuple(anchors)
+
+
+def _optional_positive_int(raw: dict, key: str, path: Path) -> Optional[int]:
+    if key not in raw or raw[key] is None:
+        return None
+    value = raw[key]
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise BountyConfigError(f"'{key}' in {path} must be a positive integer or omitted, got {value!r}.")
+    return value
+
+
+def _string_tuple(raw: dict, key: str, default: tuple[str, ...], path: Path) -> tuple[str, ...]:
+    if key not in raw:
+        return default
+    value = raw[key]
+    if not isinstance(value, list) or not all(isinstance(v, str) and v.strip() for v in value):
+        raise BountyConfigError(f"'{key}' in {path} must be a list of non-empty strings.")
+    return tuple(value)
+
+
+def _optional_region(raw: dict, key: str, path: Path) -> Optional[RelativeRegion]:
+    if key not in raw or raw[key] is None:
+        return None
+    return _region(raw, key, path)
+
+
+def _optional_label(raw: dict, key: str, path: Path) -> Optional[str]:
+    if key not in raw or raw[key] is None:
+        return None
+    return _label(raw, key, path)
+
+
 def load_bounty_config(explicit_path: Optional[Path] = None) -> BountyMissionConfig:
     """Load and validate a :class:`BountyMissionConfig` from YAML.
 
@@ -229,6 +319,11 @@ def load_bounty_config(explicit_path: Optional[Path] = None) -> BountyMissionCon
     if not isinstance(retry_delay_seconds, (int, float)) or isinstance(retry_delay_seconds, bool) or retry_delay_seconds < 0:
         raise BountyConfigError(f"'retry_delay_seconds' in {path} must be a non-negative number.")
 
+    if ("in_progress_roi" in raw) != ("in_progress_label" in raw):
+        raise BountyConfigError(
+            f"'in_progress_roi' and 'in_progress_label' in {path} must both be set together, or both omitted."
+        )
+
     return BountyMissionConfig(
         slot_select_points=slot_select_points,
         mission_phrase_roi=_region(raw, "mission_phrase_roi", path),
@@ -267,6 +362,11 @@ def load_bounty_config(explicit_path: Optional[Path] = None) -> BountyMissionCon
         max_result_verify_attempts=_positive_int(raw, "max_result_verify_attempts", 3, path),
         max_mission_list_verify_attempts=_positive_int(raw, "max_mission_list_verify_attempts", 3, path),
         retry_delay_seconds=float(retry_delay_seconds),
+        stable_screen_anchors=_stable_screen_anchors(raw, path),
+        min_stable_anchor_matches=_optional_positive_int(raw, "min_stable_anchor_matches", path),
+        currency_action_labels=_string_tuple(raw, "currency_action_labels", DEFAULT_CURRENCY_ACTION_LABELS, path),
+        in_progress_roi=_optional_region(raw, "in_progress_roi", path),
+        in_progress_label=_optional_label(raw, "in_progress_label", path),
     )
 
 
