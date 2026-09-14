@@ -1,5 +1,13 @@
 # PROGRESS
 
+## `v1.0.1` GitHub MVP publication authorized (2026-09-14)
+
+- Current phase: `READY_FOR_APPROVAL`.
+- User explicitly authorized GitHub publication after Code `2c47736` and QA `MVP_SMOKE_PASS` report `2a13f52`.
+- Planned external action: package the QA-verified Code Windows distribution, compute a SHA-256, push an explicit release branch, retarget the pre-existing source tag `v1.0.1` to the QA-integrated verified target, and create a clearly labelled MVP prerelease with no final real-game claim.
+- Publication gate: verify clean Code/QA trees, artifact presence/hash and distribution contents before upload. If any check fails, stop before modifying the GitHub release.
+- Real-environment boundary: release publication does not alter `NEEDS_REAL_TEST` / `BLOCKED_REAL_ENVIRONMENT` status for LD/game evidence.
+
 ## `v1.0.1` candidate independently smoke-verified; publication pending (2026-09-14)
 
 - Current phase: `READY_FOR_APPROVAL`.

@@ -1,5 +1,18 @@
 # CURRENT TASK
 
+## `v1.0.1` GitHub MVP prerelease publication (2026-09-14)
+
+- Task ID: `REL-UPDATE-003-RELEASE`
+- Title: Publish the QA-smoke-passed Windows candidate
+- Purpose: provide a downloadable, traceable MVP artifact while preserving truthful live-environment limitations.
+- Owner: Manager.
+- Status: `READY_FOR_APPROVAL` — publication explicitly authorized by user; pre-upload checks pending.
+- Source: QA report `2a13f52` over Code target `2c47736`; new release tag/branch must identify that verified target rather than the pre-existing unverified source-tag position.
+- Planned external changes: ZIP artifact, SHA-256, remote release branch/tag, GitHub prerelease notes/asset.
+- Completion: GitHub release asset/hash/notes and remote target are verified after upload.
+- Blocker: none expected; stop if local candidate/artifact verification does not match QA evidence.
+- Next action: Manager performs pre-upload verification and publication.
+
 ## `v1.0.1` candidate publication decision (2026-09-14)
 
 - Task ID: `REL-UPDATE-003-RELEASE`

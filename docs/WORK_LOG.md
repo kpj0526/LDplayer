@@ -1,5 +1,14 @@
 # WORK LOG
 
+## 2026-09-14 | REL-UPDATE-003-RELEASE | Manager
+
+- Performed: recorded explicit user authorization to publish the QA-smoke-passed `v1.0.1` candidate to GitHub.
+- Changed: `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
+- Commands/tests: publication preflight pending; no release/tag/asset mutation yet.
+- Result: planned release remains an MVP prerelease; the pre-existing `v1.0.1` source tag must be retargeted to the QA-integrated verified target to avoid provenance mismatch.
+- Related commits: Code `2c47736`; QA `2a13f52`.
+- Next handoff: Manager GitHub preflight/publication.
+
 ## 2026-09-14 | REL-UPDATE-003-QA | Manager
 
 - Performed: reviewed existing QA terminal evidence, QA branch/head, Code target, and live GitHub release state after QA completion.
