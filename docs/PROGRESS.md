@@ -1,5 +1,15 @@
 # PROGRESS
 
+## `v1.0.1` candidate independently smoke-verified; publication pending (2026-09-14)
+
+- Current phase: `READY_FOR_APPROVAL`.
+- QA independently verified exact Code `2c4773629d4605e4b12830a7b7d7a519396c7cec`, merged it as `81c9316`, and committed report `2a13f52a234430f40c55b91a7ff715f09a4667a4` with verdict `MVP_SMOKE_PASS`.
+- Evidence: independent full suite `302 passed in 3.63s`; focused GUI/ADB/app/bootstrap suite `58 passed in 0.75s`; independent package build and fresh-extracted EXE bootstrap/normal-close smoke passed.
+- Mandatory safety evidence passed in fakes/injected runners: account-local readiness; mapping save/clear locality; capture mismatch diagnostic+Start block; hidden calibration UI by default; safe-mode (`LDMANAGER_LIVE_MODE` unset) touch gate returned without invoking inner ADB runner.
+- Release truth: GitHub has no `v1.0.1` release or asset yet. Published latest GitHub release remains `v1.0.0`; no tag/branch push, executable upload, or customer-facing deployment was performed in this packet.
+- Real-environment truth: no LDPlayer, ADB device, customer capture, game state, Worker run, or live touch was tested. MVP smoke does not make real-game criteria PASS; AC-58--AC-60 remain `BLOCKED_REAL_ENVIRONMENT` / `NOT_TESTED`.
+- Next: user directs whether to publish this QA-smoke-passed candidate as an explicitly labelled MVP prerelease; then Manager may create its artifact/tag/release without claiming final real-environment completion.
+
 ## `v1.0.1` Code submission; independent QA active (2026-09-14)
 
 - Current phase: `VERIFYING`.

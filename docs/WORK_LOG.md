@@ -1,5 +1,14 @@
 # WORK LOG
 
+## 2026-09-14 | REL-UPDATE-003-QA | Manager
+
+- Performed: reviewed existing QA terminal evidence, QA branch/head, Code target, and live GitHub release state after QA completion.
+- Changed: `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
+- Commands/tests: QA terminal/read evidence; Code/QA `git status`/log checks; GitHub release-list and `v1.0.1` release lookup.
+- Result: QA committed `MVP_SMOKE_PASS` at `2a13f52` for Code `2c47736`; GitHub `v1.0.1` release lookup returned `release not found`. No external deployment occurred.
+- Related commits: Code `2c47736`; QA integration `81c9316`; QA report `2a13f52`.
+- Next handoff: user publication decision; real LD/game validation remains separate.
+
 ## 2026-09-14 | REL-UPDATE-003 | Manager
 
 - Performed: reviewed the existing Code terminal submission, exact branch/head, clean status, and Code handoff before QA dispatch.

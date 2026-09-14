@@ -1,5 +1,18 @@
 # CURRENT TASK
 
+## `v1.0.1` candidate publication decision (2026-09-14)
+
+- Task ID: `REL-UPDATE-003-RELEASE`
+- Title: Decide whether to publish the QA-smoke-passed `v1.0.1` candidate
+- Purpose: keep QA approval and external customer deployment distinct.
+- Owner: Manager publication only after explicit user direction.
+- Status: `READY_FOR_APPROVAL`.
+- QA result: `MVP_SMOKE_PASS`, QA report commit `2a13f52`; exact Code target `2c47736`.
+- Evidence: QA independently reports 302 full-suite passes, 58 focused passes, safe-mode input block, local UI/isolation probes, and fresh artifact bootstrap/launch.
+- Not complete: no GitHub `v1.0.1` release, tag push, executable asset, or checksum is published. No actual LD/game environment was used.
+- Completion: Manager produces a new explicit MVP prerelease with artifact/hash/release notes only if user requests publication; real-environment validation remains later work.
+- Next action: await explicit publication direction.
+
 ## `v1.0.1` independent QA release-candidate verification (2026-09-14)
 
 - Task ID: `REL-UPDATE-003-QA`
