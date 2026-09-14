@@ -30,15 +30,28 @@ else, so a freshly extracted packaged distribution (which ships
 opens the GUI on first launch instead of failing with a "config not
 found" console error — see ``ldmanager/bootstrap.py`` for exactly what
 it does and does not touch (never overwrites an existing config).
+
+As of REL-UPDATE-003, the real ADB runner built here is always wrapped
+in :class:`~ldmanager.adb.InputGateAdbRunner`: discovery/capture
+(``list_devices``/``capture_binary`` — Refresh ADB devices, Test
+capture) always work, but the gate's real ``run()`` (a tap) is refused
+unless ``LDMANAGER_LIVE_MODE=1`` is explicitly set in the environment.
+This closes a gap found while integrating the imported v1.0.1 tag: the
+gate class existed there but was never actually wired in, so a
+verified Start (mapping OK + successful Test capture) could already
+issue real ADB taps with no separate, explicit opt-in. Nothing about
+the Test-capture/readiness-gate feature itself needs live mode — only
+an actual mission run (clicking Start) does.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 from typing import Dict
 
-from .adb import SubprocessAdbRunner
+from .adb import InputGateAdbRunner, SubprocessAdbRunner
 from .bootstrap import bootstrap_default_configs
 from .bounty_config import BountyConfigError, load_bounty_config
 from .bounty_mission import run_one_cycle
@@ -48,6 +61,12 @@ from .logs import get_account_logger
 from .models import AccountId
 from .recognition import OpenCVTemplateRecognizer
 from .runtime import AccountMissionRuntime
+
+#: Real ADB taps are refused by InputGateAdbRunner unless this env var
+#: is exactly "1" -- mirrors the existing LDMANAGER_DEVELOPER_MODE
+#: pattern (gui.py) for the template-calibration UI. Unset/anything
+#: else = safe mode: discovery/capture work, taps do not.
+LIVE_MODE_ENV_VAR = "LDMANAGER_LIVE_MODE"
 
 #: Delay between mission cycles for one account's worker, in seconds.
 #: Deliberately not zero, so a misconfigured/always-failing account
@@ -84,9 +103,13 @@ def build_controller() -> AccountController:
 
     app_config = load_config()
     bounty_cfg = load_bounty_config()
-    # Production always uses a subprocess-backed ADB runner. Start in the
-    # GUI therefore sends real, serial-scoped ADB input after recognition.
-    runner = SubprocessAdbRunner(adb_path=app_config.adb_path)
+    # Production always uses a subprocess-backed ADB runner, wrapped in
+    # InputGateAdbRunner (safe by default -- see module docstring).
+    # Discovery/capture always work; a real tap requires LDMANAGER_LIVE_MODE=1.
+    runner = InputGateAdbRunner(
+        SubprocessAdbRunner(adb_path=app_config.adb_path),
+        live_enabled=os.environ.get(LIVE_MODE_ENV_VAR) == "1",
+    )
     recognizer = OpenCVTemplateRecognizer(
         templates_dir=bounty_cfg.templates_dir,
         template_map=bounty_cfg.template_map,
@@ -140,13 +163,11 @@ def main() -> int:
 
     from .gui import LDManagerApp  # lazy: keeps this module importable headless
 
-    # A second SubprocessAdbRunner instance, distinct from the one(s)
-    # captured in each worker's cycle closure inside build_controller()
-    # -- both are stateless wrappers around the same adb_path/timeout,
-    # so this is safe and keeps build_controller()'s own return type
-    # (just an AccountController) unchanged. Used only for the GUI's
-    # read-only "Refresh ADB devices" button (list_devices()) -- never
-    # for a tap, never for starting a worker.
+    # Reuses the exact same InputGateAdbRunner instance build_controller()
+    # gave each worker -- so the GUI's Refresh/Test-capture buttons and the
+    # mission workers agree on live-mode state. Refresh/Test-capture only
+    # ever call list_devices()/capture_binary(), which the gate never
+    # blocks; only an actual tap (run()) is refused outside live mode.
     app = LDManagerApp(
         controller,
         adb_runner=controller.adb_runner,  # type: ignore[attr-defined]

@@ -133,6 +133,9 @@ def test_refresh_updates_panel_from_status_snapshot(app):
     panel.refresh(status)
 
     assert panel.status_var.get() == "running"
+    assert "3" in panel.slot_var.get()
+    assert panel.error_var.get() == "boom"
+    assert "cycle result: ok" in panel.log_var.get()
 
 
 def test_capture_readiness_is_account_local(app):
@@ -152,9 +155,6 @@ def test_serial_save_clears_capture_readiness(app):
     app._on_save_mapping(AccountId.LD1, "127.0.0.1:6000")
     assert panel._capture_ready is False
     assert "disabled" in panel.start_button.state()
-    assert "3" in panel.slot_var.get()
-    assert panel.error_var.get() == "boom"
-    assert "cycle result: ok" in panel.log_var.get()
 
 
 # --- Refresh ADB devices: no tap, no worker started ---------------------

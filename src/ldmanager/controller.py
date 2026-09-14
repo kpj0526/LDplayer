@@ -127,21 +127,27 @@ class AccountWorker:
                 result = self._run_cycle(lambda: self._stop_event.is_set())
                 outcome = getattr(result, "outcome", result)
                 outcome_str = getattr(outcome, "value", str(outcome))
+                # REL-UPDATE-003 fix: this runtime-status sync previously sat
+                # *after* an unconditional `break` in the error branch below,
+                # making it dead code -- phase/locked_slots/slot_states never
+                # updated the GUI on any cycle. Moved here so it runs on
+                # every cycle (error or not), atomically with the other
+                # status fields.
+                runtime = getattr(self, "runtime", None)
                 with self._lock:
                     self._status.cycles_completed += 1
                     self._status.last_outcome = outcome_str
                     self._status.current_slot = None
+                    if runtime is not None:
+                        self._status.phase = runtime.phase
+                        self._status.locked_slots = runtime.locked_count
+                        self._status.slot_states = [item.value for item in runtime.slots]
                 if outcome_str in {"recognition_failed", "capture_unavailable", "stale_screen", "unknown_screen", "adb_error"}:
                     with self._lock:
                         self._status.errored = True
                         self._status.last_error = f"{outcome_str}: account worker stopped"
                     self._append_log(f"ERROR: {outcome_str}; account worker stopped")
                     break
-                    runtime = getattr(self, "runtime", None)
-                    if runtime is not None:
-                        self._status.phase = runtime.phase
-                        self._status.locked_slots = runtime.locked_count
-                        self._status.slot_states = [item.value for item in runtime.slots]
                 self._append_log(f"cycle result: {outcome_str}")
                 if self._logger is not None:
                     self._logger.info("cycle result: %s", outcome_str)
