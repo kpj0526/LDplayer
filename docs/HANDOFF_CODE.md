@@ -2798,9 +2798,11 @@ being folded back into the full-suite stability runs above.
 
 ### Commits
 
-- Implementation + tests + this handoff section, then a short
-  follow-up "docs: record LIVE-SERIAL-001 commit hash in handoff"
-  commit recording the exact hash.
+- `966ff15` — `LIVE-SERIAL-001: repair live per-account serial
+  propagation` (implementation + tests + this HANDOFF section, in one
+  commit)
+- This hash-record update is the short follow-up commit immediately
+  after `966ff15`.
 - Not tagged, not pushed, not published. `v1.0.3-rc.2` (tag, release,
   and its asset) is completely untouched by this packet.
 
