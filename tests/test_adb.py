@@ -297,3 +297,59 @@ def test_input_gate_still_validates_serial_even_when_blocked():
     gate = InputGateAdbRunner(FakeAdbRunner())
     with pytest.raises(ValueError):
         gate.run("", ["shell", "true"])
+
+
+# --- set_adb_path() / resolve_adb_path() live update (ADB-PATH-001) --------
+
+
+def test_subprocess_runner_set_adb_path_re_resolves(tmp_path):
+    real_exe = tmp_path / "adb.exe"
+    real_exe.write_bytes(b"")
+    runner = SubprocessAdbRunner(adb_path=None)  # starts on auto-detect ("adb")
+
+    runner.set_adb_path(str(real_exe))
+
+    assert runner.adb_path == str(real_exe)
+
+
+def test_subprocess_runner_set_adb_path_keeps_explicit_value_when_missing():
+    runner = SubprocessAdbRunner(adb_path=None)
+    runner.set_adb_path("C:/does/not/exist/adb.exe")
+    # resolve_adb_path() never silently invents a *different* path for a
+    # missing explicit candidate -- it returns that candidate verbatim
+    # (so a later subprocess call fails honestly against the path the
+    # user actually configured, not a swapped-in "adb").
+    assert runner.adb_path == "C:/does/not/exist/adb.exe"
+
+
+def test_input_gate_set_adb_path_passes_through_to_inner(tmp_path):
+    real_exe = tmp_path / "adb.exe"
+    real_exe.write_bytes(b"")
+    inner = SubprocessAdbRunner(adb_path=None)
+    gate = InputGateAdbRunner(inner)
+
+    gate.set_adb_path(str(real_exe))
+
+    assert inner.adb_path == str(real_exe)
+    assert gate.adb_path == str(real_exe)
+
+
+def test_input_gate_set_adb_path_is_a_safe_noop_for_a_runner_without_it():
+    class _BareRunner:
+        """A minimal AdbRunner double with neither ``set_adb_path`` nor
+        ``adb_path`` -- unlike FakeAdbRunner (which now mirrors both, for
+        the GUI's ADB-PATH-001 tests), this stands in for a hypothetical
+        runner implementation that never added them."""
+
+        def list_devices(self):
+            return ""
+
+        def run(self, serial, args):
+            raise NotImplementedError
+
+        def capture_binary(self, serial, args):
+            raise NotImplementedError
+
+    gate = InputGateAdbRunner(_BareRunner())
+    gate.set_adb_path("C:/whatever/adb.exe")  # must not raise
+    assert gate.adb_path is None  # the inner runner has no .adb_path attribute

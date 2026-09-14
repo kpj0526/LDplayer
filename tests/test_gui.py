@@ -248,3 +248,66 @@ def test_save_and_clear_never_tap_or_start_a_worker(app, fake_runner):
 
     assert fake_runner.calls == calls_before
     assert {aid: app._controller.worker(aid).is_running for aid in AccountId} == running_before
+
+
+# --- ADB executable path: Browse/Save/Clear (ADB-PATH-001) --------------
+
+
+def test_browse_adb_path_fills_entry_without_touching_adb(monkeypatch, app, fake_runner):
+    calls_before = list(fake_runner.calls)
+    monkeypatch.setattr(
+        "ldmanager.gui.filedialog.askopenfilename", lambda **kwargs: "C:/picked/adb.exe"
+    )
+
+    app._on_browse_adb_path()
+
+    assert app.adb_path_var.get() == "C:/picked/adb.exe"
+    assert fake_runner.calls == calls_before  # Browse alone never taps
+
+
+def test_save_adb_path_rejects_missing_file_and_does_not_persist(app, fake_runner, config_path):
+    from ldmanager.config_mapping import load_current_adb_path
+
+    calls_before = list(fake_runner.calls)
+    configured_before = app._configured_adb_path
+
+    app.adb_path_var.set("C:/does/not/exist/adb.exe")
+    app._on_save_adb_path()
+
+    assert app.adb_path_error_var.get() != ""
+    assert app._configured_adb_path == configured_before
+    assert load_current_adb_path(config_path) == configured_before
+    assert fake_runner.calls == calls_before  # rejected save never taps
+
+
+def test_save_adb_path_persists_reinitializes_runner_and_refreshes(app, fake_runner, config_path, tmp_path_factory):
+    from ldmanager.config_mapping import load_current_adb_path
+
+    real_exe = tmp_path_factory.mktemp("adb_bin") / "adb.exe"
+    real_exe.write_bytes(b"")
+    calls_before = list(fake_runner.calls)
+
+    app.adb_path_var.set(str(real_exe))
+    app._on_save_adb_path()
+
+    assert app.adb_path_error_var.get() == ""
+    assert app._configured_adb_path == str(real_exe)
+    assert load_current_adb_path(config_path) == str(real_exe)  # persists
+    assert fake_runner.adb_path == str(real_exe)  # runner reinitialized, no restart
+    assert "found" in app.adb_path_status_var.get()
+    assert fake_runner.calls == calls_before  # Save/refresh is still read-only, never a tap
+
+
+def test_clear_adb_path_resets_to_auto_detect_and_refreshes(app, fake_runner, config_path):
+    from ldmanager.config_mapping import load_current_adb_path
+
+    calls_before = list(fake_runner.calls)
+
+    app._on_clear_adb_path()
+
+    assert app.adb_path_error_var.get() == ""
+    assert app._configured_adb_path is None
+    assert app.adb_path_var.get() == ""
+    assert load_current_adb_path(config_path) is None
+    assert fake_runner.adb_path is None
+    assert fake_runner.calls == calls_before  # Clear is still read-only, never a tap

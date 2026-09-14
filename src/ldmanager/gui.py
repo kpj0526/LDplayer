@@ -21,6 +21,17 @@ devices" click, after a successful save) before that account's Start
 button is enabled; discovered devices are never auto-assigned to an
 account — the user always picks or types the value that gets saved.
 
+As of ADB-PATH-001, a global row also shows the **configured vs.
+effective ADB executable path** (what's in ``configs/config.yaml`` vs.
+what :func:`ldmanager.adb.resolve_adb_path` actually resolved to, and
+whether that file exists right now) plus **Browse/Save/Clear**
+controls — a customer whose `adb.exe` isn't on `PATH`/in a standard
+LDPlayer install location can now point at it directly, without
+terminal/YAML editing, without needing to guess the correct YAML
+escaping for a Windows path. Saving a valid path immediately updates
+the live runner (no restart) and re-runs discovery; saving an
+invalid/missing path is rejected visibly and changes nothing.
+
 This module only renders controller/mapping status snapshots and
 forwards button clicks to the controller/config-mapping/discovery
 helpers; it contains no recognition/mission logic of its own and never
@@ -34,13 +45,18 @@ import tkinter as tk
 import time
 import os
 from pathlib import Path
-from tkinter import ttk
+from tkinter import filedialog, ttk
 from typing import Callable, Optional
 
-from .adb import AdbRunner
+from .adb import AdbRunner, resolve_adb_path
 from .calibration import TEMPLATE_SLOTS, crop_template
 from .config import ConfigError
-from .config_mapping import load_current_adb_mapping, save_account_serial
+from .config_mapping import (
+    load_current_adb_mapping,
+    load_current_adb_path,
+    save_account_serial,
+    save_adb_path,
+)
 from .controller import AccountController, AccountWorkerStatus
 from .discovery import ConnectionStatus, compute_account_connection_statuses, discover_devices
 from .models import AccountId
@@ -225,6 +241,7 @@ class LDManagerApp(tk.Tk):
         except ConfigError as exc:
             self._current_mapping = {account_id.value: None for account_id in AccountId}
             self.global_error_var.set(f"Config error: {exc}")
+        self._configured_adb_path: Optional[str] = load_current_adb_path(config_path)
 
         global_row = ttk.Frame(self)
         global_row.pack(fill="x", padx=8, pady=8)
@@ -240,6 +257,23 @@ class LDManagerApp(tk.Tk):
         ttk.Label(global_row, textvariable=self.global_error_var, foreground="red").pack(
             side="left", padx=(12, 0)
         )
+
+        # ADB-PATH-001: configured/effective ADB executable path + Browse/Save/Clear.
+        adb_path_row = ttk.Frame(self)
+        adb_path_row.pack(fill="x", padx=8, pady=(0, 4))
+        ttk.Label(adb_path_row, text="ADB executable:").pack(side="left")
+        self.adb_path_var = tk.StringVar(value=self._configured_adb_path or "")
+        self.adb_path_entry = ttk.Entry(adb_path_row, textvariable=self.adb_path_var, width=50)
+        self.adb_path_entry.pack(side="left", padx=(4, 4))
+        ttk.Button(adb_path_row, text="Browse...", command=self._on_browse_adb_path).pack(side="left")
+        ttk.Button(adb_path_row, text="Save", command=self._on_save_adb_path).pack(side="left")
+        ttk.Button(adb_path_row, text="Clear", command=self._on_clear_adb_path).pack(side="left")
+
+        self.adb_path_status_var = tk.StringVar(value="")
+        ttk.Label(self, textvariable=self.adb_path_status_var).pack(anchor="w", padx=8)
+        self.adb_path_error_var = tk.StringVar(value="")
+        ttk.Label(self, textvariable=self.adb_path_error_var, foreground="red").pack(anchor="w", padx=8)
+        self._update_adb_path_status()
 
         grid = ttk.Frame(self)
         grid.pack(fill="both", expand=True, padx=8, pady=8)
@@ -263,6 +297,65 @@ class LDManagerApp(tk.Tk):
 
     def _on_stop_all(self) -> None:
         self._controller.stop_all()
+
+    # --- ADB-PATH-001: configured/effective ADB executable path ---------
+
+    def _update_adb_path_status(self) -> None:
+        effective = resolve_adb_path(self._configured_adb_path)
+        exists = Path(effective).is_file()
+        configured_display = self._configured_adb_path or "(auto-detect)"
+        found_display = "found" if exists else "NOT FOUND"
+        self.adb_path_status_var.set(
+            f"configured: {configured_display}   effective: {effective}   [{found_display}]"
+        )
+
+    def _on_browse_adb_path(self) -> None:
+        """Opens a native file picker; never touches ADB, never writes
+        anything by itself -- only fills the Entry, Save still required."""
+
+        selected = filedialog.askopenfilename(
+            title="Select adb executable",
+            filetypes=[("adb executable", "*.exe"), ("All files", "*.*")],
+        )
+        if selected:
+            self.adb_path_var.set(selected)
+
+    def _on_save_adb_path(self) -> None:
+        """Persists the typed/picked ADB path -- fail-closed: rejected
+        visibly (nothing written) unless the file actually exists.
+        On success, updates the live runner in place (no restart) and
+        re-runs discovery immediately so the effect is visible right
+        away; that re-run is still read-only (list_devices only)."""
+
+        typed = self.adb_path_var.get().strip()
+        result = save_adb_path(typed or None, self._config_path)
+        if not result.ok:
+            self.adb_path_error_var.set(result.detail)
+            return
+        self.adb_path_error_var.set("")
+        self._configured_adb_path = result.adb_path
+        self.adb_path_var.set(result.adb_path or "")
+        if self._adb_runner is not None:
+            self._adb_runner.set_adb_path(result.adb_path)
+        self._update_adb_path_status()
+        self._on_refresh_devices()
+
+    def _on_clear_adb_path(self) -> None:
+        """Clears back to auto-detect. Always succeeds (never deletes
+        any file -- only ever writes the YAML value to null) and
+        re-initializes the live runner + discovery the same way Save does."""
+
+        result = save_adb_path(None, self._config_path)
+        if not result.ok:
+            self.adb_path_error_var.set(result.detail)
+            return
+        self.adb_path_error_var.set("")
+        self._configured_adb_path = None
+        self.adb_path_var.set("")
+        if self._adb_runner is not None:
+            self._adb_runner.set_adb_path(None)
+        self._update_adb_path_status()
+        self._on_refresh_devices()
 
     def _on_capture_test(self, account_id: AccountId, serial: str) -> None:
         if self._adb_runner is None:
