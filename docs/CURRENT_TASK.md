@@ -6,12 +6,12 @@
 - Title: Publish the GUI ADB-executable-path candidate.
 - Purpose: deliver the user-tested `D:\LDPlayer\LDPlayer14\adb.exe` selection workflow without editing YAML by hand.
 - Owner: Manager (release/documentation only); existing Code supplied the committed build; existing QA supplied independent automated evidence.
-- Status: `IN_PROGRESS`.
+- Status: `COMPLETED` (candidate publication only; not overall project completion).
 - Planned changes: Manager release/progress documents and a GitHub prerelease only; no production-code change.
 - Completion condition: Code commit is pushed/tagged, Windows ZIP artifact is uploaded, and GitHub notes explicitly preserve QA's `BLOCKED_REAL_ENVIRONMENT` limitation.
-- Current result: Code `d90a1b8` clean; QA `9ec78ac` clean; user reports successful real-path selection/save.
+- Current result: Code `d90a1b8` clean; QA `9ec78ac` clean; user reports successful real-path selection/save; prerelease is published at `https://github.com/kpj0526/LDplayer/releases/tag/v1.0.2-rc.1`.
 - Blockers: no independent QA validation of the actual installed LDPlayer/ADB device or game workflow.
-- Next action: create `v1.0.2-rc.1` prerelease from Code `d90a1b8`, then report its link and test scope.
+- Next action: user installs/uses this candidate and continues explicit serial mapping plus capture preflight; actual game tests remain separately blocked.
 
 ## ADB-PATH-001 independent QA verification (2026-09-14)
 

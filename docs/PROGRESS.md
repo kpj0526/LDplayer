@@ -8,6 +8,7 @@
 - User environment evidence: the user confirmed that the GUI Browse -> Open -> Save flow accepts the real local executable `D:\LDPlayer\LDPlayer14\adb.exe`. This is user-operated environment evidence, not an independent QA PASS and not game-flow validation.
 - Delivery decision: publish this build only as a clearly labelled `v1.0.2-rc.1` prerelease for local/customer ADB-path verification. It must not be represented as a final release or as a real-game acceptance result.
 - Automation safety remains unchanged: no automatic game input, account mapping, capture, or worker execution has been authorized/recorded during this ADB-path check.
+- Publication: GitHub prerelease `v1.0.2-rc.1` was uploaded with `ldmanager-v1.0.2-rc.1-windows.zip` (67,577,221 bytes; SHA-256 `B3817E23BF683EF707DEA245597EFDBA06AB9BABB8566102B5BA6D72FB8D001E`).
 
 ## ADB-PATH-001 Code submission; QA verification pending (2026-09-14)
 

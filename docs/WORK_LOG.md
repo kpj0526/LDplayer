@@ -8,6 +8,13 @@
 - Related commits: Code `d90a1b8`; QA `9ec78ac`; Manager documentation commit pending.
 - Next handoff: GitHub prerelease publication by Manager; no replacement agent/worktree.
 
+## 2026-09-14 | REL-0.1.2-RC-01 | Manager — publication completed
+
+- Performed: pushed existing Code branch/tag and published GitHub prerelease `v1.0.2-rc.1` from Code commit `d90a1b8`.
+- Artifact: `ldmanager-v1.0.2-rc.1-windows.zip`, 67,577,221 bytes, SHA-256 `B3817E23BF683EF707DEA245597EFDBA06AB9BABB8566102B5BA6D72FB8D001E`.
+- Verification: GitHub release API reports uploaded asset state; it remains a prerelease.
+- Next handoff: user-operated local ADB device discovery, explicit serial mapping, and capture preflight. No final QA PASS is implied.
+
 ## 2026-09-14 | ADB-PATH-001 | Manager
 
 - Performed: verified existing Code terminal completion, Code worktree clean state, submitted commits, test/build evidence, and handoff contents.
