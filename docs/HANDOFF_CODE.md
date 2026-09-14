@@ -2510,9 +2510,11 @@ Focused run: `pytest -q tests/test_screen_classification_real_assets.py`
 
 ### Commits
 
-- Implementation + real-asset fixtures + tests + this handoff section,
-  then a short follow-up "docs: record GAME-CAL-001 REAL-CAPTURE REWORK
-  commit hash in handoff" commit recording the exact hash.
+- `4688104` — `GAME-CAL-001 REAL-CAPTURE REWORK: calibrate from real
+  customer PNGs` (implementation + real-asset fixtures + tests + this
+  HANDOFF section, in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `4688104`.
 - Not tagged, not pushed, not published, not merged into `main`.
 
 ### Limitations -- NEEDS_REAL_TEST (unchanged posture, narrower gaps)
