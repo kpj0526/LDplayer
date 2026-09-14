@@ -887,3 +887,54 @@ It explicitly verified a pre-existing `config.yaml` remained byte-identical whil
 **MVP_SMOKE_PASS.** The release distribution/bootstrap gate passed: safe examples are present in the fresh extraction, first launch bootstraps only missing local configs with all mappings null, a GUI opens, and an existing user config is preserved.
 
 This gate did not perform real LDPlayer/ADB/game activity, worker start, touch input, or release publishing. AC-58, AC-59, and AC-60 remain **BLOCKED_REAL_ENVIRONMENT / NOT_TESTED**; no final project or real-environment AC is marked PASS.
+
+---
+
+## REL-UPDATE-003-QA safety-update smoke (2026-09-14) — MVP_SMOKE_PASS
+
+### Target, ancestry, and integration
+
+| Item | Verified result |
+| --- | --- |
+| Exact Code target | `2c4773629d4605e4b12830a7b7d7a519396c7cec` on `kpj0526/Code` |
+| Required remediation | `a241c5fa1f2311b901be08935092952448bf816b` is an ancestor |
+| Imported v1.0.1 merge | `e67fcad` is an ancestor |
+| Code worktree before QA | clean (`git status --short` empty) |
+| QA integration | non-fast-forward merge `81c9316` (`QA: merge REL-UPDATE-003 target`) |
+| QA tree before report | clean; generated build output is ignored |
+
+### Independent execution
+
+```powershell
+& .\.venv\Scripts\python.exe -m pytest -q
+& .\.venv\Scripts\python.exe -m pytest -q tests\test_gui.py tests\test_adb.py tests\test_app.py tests\test_bootstrap.py
+& .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --name ldmanager --windowed --paths src scripts\entrypoint.py
+powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1
+```
+
+Actual results: full independent suite **`302 passed in 3.63s`**; focused GUI/ADB/app/bootstrap subset **`58 passed in 0.75s`**.  The independent PyInstaller build completed successfully. The documented build script packaged `dist\ldmanager\ldmanager.exe` (4,808,353 bytes), `configs\config.example.yaml`, `configs\bounty.example.yaml`, `templates`, docs, and first-run README.
+
+### Independent controlled probes and results
+
+QA used only in-memory/injected runners and a temporary config/diagnostics directory. No customer device, serial, ADB executable, worker, or touch input was used.
+
+| Required check | Actual independent evidence |
+| --- | --- |
+| Same-account mapping + capture gate | With two fake authorized devices, both LD1 and LD2 remained Start-disabled after mapping/Refresh. A valid LD1-only capture/preflight enabled LD1 and left LD2 disabled. |
+| Save/clear isolation | After both panels were capture-ready, saving LD1 reset/disabled LD1 only; LD2 stayed ready/enabled. Clearing LD1 again left LD2 unchanged. |
+| Mismatch fail-closed + diagnostic | A PNG-magic fake capture with a supplied readiness mismatch saved `diagnostics/captures/LD2/capture-*.png`, cleared LD2 readiness, and disabled LD2 Start. |
+| Calibration exposure | Recursive widget inspection found no `Template calibration` control with `LDMANAGER_DEVELOPER_MODE` unset, and found it only after setting that variable to `1`. |
+| Safe-mode real-input gate | An injected `InputGateAdbRunner(..., live_enabled=False)` was called with explicit `SER-A` `shell input tap 10 20`; it returned code `125` and the inner fake runner recorded **zero** calls. This verifies no real ADB touch reaches the underlying runner with `LDMANAGER_LIVE_MODE` unset. |
+| Probe outcome | `INDEPENDENT_UI_GATE_PROBE_PASS: local readiness; save/clear locality; mismatch capture diagnostic+block; developer calibration gate; safe-mode touch blocked` |
+
+### Fresh extracted artifact smoke
+
+QA ZIP-created and ZIP-extracted the newly built `dist\ldmanager` to a unique temporary directory. Before launch, that extracted root had the executable and example config files but neither generated local config. Launching its `ldmanager.exe` from that root with `LDMANAGER_LIVE_MODE` unset produced PID `1520`, native window title **`ldmanager (MVP)`**, window id `1377250`, and created both `configs\config.yaml` and `configs\bounty.yaml`. The generated config had null LD1 and LD9 entries (and the supplied example covers all LD1–LD9 null mappings).
+
+At launch the artifact had zero child processes and zero `adb.exe` processes. No worker control or app control was clicked. The temporary artifact window was closed normally with `CloseMainWindow()` (`CloseMainWindowRequested=True`, `Exited=True`). The desktop screenshot provider was visually occluded by an unrelated browser even after restore, so visual widget rendering was not asserted from that screenshot; the OS-native window identity, process liveness, bootstrap files, and test/probe evidence are the launch evidence.
+
+### Verdict, constraints, and remaining risk
+
+**MVP_SMOKE_PASS.** No reproducible mandatory-safety defect was found in this packet. The prior temporary-directory cleanup failure was harness-only: all product assertions had already passed, but the probe attempted to delete its own current working directory; rerunning after restoring CWD passed as recorded above.
+
+This is not a real LDPlayer/game/customer-video acceptance result. No real capture, device, ADB command, worker run, game state, calibration effectiveness, or live-mode touch was exercised. AC-58, AC-59, and AC-60 remain **BLOCKED_REAL_ENVIRONMENT / NOT_TESTED**; no global/final project AC is marked PASS. Residual risk is limited to those unprovided real-environment assets and conditions.
