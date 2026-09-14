@@ -1,5 +1,13 @@
 # WORK LOG
 
+## 2026-09-14 | ADB-PATH-001 | Manager
+
+- Performed: inspected customer-supplied running-release screenshots and diagnosed the device-discovery failure before any serial mapping or game input.
+- Changed: `docs/TASK_PACKET.md`, `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
+- Evidence: GUI text `Device discovery failed: ADB device listing failed: FileNotFoundError`; all LD1--LD9 panels stopped/unmapped. No worker/touch evidence exists.
+- Result: opened a Code corrective packet for customer-visible local `adb.exe` selection/persistence; existing QA will independently verify after Code commit.
+- Next handoff: existing Code.
+
 ## 2026-09-14 | REL-UPDATE-003-RELEASE | Manager
 
 - Performed: created a ZIP from QA's independently built distribution; pushed QA target as `mvp/v1.0.1`; replaced the pre-existing lightweight source tag with an annotated `v1.0.1` tag pointing to the QA target; created GitHub prerelease and uploaded the ZIP.

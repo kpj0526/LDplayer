@@ -1,5 +1,17 @@
 # CURRENT TASK
 
+## Customer ADB executable path recovery (2026-09-14)
+
+- Task ID: `ADB-PATH-001`
+- Title: Make local ADB executable selection customer-visible
+- Purpose: repair real customer `FileNotFoundError` before serial discovery/mapping.
+- Owner: existing Code; existing QA after Code commit.
+- Status: `REWORK`.
+- Evidence: customer supplied screenshot of `v1.0.1` GUI error `Device discovery failed: ADB device listing failed: FileNotFoundError`; all panels are safely unmapped/stopped.
+- Completion: GUI shows/selects/persists validated `adb.exe` path, invalid path fails visibly, discovery remains read-only/no-auto-map/no-touch, Code tests/build/commit/handoff, QA independently verifies.
+- Current safe workaround: local `configs/config.yaml` may set `adb_path` to a verified emulator `adb.exe` path. This is a local path only, never a credential/serial guess.
+- Next action: Code implements ADB-PATH-001; user selects local ADB debugging and locates the emulator executable if an immediate manual workaround is required.
+
 ## `v1.0.1` MVP prerelease published (2026-09-14)
 
 - Task ID: `REL-UPDATE-003-RELEASE`

@@ -1,5 +1,14 @@
 # PROGRESS
 
+## Live customer ADB executable discovery defect reproduced (2026-09-14)
+
+- Current phase: `REWORK`.
+- Customer screenshot evidence from released `v1.0.1`: GUI reports `Device discovery failed: ADB device listing failed: FileNotFoundError`; every LD panel remains unmapped. This occurs before serial discovery and without Worker/touch input.
+- Diagnosis: current running release cannot resolve a usable local `adb.exe`. Enabling local ADB debugging is necessary but cannot fix executable-path lookup by itself.
+- Immediate operator workaround: set the actual local emulator `adb.exe` path in the release-local `configs/config.yaml` `adb_path` field, then restart and refresh. Do not guess a serial/port.
+- Corrective packet: `ADB-PATH-001` assigned to existing Code for customer-visible ADB executable choose/save/error UI, then existing QA independently verifies. No final real-device result is claimed.
+- Next: Code implementation; customer sets LDPlayer ADB debugging to local mode and locates its installed `adb.exe` if testing must continue before updated release.
+
 ## Customer remote-validation plan prepared (2026-09-14)
 
 - Current phase: `NEEDS_REAL_TEST`.

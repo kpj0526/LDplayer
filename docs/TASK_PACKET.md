@@ -1,5 +1,18 @@
 # TASK PACKET — TP-001 (통합본)
 
+## ADB-PATH-001 — customer-visible ADB executable selection (2026-09-14)
+
+1. **WHO**: customer/operator configures local LDPlayer; Manager coordinates; existing Code implements; existing QA independently verifies.
+2. **WHAT**: resolve live customer error `Device discovery failed: ADB device listing failed: FileNotFoundError` by adding a GUI-visible ADB executable path state/control (auto-detect result plus Browse/select and save/clear) rather than requiring customer terminal/PATH setup.
+3. **WHERE**: existing Code GUI/config/ADB-discovery/tests and Code handoff only.
+4. **WHEN**: immediately after approved packet; QA receives exact Code commit after implementation.
+5. **WHY**: real customer screenshot proves `v1.0.1` could not locate `adb.exe`; device serial discovery cannot begin even with local ADB debugging enabled.
+6. **HOW**: preserve existing candidate resolution order; expose resolved/configured path and error in GUI; permit an explicit existing `adb.exe` selection; persist only the local path in existing ignored config; reinitialize/refresh discovery safely; no guessed serial/port, Worker, touch, or game input.
+7. **CONSTRAINTS**: no credentials; no filesystem deletion; no automatic device mapping; invalid/missing executable must remain fail-closed with actionable UI error; no agents/subagents/worktrees; do not claim real LD/game success.
+8. **ACCEPTANCE CRITERIA**: `ADBPATH-01` GUI shows configured/resolved ADB executable state. `ADBPATH-02` user can choose a real local `adb.exe` without terminal/YAML editing; invalid path is rejected visibly. `ADBPATH-03` configured path persists locally and enables read-only discovery after restart. `ADBPATH-04` discovery/path selection produces zero touch/Worker side effects and never assigns serials automatically. `ADBPATH-05` regression suite/build pass; QA independently verifies exact Code hash.
+9. **OWNER**: Code implements/tests/builds/handoffs; QA verifies; Manager records/release decision.
+10. **NEXT ACTION**: Code receives packet; customer can meanwhile apply explicit `adb_path` workaround only after locating real emulator `adb.exe`.
+
 ## REL-UPDATE-003 — import and verify remote `v1.0.1` (2026-09-14)
 
 1. **WHO**: customer receives the macro; Manager coordinates; existing Code imports/builds; existing QA independently verifies.
