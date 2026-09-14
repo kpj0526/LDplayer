@@ -1,5 +1,20 @@
 # CURRENT TASK
 
+## GitHub macro update inspection (2026-09-14)
+
+- Task ID: `REL-UPDATE-001`
+- Title: Identify the latest retrievable macro version
+- Purpose: distinguish the published customer artifact from an unpublished newer source tag without changing existing project worktrees.
+- Owner: Manager inspection only; existing Code and QA own any later integration/verification.
+- Started: 2026-09-14 Asia/Seoul.
+- Status: `BLOCKED` pending release/integration direction.
+- Planned changes: no production or test-code changes.
+- Actual changes: management records only; remote refs fetched read-only.
+- Current result: release `v1.0.0` is published; `v1.0.1` is a newer source tag only and contains unverified preflight-related changes.
+- Completion: user selects the published artifact or authorizes the governed Code/QA integration path for the newer source tag.
+- Blocker: no verified release exists for `v1.0.1`; existing Code/QA agents are not active in the current coordinator session.
+- Next action: user chooses which artifact they mean by “GitHub macro.”
+
 ## Live ADB connection checkpoint (2026-09-13)
 
 - Task ID: `LIVE-ADB-001`

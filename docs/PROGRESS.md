@@ -1,5 +1,15 @@
 # PROGRESS
 
+## Remote macro update discovered; integration decision pending (2026-09-14)
+
+- Current phase: `BLOCKED`.
+- Manager fetched the configured remote `https://github.com/kpj0526/LDplayer.git` without changing any worktree files.
+- Confirmed remote state: GitHub's published latest release is `v1.0.0` at commit `19e97a370b5f993c0f15ce4c376a01fe0f5e4ea0`; a newer source tag `v1.0.1` exists at `299e7a91840505cc90dcbb6b6f9e2ad75ed3b1cf` but is not a GitHub release.
+- Scope observed in `v1.0.1`: customer-start capture-preflight gate changes to application/GUI/tests. It has not been submitted through the existing Code handoff or independently verified by the existing QA worktree.
+- Safety boundary: no checkout, merge, overwrite, release replacement, or customer download was performed. Existing Manager, Code, and QA branches remain clean.
+- Blocker: explicit user choice is required between downloading the already published `v1.0.0` macro and integrating/QA-verifying the unpublished `v1.0.1` source tag. Existing Code/QA agents must also be available before integration under project rules.
+- Next: await user direction; do not treat `v1.0.1` as a verified or releasable update.
+
 ## Customer-environment dependency confirmed (2026-09-13)
 
 - Current phase: `BLOCKED`.

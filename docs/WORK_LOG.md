@@ -276,3 +276,11 @@
 - Result: live validation is deferred to the customer's LDPlayer environment. Existing mock/package evidence remains distinct from real-environment evidence.
 - Related commits: no Code/QA change.
 - Next handoff: customer device-refresh/mapping screenshot and any displayed error; existing Code/QA only for a required correction and independent verification.
+## 2026-09-14 | REL-UPDATE-001 | Manager
+
+- Performed: fetched and inspected the configured GitHub remote to resolve the user's request for the macro update.
+- Changed: `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
+- Commands/tests: `git fetch --prune origin`; remote tag/ref, commit metadata/stat, and GitHub release-list inspection.
+- Result: published latest release is `v1.0.0` (`19e97a3`); newer unpublished source tag `v1.0.1` (`299e7a9`) exists. No checkout, merge, overwrite, artifact download, or release publication occurred.
+- Related commits: remote `v1.0.0` / `v1.0.1`; no new Code/QA verification commit.
+- Next handoff: user release-vs-integration decision; existing Code then QA if integrating v1.0.1.
