@@ -45,8 +45,26 @@ def fake_runner():
     return FakeAdbRunner()
 
 
+class _FakeSerialRegistry:
+    """LIVE-SERIAL-001 test double: records every ``set()`` call
+    (account_id, serial) in order, mirroring
+    ``ldmanager.app.LiveSerialRegistry``'s duck-typed contract (only
+    ``.set`` is ever called by the GUI)."""
+
+    def __init__(self) -> None:
+        self.calls: list = []
+
+    def set(self, account_id, serial) -> None:
+        self.calls.append((account_id, serial))
+
+
 @pytest.fixture(scope="module")
-def app(config_path, fake_runner):
+def fake_serial_registry():
+    return _FakeSerialRegistry()
+
+
+@pytest.fixture(scope="module")
+def app(config_path, fake_runner, fake_serial_registry):
     # Module-scoped: tkinter's Tk() is meant to be used as a per-process
     # singleton-ish root. Constructing/destroying many separate Tk()
     # roots in quick succession within one pytest process is flaky (Tcl/
@@ -55,7 +73,8 @@ def app(config_path, fake_runner):
     # below uses a distinct account (LD1..LD9) so tests stay independent
     # despite sharing one app instance.
     application = LDManagerApp(
-        _build_controller(), adb_runner=fake_runner, config_path=config_path, auto_refresh=False
+        _build_controller(), adb_runner=fake_runner, config_path=config_path, auto_refresh=False,
+        serial_registry=fake_serial_registry,
     )
     yield application
     application.destroy()
@@ -311,3 +330,67 @@ def test_clear_adb_path_resets_to_auto_detect_and_refreshes(app, fake_runner, co
     assert load_current_adb_path(config_path) is None
     assert fake_runner.adb_path is None
     assert fake_runner.calls == calls_before  # Clear is still read-only, never a tap
+
+
+# --- LIVE-SERIAL-001: Save/Clear propagate live to the serial registry -----
+
+
+def test_save_mapping_updates_the_live_serial_registry(app, fake_serial_registry):
+    """The GUI-facing half of the LIVE-SERIAL-001 fix: a successful Save
+    must reach the live registry immediately, scoped to exactly the
+    account that was saved -- not just the config file on disk."""
+
+    calls_before = len(fake_serial_registry.calls)
+    panel = app._panels[AccountId.LD4]
+    panel.serial_var.set("emulator-5554")
+
+    panel.save_button.invoke()
+
+    assert panel.mapping_error_var.get() == ""
+    new_calls = fake_serial_registry.calls[calls_before:]
+    assert (AccountId.LD4, "emulator-5554") in new_calls
+    # Never touches any other account's live serial.
+    assert all(account_id is AccountId.LD4 for account_id, _serial in new_calls)
+
+
+def test_clear_mapping_updates_the_live_serial_registry_to_blank(app, fake_serial_registry):
+    panel = app._panels[AccountId.LD4]
+    panel.serial_var.set("emulator-5554")
+    panel.save_button.invoke()
+    calls_before = len(fake_serial_registry.calls)
+
+    panel.clear_button.invoke()
+
+    new_calls = fake_serial_registry.calls[calls_before:]
+    assert (AccountId.LD4, None) in new_calls
+
+
+def test_a_rejected_save_never_reaches_the_live_serial_registry(app, fake_serial_registry):
+    panel = app._panels[AccountId.LD4]
+    panel.serial_var.set("")  # blank -- rejected by save_account_serial
+
+    calls_before = list(fake_serial_registry.calls)
+    panel.save_button.invoke()
+
+    assert panel.mapping_error_var.get() != ""
+    assert fake_serial_registry.calls == calls_before  # unchanged: nothing propagated
+
+
+def test_gui_without_a_serial_registry_never_raises_on_save_or_clear(app):
+    """serial_registry is optional (default None) -- an older/minimal
+    caller that never passes one must see Save/Clear behave exactly as
+    before LIVE-SERIAL-001, never an AttributeError. Reuses the shared
+    module-scoped ``app`` fixture (rather than constructing a second
+    ``Tk()`` root, which this file's own fixture docstring notes is
+    flaky) by temporarily clearing/restoring its registry attribute."""
+
+    original_registry = app._serial_registry
+    app._serial_registry = None
+    try:
+        panel = app._panels[AccountId.LD5]
+        panel.serial_var.set("no-registry-serial")
+        panel.save_button.invoke()  # must not raise
+        assert panel.mapping_error_var.get() == ""
+        panel.clear_button.invoke()  # must not raise
+    finally:
+        app._serial_registry = original_registry

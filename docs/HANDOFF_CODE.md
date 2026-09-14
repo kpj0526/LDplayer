@@ -2674,3 +2674,167 @@ replacement release possible).
   release's metadata.
 - Confirm only `kpj0526/Code` and the `v1.0.3-rc.2` tag were pushed --
   no change to `main` or any other branch/tag.
+
+## LIVE-SERIAL-001: repair live per-account serial propagation
+
+**Manager task packet**: `LIVE-SERIAL-001` (approved corrective
+packet). Customer live reproduction: LD1's GUI displayed mapping
+``emulator-5554`` and was started; the worker crashed:
+
+```
+controller.py:127 _loop -> app.py:80 _cycle -> bounty_mission.py:373
+run_one_cycle -> _accept_or_refresh_slot -> _tap_template -> _recognize
+-> screenshot.py:71 capture_screenshot -> adb.py:149 validate_serial ->
+ValueError: Invalid ADB serial: ''
+```
+
+### Status: implemented, tested, regression-verified. Not built (not
+requested for this corrective packet), not tagged, not pushed, not
+published. `v1.0.3-rc.2` is untouched.
+
+### Root cause
+
+`app.py`'s `_make_cycle_fn(account_id, serial, ...)` closed over a
+plain **string** `serial`, resolved exactly **once**, when
+`build_controller()` ran (typically at app launch, before any real
+mapping exists -- bootstrap creates a null mapping). A later GUI Save
+(`gui.py`'s `_on_save_mapping` -> `ldmanager.config_mapping.
+save_account_serial`) correctly persists the new serial to
+`configs/config.yaml` on disk, and the GUI panel correctly displays it
+-- but the already-built worker's cycle function had no way to learn
+about it: it kept using the original, blank string captured at
+construction time. Clicking Start then ran a cycle whose very first
+capture attempt (`_tap_template` -> `_recognize` ->
+`capture_screenshot`) called `validate_serial("")`, raising. The
+worker's outer exception handler contained the crash (it didn't take
+down the app), but as an **uncaught exception** propagating through six
+stack frames -- not the "fail account-locally BEFORE any capture/ADB/
+touch call, as a contained result" behavior this packet requires.
+
+### Fix
+
+- **`src/ldmanager/app.py`** -- new `LiveSerialRegistry`: a small,
+  thread-safe, per-`AccountId` string store. `build_controller()` now
+  constructs one, seeds it from the config file (same as before), and
+  exposes it as `controller.serial_registry` (mirrors the existing
+  `controller.adb_runner`/`controller.readiness_check` bolt-on
+  pattern from ADB-PATH-001/GAME-CAL-001 -- `AccountController`'s own
+  class in `controller.py` is untouched). `_make_cycle_fn` no longer
+  takes a plain string: it takes the registry, and reads
+  `serial_registry.get(account_id)` **fresh, on every single call** --
+  never cached, never captured once. A blank/absent result returns a
+  structured `BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, (),
+  "<LDx>: no ADB serial configured...")` immediately -- zero
+  capture/ADB/touch calls, no exception.
+- **`src/ldmanager/gui.py`** -- new optional `serial_registry`
+  constructor parameter (duck-typed: only `.set(account_id, serial)`
+  is ever called; `None` is a safe no-op, preserving every existing
+  caller). `_on_save_mapping`/`_on_clear_mapping` now call
+  `self._serial_registry.set(account_id, ...)` immediately after a
+  successful save/clear -- scoped to exactly that one `account_id`,
+  never any other account's live value. `main()` wires
+  `controller.serial_registry` through to `LDManagerApp`.
+- No change to `bounty_mission.py`'s capture/recognize/tap helpers
+  (`_recognize`, `_tap_template`, `_tap_any_template`,
+  `_verify_refresh_popup`, ...) -- they already correctly receive and
+  propagate the single `serial` parameter passed into `run_one_cycle`
+  with no defaulting/inference/reuse; the bug was entirely upstream, in
+  what value reached `run_one_cycle` in the first place. Fixing the
+  source (the registry) transitively fixes every downstream helper.
+- `controller.py` itself is **unchanged** -- `AccountWorker`/
+  `AccountController`'s classes, and their own existing test suite,
+  are untouched; the fix stays entirely in the wiring layer (`app.py`)
+  plus the GUI's save/clear handlers, consistent with controller.py's
+  own documented scope ("no ADB command construction... lives here").
+
+### Acceptance criteria
+
+| Requirement | Status |
+|---|---|
+| Configured LD1 `emulator-5554` reaches every cycle helper/capture/tap argv | Done -- `test_configured_serial_reaches_every_capture_and_tap_argv` asserts every recorded `FakeAdbRunner` call (both `capture_calls` and tap `calls`) uses exactly that serial, through the real `_make_cycle_fn` -> `run_one_cycle` -> `_accept_or_refresh_slot` -> `_tap_template`/`_recognize` -> `capture_screenshot` chain. |
+| Blank/omitted serial causes zero ADB/capture/touch calls and a contained account error | Done -- `test_blank_registry_entry_causes_zero_adb_calls_and_a_contained_error`, `test_omitted_serial_after_explicit_clear_also_causes_zero_calls`: `runner.calls == []`, `runner.capture_calls == []`, a structured `CAPTURE_UNAVAILABLE` result (never an exception). `test_worker_started_with_blank_serial_is_contained_never_crashes_the_app` proves the same through a real `AccountWorker` thread. |
+| No cross-account use | Done -- `test_registry_is_strictly_per_account_no_cross_account_use`, `test_two_accounts_share_one_registry_but_never_cross_use_serials` (two live accounts, two runners, each only ever receives its own serial). |
+| Individual/global stop behavior preserved | Done -- `test_stopping_one_account_does_not_affect_another_with_live_registries`, `test_global_stop_all_still_sends_no_further_calls_with_a_live_registry` (same contracts as the pre-existing `test_controller.py` suite, now exercised alongside a live registry). |
+| The exact customer crash scenario, end to end | Done -- `test_gui_save_after_build_lets_a_fresh_start_use_the_new_serial_no_restart`: builds a cycle function while the registry is still blank (matching `build_controller()`'s real timing), then live-updates the registry (matching a GUI Save) with **no rebuild**, then starts the worker -- confirms `errored is False`, the real serial reaches every ADB call, and the cycle completes normally. |
+| GUI-facing propagation itself | Done -- `tests/test_gui.py`: `test_save_mapping_updates_the_live_serial_registry`, `test_clear_mapping_updates_the_live_serial_registry_to_blank`, `test_a_rejected_save_never_reaches_the_live_serial_registry`, `test_gui_without_a_serial_registry_never_raises_on_save_or_clear` (backward compatibility for a caller that never passes one). |
+
+### Actual files changed
+
+- `src/ldmanager/app.py` -- `LiveSerialRegistry` class; `_make_cycle_fn`
+  reads it live; `build_controller()` constructs/seeds/exposes it;
+  `main()` wires it into `LDManagerApp`.
+- `src/ldmanager/gui.py` -- new `serial_registry` constructor param;
+  `_on_save_mapping`/`_on_clear_mapping` propagate to it after a
+  successful save/clear; module docstring updated.
+- `tests/test_live_serial_propagation.py` (new, 13 tests) -- registry
+  unit behavior, `_make_cycle_fn` isolation tests (blank vs.
+  configured), the full customer-timeline `AccountWorker` reproduction,
+  cross-account isolation, and individual/global stop preservation.
+- `tests/test_gui.py` -- new `_FakeSerialRegistry` test double +
+  `fake_serial_registry` fixture wired into the shared `app` fixture;
+  4 new tests for the GUI-facing half of the propagation (including a
+  no-registry backward-compatibility check that reuses the shared `app`
+  fixture rather than a second `Tk()` root, avoiding this file's
+  already-documented Tcl/Tk multi-root flakiness).
+
+### Test results
+
+```
+python -m pytest -q
+375 passed
+```
+
+Run 6x in a row: `375 passed` every time, 0 failures, 0 flakes, 0
+warnings. (Prior baseline 358 + 13 `test_live_serial_propagation.py` +
+4 `test_gui.py` = 375.) An initial version of the customer-timeline
+`AccountWorker` reproduction test was itself flaky (a race where a
+second mission cycle could start and be interrupted before the test
+thread called `stop()`, overwriting `last_outcome`); fixed by having
+the wrapped cycle function request its own worker's stop from inside
+the worker thread, immediately after the first cycle returns, before
+`AccountWorker._loop` re-checks its `while` condition -- confirmed
+stable across 5 additional repeated runs of that file alone before
+being folded back into the full-suite stability runs above.
+
+### Commits
+
+- Implementation + tests + this handoff section, then a short
+  follow-up "docs: record LIVE-SERIAL-001 commit hash in handoff"
+  commit recording the exact hash.
+- Not tagged, not pushed, not published. `v1.0.3-rc.2` (tag, release,
+  and its asset) is completely untouched by this packet.
+
+### Limitations
+
+1. **No live ADB, LDPlayer, or game session was used anywhere in this
+   packet** -- every test uses `FakeAdbRunner`/`LabelMappingRecognizer`
+   against an in-memory mock five-slot cycle. The fix is verified at
+   the level of "does the correct serial string reach every recorded
+   ADB call," not against a real device.
+2. **No Windows build was produced for this packet** (not requested in
+   the approved task packet -- corrective code fix only, explicitly not
+   altering the released `v1.0.3-rc.2`). QA reverifying this fix against
+   a packaged build should build fresh from this commit using
+   `scripts\build_windows.ps1`.
+3. This fix addresses the specific propagation gap the customer hit
+   (serial captured once at controller-build time). It does not
+   introduce any new capability, screen, or recognition behavior --
+   `bounty_mission.py`'s own mission-cycle logic is unchanged.
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `375 passed`) and
+  `tests/test_live_serial_propagation.py` specifically (13 tests),
+  ideally several times in a row, given the timing-sensitive nature of
+  the real-`AccountWorker`-thread reproduction test.
+- Reproduce the original customer sequence manually if a real
+  LDPlayer/ADB environment is available: launch the app (fresh, null
+  mapping), map LD1 to a real serial via the GUI, Save, then Start
+  **without restarting the app** -- confirm no `ValueError: Invalid ADB
+  serial` and that the worker's first cycle actually uses the
+  just-saved serial (e.g. via its log/diagnostics).
+- Confirm `v1.0.3-rc.2`'s tag, release, and asset hash are all
+  unchanged from the `REL-003` section above.
