@@ -938,3 +938,54 @@ At launch the artifact had zero child processes and zero `adb.exe` processes. No
 **MVP_SMOKE_PASS.** No reproducible mandatory-safety defect was found in this packet. The prior temporary-directory cleanup failure was harness-only: all product assertions had already passed, but the probe attempted to delete its own current working directory; rerunning after restoring CWD passed as recorded above.
 
 This is not a real LDPlayer/game/customer-video acceptance result. No real capture, device, ADB command, worker run, game state, calibration effectiveness, or live-mode touch was exercised. AC-58, AC-59, and AC-60 remain **BLOCKED_REAL_ENVIRONMENT / NOT_TESTED**; no global/final project AC is marked PASS. Residual risk is limited to those unprovided real-environment assets and conditions.
+
+---
+
+## ADB-PATH-001-QA release-local ADB-path verification (2026-09-14) — BLOCKED
+
+### Target and independent regression result
+
+| Item | Verified result |
+| --- | --- |
+| Exact Code target | `d90a1b884ad8ac8bfd9b58ad3926614c822dc0b9` on `kpj0526/Code` |
+| Required implementation | `5ade5dc62f261502103b8f6943a424947d20c704` is an ancestor |
+| Code worktree before QA | clean |
+| QA integration | non-fast-forward merge `8ff726347ba020574353ccf8d913a3d4b1dfda80` (`QA: merge ADB-PATH-001 target`) |
+| Full independent suite | `319 passed in 4.23s` via `& .\.venv\Scripts\python.exe -m pytest -q` |
+| Target diff check | `git diff --check HEAD^1 HEAD` exit 0 |
+
+### Controlled UI/config/runner evidence
+
+QA ran an isolated temporary-config probe with an existing fixture file named `LDPlayer\LDPlayer14\adb.exe`; it was never executed. The probe constructed the GUI with an injected in-memory runner, not a customer device or subprocess runner.
+
+```text
+INDEPENDENT_ADB_PATH_PROBE_PASS: Browse/Save/Clear UI; existing path persistence/restart; immediate runner refresh+read-only discovery; missing path rejected unchanged; null mappings/no worker/capture/touch
+```
+
+Actual assertions: Browse/Save/Clear widgets were visible and actionable; Browse populated only the entry; Save persisted the exact existing fixture path and a recreated GUI displayed it after restart; Save called the injected runner's `set_adb_path()` and exactly one read-only discovery refresh. All LD1–LD9 mappings remained null, no discovered serial was assigned, no worker started, and fake `run()`/capture call lists remained empty. A missing path was visibly rejected and left the configured path, runner path, and discovery-call count unchanged. Clear wrote null, updated the runner to null, and performed one further discovery-only refresh. A direct `SubprocessAdbRunner(adb_path=<persisted fixture>)` retained exactly that configured value.
+
+### Required customer-path reproduction status
+
+The packet's stated literal path was tested first:
+
+```powershell
+Test-Path -LiteralPath 'C:\LDPlayer\LDPlayer14\adb.exe'
+```
+
+Actual result: **`False`**. Therefore QA could not save and restart-validate `C:\LDPlayer\LDPlayer14\adb.exe` as an *existing* release-local executable on this host. This is an environment/evidence block, not a reproduced product defect: the missing-path branch was independently verified to fail closed, and the equivalent existing-file behavior passed with the isolated fixture.
+
+**Reverify condition:** provide that exact `adb.exe` path (or an approved actual customer executable path) on the QA host, then repeat Browse → Save → process restart and verify the persisted configured/effective path with no device/worker/touch action.
+
+### Fresh Windows artifact smoke
+
+QA ran the documented build command:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1
+```
+
+It completed PyInstaller and packaged the candidate executable with safe examples/templates/docs. QA ZIP-created and freshly extracted `dist\ldmanager`; before launch no generated local config existed. Launch bootstrapped both local config files with null LD1 and LD9 mappings (the example supplies all LD1–LD9). The PyInstaller launcher handed off to live artifact PID `23448`, which exposed native window title `ldmanager (MVP)` (window id `983870`). At launch `adb.exe` process count was zero. No GUI control, worker, capture, or touch was invoked; the temporary artifact window was normally closed using `CloseMainWindow()` (`CloseRequested=True`, `Exited=True`).
+
+### Verdict and limits
+
+**BLOCKED.** Automated regression, injected safety behavior, and fresh artifact launch passed, but the mandatory literal customer-path reproduction cannot be marked PASS because `C:\LDPlayer\LDPlayer14\adb.exe` is absent in this QA environment. No live device/game action, real ADB command, or release publication occurred. This report does not mark any global/final AC as PASS; AC-58 through AC-60 remain **BLOCKED_REAL_ENVIRONMENT / NOT_TESTED**.
