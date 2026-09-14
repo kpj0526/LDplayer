@@ -1,5 +1,18 @@
 # CURRENT TASK
 
+## Current task: REL-0.1.2-RC-01 (2026-09-14)
+
+- Task ID: `REL-0.1.2-RC-01`
+- Title: Publish the GUI ADB-executable-path candidate.
+- Purpose: deliver the user-tested `D:\LDPlayer\LDPlayer14\adb.exe` selection workflow without editing YAML by hand.
+- Owner: Manager (release/documentation only); existing Code supplied the committed build; existing QA supplied independent automated evidence.
+- Status: `IN_PROGRESS`.
+- Planned changes: Manager release/progress documents and a GitHub prerelease only; no production-code change.
+- Completion condition: Code commit is pushed/tagged, Windows ZIP artifact is uploaded, and GitHub notes explicitly preserve QA's `BLOCKED_REAL_ENVIRONMENT` limitation.
+- Current result: Code `d90a1b8` clean; QA `9ec78ac` clean; user reports successful real-path selection/save.
+- Blockers: no independent QA validation of the actual installed LDPlayer/ADB device or game workflow.
+- Next action: create `v1.0.2-rc.1` prerelease from Code `d90a1b8`, then report its link and test scope.
+
 ## ADB-PATH-001 independent QA verification (2026-09-14)
 
 - Task ID: `ADB-PATH-001-QA`

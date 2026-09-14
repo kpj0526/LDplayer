@@ -1,5 +1,13 @@
 # WORK LOG
 
+## 2026-09-14 | REL-0.1.2-RC-01 | Manager
+
+- Performed: recorded user-operated verification that Browse -> Open -> Save accepts `D:\LDPlayer\LDPlayer14\adb.exe` in the ADB-path candidate GUI; prepared candidate-only publication.
+- Changed files: `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
+- Verification: `Test-Path -LiteralPath 'D:\LDPlayer\LDPlayer14\adb.exe'` returned `True`; Code candidate/QA worktrees were clean. No mapping, capture, worker, or touch command was run.
+- Related commits: Code `d90a1b8`; QA `9ec78ac`; Manager documentation commit pending.
+- Next handoff: GitHub prerelease publication by Manager; no replacement agent/worktree.
+
 ## 2026-09-14 | ADB-PATH-001 | Manager
 
 - Performed: verified existing Code terminal completion, Code worktree clean state, submitted commits, test/build evidence, and handoff contents.

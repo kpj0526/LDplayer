@@ -1,5 +1,14 @@
 # PROGRESS
 
+## Release-candidate update: ADB-PATH-001 (2026-09-14)
+
+- Current project stage: `READY_FOR_APPROVAL` for a limited ADB-path release candidate; the overall project is **not** complete.
+- Code candidate: `d90a1b884ad8ac8bfd9b58ad3926614c822dc0b9` on `kpj0526/Code` (implementation `5ade5dc`).
+- QA evidence: `9ec78ac` independently passed 319 automated tests and fresh-artifact launch, but its literal LDPlayer executable check was `BLOCKED` because that QA host had no `C:\LDPlayer\LDPlayer14\adb.exe`.
+- User environment evidence: the user confirmed that the GUI Browse -> Open -> Save flow accepts the real local executable `D:\LDPlayer\LDPlayer14\adb.exe`. This is user-operated environment evidence, not an independent QA PASS and not game-flow validation.
+- Delivery decision: publish this build only as a clearly labelled `v1.0.2-rc.1` prerelease for local/customer ADB-path verification. It must not be represented as a final release or as a real-game acceptance result.
+- Automation safety remains unchanged: no automatic game input, account mapping, capture, or worker execution has been authorized/recorded during this ADB-path check.
+
 ## ADB-PATH-001 Code submission; QA verification pending (2026-09-14)
 
 - Current phase: `VERIFYING`.
