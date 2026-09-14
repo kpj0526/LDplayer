@@ -268,6 +268,23 @@ def assess_mission_target(
     check and :func:`complete_mission_if_verified`'s completion-target
     guard, so both agree on what counts as the target mission."""
 
+    # The customer acceptance rule is the complete, one-line objective --
+    # not a loose combination of a phrase crop and a number crop.  Prefer
+    # the single real template containing exactly
+    # ``모든 몬스터 처치 (0/200)`` whenever it is configured.  A match is
+    # therefore sufficient only because the template itself contains both
+    # required pieces in their original relationship.
+    exact_target_label = "target_all_monsters_0_of_200"
+    if exact_target_label in config.template_map:
+        target = _recognize_in_roi(runner, serial, config, recognizer, _FULL_SCREEN, exact_target_label)
+        if target is None:
+            return MissionAssessment.CAPTURE_UNAVAILABLE
+        if target.matched:
+            return MissionAssessment.TARGET_CONFIRMED
+        if target.status in _UNCERTAIN_STATUSES:
+            return MissionAssessment.RECOGNITION_FAILED
+        return MissionAssessment.NON_TARGET_CONFIRMED
+
     if "mission_target_phrase" in config.template_map:
         target = _recognize_in_roi(runner, serial, config, recognizer, _FULL_SCREEN, "mission_target_phrase")
         if target is None:

@@ -75,11 +75,11 @@ LIVE_MODE_ENV_VAR = "LDMANAGER_LIVE_MODE"
 DEFAULT_IDLE_DELAY_SECONDS = 1.0
 
 
-def _make_cycle_fn(account_id, serial, runner, recognizer, bounty_cfg, runtime):
+def _make_cycle_fn(account_id, serial_provider, runner, recognizer, bounty_cfg, runtime):
     def _cycle(should_stop):
         return run_one_cycle(
             account_id=account_id,
-            serial=serial,
+            serial=serial_provider(account_id),
             runner=runner,
             recognizer=recognizer,
             config=bounty_cfg,
@@ -117,11 +117,11 @@ def build_controller() -> AccountController:
     )
 
     workers: Dict[AccountId, AccountWorker] = {}
+    serial_mapping = {account_id: app_config.adb_serial_for(account_id) or "" for account_id in AccountId}
     for account_id in AccountId:
-        serial = app_config.adb_serial_for(account_id) or ""
         logger = get_account_logger(account_id, app_config.logging)
         runtime = AccountMissionRuntime()
-        cycle_fn = _make_cycle_fn(account_id, serial, runner, recognizer, bounty_cfg, runtime)
+        cycle_fn = _make_cycle_fn(account_id, lambda item: serial_mapping[item], runner, recognizer, bounty_cfg, runtime)
         workers[account_id] = AccountWorker(
             account_id,
             cycle_fn,
@@ -135,6 +135,7 @@ def build_controller() -> AccountController:
     # Runtime dependency exposed for GUI diagnostics/live-mode control; this
     # remains the real subprocess-backed runner behind InputGateAdbRunner.
     controller.adb_runner = runner  # type: ignore[attr-defined]
+    controller.serial_mapping = serial_mapping  # type: ignore[attr-defined]
     def readiness_check(image_bytes):
         # GAME-CAL-001: previously checked four very specific sub-state-
         # only templates (a refresh-popup title, a reward-result header,

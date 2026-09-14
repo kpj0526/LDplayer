@@ -46,7 +46,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Optional
 
-from .adb import AdbRunner
+from .adb import AdbRunner, validate_serial
 from .bounty_config import BountyMissionConfig
 from .coordinates import RelativeCoordinate, RelativeRegion, build_tap_args
 from .models import AccountId
@@ -75,6 +75,7 @@ class BountyOutcome(str, Enum):
     MISSION_LIST_VERIFY_FAILED = "mission_list_verify_failed"
     RE_ACCEPT_FAILED = "re_accept_failed"
     RECOGNITION_FAILED = "recognition_failed"
+    CONFIGURATION_ERROR = "configuration_error"
 
 
 @dataclass(frozen=True)
@@ -180,6 +181,40 @@ def _mission_is_acceptable(runner, serial, config, recognizer) -> MissionAssessm
     return assess_mission_target(runner, serial, config, recognizer)
 
 
+def _active_target_is_visible(runner, serial, config, recognizer) -> MissionAssessment:
+    """Confirm that the mission about to be completed is still an
+    all-monsters target.
+
+    Initial acceptance is stricter: it uses the combined, exact
+    ``모든 몬스터 처치 (0/200)`` crop.  Once a target is accepted, the
+    counter legitimately changes (``1/200`` ... ``200/200``), so that
+    initial crop must *not* be reused to decide whether a completed
+    mission is safe to finish.  Production uses the separately supplied
+    active-title crop together with the independently matched Complete
+    button; an absent/uncertain crop fails closed.
+    """
+    label = "target_all_monsters_active"
+    if label in config.template_map:
+        match = _recognize(runner, serial, config, recognizer, _FULL_SCREEN, label)
+        if match is None:
+            return MissionAssessment.CAPTURE_UNAVAILABLE
+        if match.matched:
+            return MissionAssessment.TARGET_CONFIRMED
+        # A valid but confidently absent title is a non-target.  An
+        # unreadable/missing template is an error, never a reroll reason.
+        return (
+            MissionAssessment.RECOGNITION_FAILED
+            if match.status.value in {"unknown", "low_confidence"}
+            else MissionAssessment.NON_TARGET_CONFIRMED
+        )
+    # Legacy fixture configs have no active-title asset.  They retain the
+    # historical assessment path solely for compatibility with old tests;
+    # a populated production template map never falls through here.
+    if config.template_map:
+        return MissionAssessment.RECOGNITION_FAILED
+    return _mission_is_acceptable(runner, serial, config, recognizer)
+
+
 def _verify_refresh_popup(runner, serial, config, recognizer) -> Optional[bool]:
     """Structural popup check: two independent, cost-independent
     landmarks must BOTH match. Returns ``None`` on capture failure."""
@@ -223,7 +258,11 @@ def _accept_or_refresh_slot(
     if not selected_ok:
         return None, BountyCycleResult(
             BountyOutcome.CAPTURE_UNAVAILABLE, (),
-            f"Slot {slot_index}: select tap failed (rc={select.returncode}).",
+            # ``select`` exists only on the legacy fixed-point test path.
+            # The production image-template path must not dereference it
+            # when the template was missing/no-match, otherwise a harmless
+            # failed recognition becomes an unhandled NameError.
+            f"Slot {slot_index}: select button was not confidently located or its ADB tap failed.",
         )
 
     if should_stop():
@@ -269,7 +308,7 @@ def _accept_or_refresh_slot(
         if not refresh_ok:
             return None, BountyCycleResult(
                 BountyOutcome.CAPTURE_UNAVAILABLE, (),
-                f"Slot {slot_index}: refresh-open tap failed (rc={open_popup.returncode}).",
+                f"Slot {slot_index}: refresh button was not confidently located or its ADB tap failed.",
             )
 
         if should_stop():
@@ -312,7 +351,7 @@ def _accept_or_refresh_slot(
         if not confirm_ok:
             return None, BountyCycleResult(
                 BountyOutcome.CAPTURE_UNAVAILABLE, (),
-                f"Slot {slot_index}: refresh-confirm tap failed (rc={confirm.returncode}).",
+                f"Slot {slot_index}: verified refresh-confirm button was not confidently located or its ADB tap failed.",
             )
 
         if should_stop():
@@ -363,6 +402,17 @@ def run_one_cycle(
     """
 
     del account_id  # identity carried by the caller; not needed internally
+    # A blank mapping is an ordinary customer setup error, not a worker
+    # crash.  Never call capture/touch in this case: every ADB action in a
+    # live cycle must have one explicit serial.  The controller will stop
+    # this account only and surface the message in the GUI/log.
+    try:
+        validate_serial(serial)
+    except ValueError as exc:
+        return BountyCycleResult(
+            BountyOutcome.CONFIGURATION_ERROR, (),
+            f"ADB serial is not configured for this account ({exc}). Save a valid per-LD serial before Start.",
+        )
     slot_outcomes: list[SlotOutcome] = []
 
     for slot_index in range(1, config.slot_count + 1):
@@ -439,6 +489,16 @@ def run_one_cycle(
         complete_select_ok = dynamic_complete_select
     if not complete_select_ok:
         return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), "Select-complete tap failed.")
+
+    # A complete-looking button alone is not enough: it must belong to the
+    # already accepted all-monsters mission currently shown in this account.
+    active_target = _active_target_is_visible(runner, serial, config, recognizer)
+    if active_target is not MissionAssessment.TARGET_CONFIRMED:
+        return BountyCycleResult(
+            BountyOutcome.RECOGNITION_FAILED,
+            tuple(slot_outcomes),
+            f"Completed mission target could not be verified ({active_target.value}); complete not sent.",
+        )
 
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before complete button.")

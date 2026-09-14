@@ -34,6 +34,10 @@ template_map:
   "모든 몬스터 처치": "target_all_monsters_0_of_200.png"
   "200": "target_all_monsters_0_of_200.png"
   target_all_monsters_0_of_200: "target_all_monsters_0_of_200.png"
+  # Used only after acceptance, when the counter is no longer 0/200.
+  # Completion still additionally requires the real Complete button;
+  # this title crop prevents completing a different mission by mistake.
+  target_all_monsters_active: "target_all_monsters_active.png"
   "지역 퀘스트 갱신": "refresh_confirm_title.png"
   "확인": "refresh_confirm_title.png"
   # Do not map a generic active mission to 200/200. A future native ADB

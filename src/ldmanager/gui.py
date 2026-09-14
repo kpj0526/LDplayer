@@ -449,6 +449,8 @@ class LDManagerApp(tk.Tk):
         if result.ok:
             panel.set_capture_ready(False)
             self._current_mapping = result.adb_mapping
+            if hasattr(self._controller, "serial_mapping"):
+                self._controller.serial_mapping[account_id] = result.adb_mapping[account_id.value]
         self._apply_current_mapping_to_panels()
 
     def _on_clear_mapping(self, account_id: AccountId) -> None:
@@ -461,6 +463,8 @@ class LDManagerApp(tk.Tk):
         if result.ok:
             panel.set_capture_ready(False)
             self._current_mapping = result.adb_mapping
+            if hasattr(self._controller, "serial_mapping"):
+                self._controller.serial_mapping[account_id] = ""
         self._apply_current_mapping_to_panels()
 
     def _refresh(self) -> None:

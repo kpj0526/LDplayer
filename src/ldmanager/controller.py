@@ -142,7 +142,7 @@ class AccountWorker:
                         self._status.phase = runtime.phase
                         self._status.locked_slots = runtime.locked_count
                         self._status.slot_states = [item.value for item in runtime.slots]
-                if outcome_str in {"recognition_failed", "capture_unavailable", "stale_screen", "unknown_screen", "adb_error"}:
+                if outcome_str in {"recognition_failed", "capture_unavailable", "stale_screen", "unknown_screen", "adb_error", "configuration_error"}:
                     with self._lock:
                         self._status.errored = True
                         self._status.last_error = f"{outcome_str}: account worker stopped"

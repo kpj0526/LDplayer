@@ -7,6 +7,7 @@ from ldmanager.coordinates import RelativeCoordinate, RelativeRegion, ScreenSize
 from ldmanager.models import AccountId
 from ldmanager.recognition import PlaceholderRecognizer
 from ldmanager.screenshot import DEFAULT_CAPTURE_ARGS
+from ldmanager.screen_classification import MissionAssessment, assess_mission_target
 from tests.fakes import FakeAdbRunner, LabelMappingRecognizer
 
 _VALID_PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
@@ -301,3 +302,59 @@ def test_capture_unavailable_mid_slot_is_reported_without_crashing():
     assert result.outcome is BountyOutcome.CAPTURE_UNAVAILABLE
     # Only the slot-1 select tap happened before capture failure aborted.
     assert len(runner.calls) == 1
+
+
+# --- Customer hardening: exact target + configuration/template failures ---
+
+
+def test_exact_combined_target_template_is_the_only_production_acceptance_signal():
+    """The exact ``all monsters (0/200)`` crop must take precedence over
+    the old loose phrase/quantity compatibility fields.
+
+    This protects against accepting a screen where only the wording or only
+    a nearby 200-number happens to match.  The production config ships the
+    combined label; older fixture-only configs retain the legacy fallback.
+    """
+    runner = _runner_with_valid_captures()
+    recognizer = LabelMappingRecognizer(
+        matching_labels=frozenset({"target_all_monsters_0_of_200"})
+    )
+    config = _config(template_map={
+        "target_all_monsters_0_of_200": "target.png",
+        "mission_target_phrase": "phrase.png",
+    })
+
+    result = assess_mission_target(runner, _SERIAL, config, recognizer)
+
+    assert result is MissionAssessment.TARGET_CONFIRMED
+    assert recognizer.calls == ["target_all_monsters_0_of_200"]
+
+
+def test_blank_serial_is_a_structured_account_configuration_error_not_worker_crash():
+    runner = _runner_with_valid_captures()
+
+    result = run_one_cycle(
+        account_id=AccountId.LD1,
+        serial="",
+        runner=runner,
+        recognizer=LabelMappingRecognizer(matching_labels=_ALL_LABELS),
+        config=_config(),
+    )
+
+    assert result.outcome is BountyOutcome.CONFIGURATION_ERROR
+    assert "serial" in result.detail.lower()
+    assert runner.calls == []
+    assert runner.capture_calls == []
+
+
+def test_missing_slot_template_returns_controlled_failure_not_name_error():
+    """A production template miss must stop the account safely.  This used
+    to try to include an unbound legacy ``select`` variable in the detail
+    message and crashed the worker instead."""
+    runner = _runner_with_valid_captures()
+    config = _config(template_map={"mission_slot_unselected": "slot.png"})
+
+    result = _run(runner, LabelMappingRecognizer(), config)
+
+    assert result.outcome is BountyOutcome.CAPTURE_UNAVAILABLE
+    assert "slot 1" in result.detail.lower()
