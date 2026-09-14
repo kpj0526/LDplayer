@@ -1,5 +1,14 @@
 # PROGRESS
 
+## ADB-PATH-001 Code submission; QA verification pending (2026-09-14)
+
+- Current phase: `VERIFYING`.
+- Code submitted exact target `d90a1b8` (implementation `5ade5dc`) on the existing Code branch; worktree is clean.
+- Code evidence: 17 new focused tests; full suite ran three times with `319 passed, 0 failures`; Windows build succeeded. Candidate EXE SHA-256 reported as `5D110C89DF7FA23D1A05B62DBCD7CAF87214EB7D94D3D2F8B3A751E83E54C56`.
+- Submitted functionality: GUI ADB executable entry/Browse/Save/Clear, explicit path persistence and reload, path validation/error state, runner path reinitialization plus read-only refresh, no serial auto-map/Worker/touch side effects.
+- QA target: exact Code `d90a1b8`; QA must independently reproduce customer explicit-path workflow, test invalid path fail-closed, path persistence/reload/refresh, zero input side effects, full regression, fresh built-EXE launch, and report PASS/FAIL.
+- Release boundary: `v1.0.1` remains the published artifact; this fix is not deployed until independent QA passes and a new release is published.
+
 ## Live customer ADB executable discovery defect reproduced (2026-09-14)
 
 - Current phase: `REWORK`.

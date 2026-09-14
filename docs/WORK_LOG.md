@@ -2,6 +2,14 @@
 
 ## 2026-09-14 | ADB-PATH-001 | Manager
 
+- Performed: verified existing Code terminal completion, Code worktree clean state, submitted commits, test/build evidence, and handoff contents.
+- Changed: `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
+- Commands/tests: Code terminal evidence/read; Code/QA status/log check. Manager did not run production code or device input.
+- Result: Code submitted `d90a1b8` / `5ade5dc`, reporting three stable 319-pass full-suite runs and successful Windows build. QA now owns independent verification.
+- Next handoff: existing QA exact target `d90a1b8`.
+
+## 2026-09-14 | ADB-PATH-001 | Manager
+
 - Performed: inspected customer-supplied running-release screenshots and diagnosed the device-discovery failure before any serial mapping or game input.
 - Changed: `docs/TASK_PACKET.md`, `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
 - Evidence: GUI text `Device discovery failed: ADB device listing failed: FileNotFoundError`; all LD1--LD9 panels stopped/unmapped. No worker/touch evidence exists.

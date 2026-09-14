@@ -1,5 +1,17 @@
 # CURRENT TASK
 
+## ADB-PATH-001 independent QA verification (2026-09-14)
+
+- Task ID: `ADB-PATH-001-QA`
+- Title: Verify GUI ADB executable path selection candidate
+- Owner: existing QA.
+- Status: `VERIFYING`.
+- Target: Code `d90a1b8` (implementation `5ade5dc`).
+- Code-reported evidence: 319 tests pass over three runs and Windows build succeeds. This has not yet been independently approved.
+- Completion: QA validates explicit `C:\LDPlayer\LDPlayer14\adb.exe` persistence/reload/refresh workflow, invalid paths, zero side effects, fresh artifact launch and full regression; records a committed report verdict.
+- Blocker: no live LD/game claim; an actual customer device can only prove the final real-connection step after release.
+- Next action: QA receives exact target now.
+
 ## Customer ADB executable path recovery (2026-09-14)
 
 - Task ID: `ADB-PATH-001`
