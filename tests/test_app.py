@@ -94,15 +94,14 @@ def test_build_controller_succeeds_with_valid_configs_and_covers_all_accounts(
 # --- REL-UPDATE-003: InputGateAdbRunner wiring (real taps opt-in only) -----
 
 
-def test_build_controller_wires_input_gate_blocking_taps_by_default(tmp_path, monkeypatch):
+def test_build_controller_wires_live_input_gate_after_visible_gui_preflight(tmp_path, monkeypatch):
     """build_controller() previously wired the raw SubprocessAdbRunner
     directly (a gap found while integrating the v1.0.1 candidate: its
     InputGateAdbRunner class existed but was never actually used). Fixed
     as part of REL-UPDATE-003 -- verify the real runner is always the
-    gate, and defaults closed (no LDMANAGER_LIVE_MODE set)."""
+    gate, and enables it after the GUI's visible preflight path."""
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("LDMANAGER_LIVE_MODE", raising=False)
     config_path, bounty_path = _write_configs(tmp_path, _nine_null_mapping_yaml())
     monkeypatch.setenv("LDMANAGER_CONFIG", str(config_path))
     monkeypatch.setenv("LDMANAGER_BOUNTY_CONFIG", str(bounty_path))
@@ -112,12 +111,12 @@ def test_build_controller_wires_input_gate_blocking_taps_by_default(tmp_path, mo
     from ldmanager.adb import InputGateAdbRunner
 
     assert isinstance(controller.adb_runner, InputGateAdbRunner)
-    assert controller.adb_runner.live_enabled is False
+    assert controller.adb_runner.live_enabled is True
 
 
-def test_build_controller_honors_live_mode_env_var(tmp_path, monkeypatch):
+def test_build_controller_does_not_depend_on_hidden_live_mode_env_var(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("LDMANAGER_LIVE_MODE", "1")
+    monkeypatch.setenv("LDMANAGER_LIVE_MODE", "anything")
     config_path, bounty_path = _write_configs(tmp_path, _nine_null_mapping_yaml())
     monkeypatch.setenv("LDMANAGER_CONFIG", str(config_path))
     monkeypatch.setenv("LDMANAGER_BOUNTY_CONFIG", str(bounty_path))
@@ -127,16 +126,16 @@ def test_build_controller_honors_live_mode_env_var(tmp_path, monkeypatch):
     assert controller.adb_runner.live_enabled is True
 
 
-def test_build_controller_live_mode_env_var_requires_exact_value(tmp_path, monkeypatch):
+def test_build_controller_ignores_legacy_live_mode_env_value(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("LDMANAGER_LIVE_MODE", "true")  # not the exact "1"
+    monkeypatch.setenv("LDMANAGER_LIVE_MODE", "true")
     config_path, bounty_path = _write_configs(tmp_path, _nine_null_mapping_yaml())
     monkeypatch.setenv("LDMANAGER_CONFIG", str(config_path))
     monkeypatch.setenv("LDMANAGER_BOUNTY_CONFIG", str(bounty_path))
 
     controller = build_controller()
 
-    assert controller.adb_runner.live_enabled is False
+    assert controller.adb_runner.live_enabled is True
 
 
 def test_cycle_uses_latest_saved_serial_not_the_startup_blank_value(monkeypatch):

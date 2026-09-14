@@ -143,12 +143,17 @@ class AccountPanel(ttk.LabelFrame):
         self.capture_button.pack(side="left")
 
     def _on_start(self) -> None:
-        if self._connection_status is not ConnectionStatus.OK or not self._capture_ready:
+        if not self.can_start:
             self.mapping_error_var.set(
                 "Cannot start: confirm ADB mapping and run a successful Test capture first."
             )
             return
         self._controller.start_account(self._account_id)
+
+    @property
+    def can_start(self) -> bool:
+        """True only after this account's own mapping and capture check."""
+        return self._connection_status is ConnectionStatus.OK and self._capture_ready
 
     def _on_stop(self) -> None:
         self._controller.stop_account(self._account_id)
@@ -293,7 +298,15 @@ class LDManagerApp(tk.Tk):
             self.after(0, self._refresh)
 
     def _on_start_all(self) -> None:
-        self._controller.start_all()
+        blocked: list[str] = []
+        for account_id, panel in self._panels.items():
+            if panel.can_start:
+                self._controller.start_account(account_id)
+            else:
+                blocked.append(account_id.value)
+        self.global_error_var.set(
+            "" if not blocked else "Start blocked until ADB mapping + Test capture succeed: " + ", ".join(blocked)
+        )
 
     def _on_stop_all(self) -> None:
         self._controller.stop_all()

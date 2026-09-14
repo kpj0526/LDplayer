@@ -46,7 +46,6 @@ an actual mission run (clicking Start) does.
 
 from __future__ import annotations
 
-import os
 import sys
 import time
 from typing import Dict
@@ -67,8 +66,6 @@ from .screen_classification import MissionScreenState, classify_screen
 #: is exactly "1" -- mirrors the existing LDMANAGER_DEVELOPER_MODE
 #: pattern (gui.py) for the template-calibration UI. Unset/anything
 #: else = safe mode: discovery/capture work, taps do not.
-LIVE_MODE_ENV_VAR = "LDMANAGER_LIVE_MODE"
-
 #: Delay between mission cycles for one account's worker, in seconds.
 #: Deliberately not zero, so a misconfigured/always-failing account
 #: doesn't spin its capture/recognition loop as fast as the CPU allows.
@@ -109,7 +106,7 @@ def build_controller() -> AccountController:
     # Discovery/capture always work; a real tap requires LDMANAGER_LIVE_MODE=1.
     runner = InputGateAdbRunner(
         SubprocessAdbRunner(adb_path=app_config.adb_path),
-        live_enabled=os.environ.get(LIVE_MODE_ENV_VAR) == "1",
+        live_enabled=True,
     )
     recognizer = OpenCVTemplateRecognizer(
         templates_dir=bounty_cfg.templates_dir,

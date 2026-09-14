@@ -111,15 +111,19 @@ def test_panel_start_stop_buttons_call_controller_once_verified_ok(monkeypatch, 
     assert calls == [("start", AccountId.LD1), ("stop", AccountId.LD1)]
 
 
-def test_global_start_all_stop_all_call_controller(monkeypatch, app):
+def test_global_start_all_starts_only_accounts_that_passed_their_own_preflight(monkeypatch, app):
     calls = []
-    monkeypatch.setattr(app._controller, "start_all", lambda: calls.append("start_all"))
+    monkeypatch.setattr(app._controller, "start_account", lambda aid: calls.append(("start", aid)))
     monkeypatch.setattr(app._controller, "stop_all", lambda: calls.append("stop_all"))
+    panel = app._panels[AccountId.LD1]
+    panel.set_mapping_status("127.0.0.1:5555", ConnectionStatus.OK, "ok")
+    panel.set_capture_ready(True)
 
     app._on_start_all()
     app._on_stop_all()
 
-    assert calls == ["start_all", "stop_all"]
+    assert calls == [("start", AccountId.LD1), "stop_all"]
+    assert "LD2" in app.global_error_var.get()
 
 
 def test_refresh_updates_panel_from_status_snapshot(app):
