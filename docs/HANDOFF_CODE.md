@@ -4251,3 +4251,79 @@ Run 3x in a row: `422 passed` every time, 0 failures. (Prior baseline
   confirm the flow claims it immediately rather than finishing the
   full slot walk first, and that a real complete-tap miss (if it ever
   occurs) recovers via retry instead of failing the whole cycle.
+
+## NO-CONSOLE-FLICKER-001: suppress the black console window on every ADB call
+
+**Trigger**: user reported a black, flickering window appearing
+constantly during a live run and asked for it to be fixed. Confirmed
+directly from a ~83s screen-recording video the user supplied: a
+`cmd.exe`-style console window titled `C:\LDPlayer\LDPlayer14\adb...`,
+completely black/empty, repeatedly popping open over the app.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`SubprocessAdbRunner`'s three `subprocess.run()` calls (`list_devices`,
+`run`, `capture_binary`) spawn `adb.exe` as a genuine child process with
+no console-suppression flag. On Windows, launching a console
+executable from a GUI process (this app's `--windowed` PyInstaller
+build) opens a brand-new console window for that child process unless
+explicitly suppressed -- and since one ADB command is issued per
+tap/capture, a live run flickers this open-and-close on essentially
+every automation step.
+
+### Fix
+
+`src/ldmanager/adb.py`: added a module-level
+`_NO_CONSOLE_WINDOW_KWARGS` built once (`{"creationflags":
+subprocess.CREATE_NO_WINDOW}` on Windows, `{}` elsewhere --
+`creationflags` is a Windows-only `subprocess.run()` kwarg; passing it
+on POSIX raises `ValueError`, so it's platform-guarded rather than
+passed unconditionally) and spread into all three `subprocess.run()`
+calls.
+
+### Regression tests
+
+- `tests/test_adb.py` --
+  `test_subprocess_adb_runner_never_flashes_a_console_window_on_windows`:
+  monkeypatches `subprocess.run`, confirms every one of the three real
+  calls (`list_devices`, `run`, `capture_binary`) passes
+  `creationflags=subprocess.CREATE_NO_WINDOW` (skipped on non-Windows,
+  since the flag doesn't apply there).
+
+### Test results
+
+```
+python -m pytest -q
+429 passed
+```
+
+Run 3x in a row: `429 passed` every time, 0 failures. (Prior baseline
+428 + 1 new test = 429.)
+
+### Commits
+
+- `PLACEHOLDER_COMMIT_HASH` -- `NO-CONSOLE-FLICKER-001: suppress the
+  black console window on every ADB call` (implementation + tests +
+  this HANDOFF section, in one commit)
+- Followed by a short "docs: record NO-CONSOLE-FLICKER-001 commit hash
+  in handoff" commit recording the real hash.
+
+### Limitations
+
+1. Only suppresses console windows spawned by THIS app's own ADB
+   subprocess calls -- any window LDPlayer itself or another tool
+   opens is out of scope.
+2. Verified via a monkeypatched `subprocess.run` (argv/kwargs-level),
+   not by visually confirming the window no longer appears on a real
+   Windows desktop during a live run.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `429 passed`).
+- On a real device: confirm no console window flashes during a live
+  run (Test capture, Start, several taps).

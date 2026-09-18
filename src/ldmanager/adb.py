@@ -28,6 +28,16 @@ from enum import Enum
 from pathlib import Path
 from typing import Protocol, Sequence
 
+# NO-CONSOLE-FLICKER-001: a real customer report -- every subprocess.run()
+# call below spawns adb.exe as a genuine child console process, and on
+# Windows that flashes a brand-new black console window on screen unless
+# explicitly suppressed. With one ADB command per tap/capture, a live run
+# flickered this open-and-close constantly. creationflags is a
+# Windows-only subprocess.run() kwarg (passing it on POSIX raises
+# ValueError), so it's built once, guarded by platform, and spread into
+# every call below.
+_NO_CONSOLE_WINDOW_KWARGS = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
+
 
 def resolve_adb_path(explicit_path: str | None = None) -> str:
     """Locate a usable ADB executable without guessing a device port.
@@ -192,6 +202,7 @@ class SubprocessAdbRunner:
             text=True,
             timeout=self.timeout,
             check=False,
+            **_NO_CONSOLE_WINDOW_KWARGS,
         )
         return completed.stdout
 
@@ -205,6 +216,7 @@ class SubprocessAdbRunner:
             text=True,
             timeout=self.timeout,
             check=False,
+            **_NO_CONSOLE_WINDOW_KWARGS,
         )
         result = AdbCommandResult(
             serial=serial,
@@ -227,6 +239,7 @@ class SubprocessAdbRunner:
             text=False,  # binary mode: never decode/translate the bytes
             timeout=self.timeout,
             check=False,
+            **_NO_CONSOLE_WINDOW_KWARGS,
         )
         stderr_text = completed.stderr.decode("utf-8", errors="replace") if completed.stderr else ""
         result = AdbBinaryResult(

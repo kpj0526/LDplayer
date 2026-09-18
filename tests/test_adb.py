@@ -148,6 +148,42 @@ def test_subprocess_adb_runner_run_invokes_scoped_argv(monkeypatch):
     assert result.stdout == "ok\n"
 
 
+def test_subprocess_adb_runner_never_flashes_a_console_window_on_windows(monkeypatch):
+    """NO-CONSOLE-FLICKER-001: real customer report -- every ADB
+    subprocess call flashed a black console window on screen (visible
+    constantly given one call per tap/capture). On Windows, every
+    subprocess.run() invocation here must pass creationflags=
+    CREATE_NO_WINDOW to suppress it."""
+
+    import os
+    import subprocess as subprocess_module
+
+    if os.name != "nt":
+        pytest.skip("CREATE_NO_WINDOW is a Windows-only subprocess flag")
+
+    captured_kwargs = []
+
+    class _FakeCompleted:
+        stdout = "ok\n"
+        stderr = ""
+        returncode = 0
+
+    def fake_run(args, **kwargs):
+        captured_kwargs.append(kwargs)
+        return _FakeCompleted()
+
+    monkeypatch.setattr("ldmanager.adb.subprocess.run", fake_run)
+
+    runner = SubprocessAdbRunner(adb_path="adb")
+    runner.list_devices()
+    runner.run("127.0.0.1:5555", ["shell", "echo", "hi"])
+    runner.capture_binary("127.0.0.1:5555", ["exec-out", "screencap", "-p"])
+
+    assert len(captured_kwargs) == 3
+    for kwargs in captured_kwargs:
+        assert kwargs.get("creationflags") == subprocess_module.CREATE_NO_WINDOW
+
+
 def test_subprocess_adb_runner_capture_binary_invokes_scoped_argv(monkeypatch):
     captured = {}
 
