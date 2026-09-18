@@ -328,23 +328,47 @@ class _ConfidentNoMatchRecognizer:
         return RecognitionResult(RecognitionStatus.NO_MATCH, None, 0.05, "test: confidently absent")
 
 
-def test_slot_select_dynamic_template_no_match_is_a_structured_error_not_a_crash():
-    """Real customer crash (2026-09): a real 'mission_slot_unselected'
-    template configured but not confidently matching the current frame
-    raised UnboundLocalError('select') instead of a structured, contained
-    result -- _tap_template returned False (not None), so the fixed-
-    point fallback branch that used to assign 'select' never ran, but
-    the failure-detail f-string still referenced select.returncode."""
+def test_slot_select_is_always_position_based_never_template_matched():
+    """SLOT-SELECT-CALIBRATION-001 (follow-up to the same real customer
+    crash): a real 'mission_slot_unselected' template configured but not
+    confidently matching the current frame used to raise
+    UnboundLocalError('select') -- see TAP-FALLBACK-CRASH-001. Root
+    cause traced further: template matching structurally cannot tell
+    slot 1 apart from slot 3 when both show identical unselected
+    styling. Fix: slot selection no longer attempts template matching
+    at all -- it always taps config.slot_select_points[slot_index-1]
+    directly. Proven here by configuring a 'mission_slot_unselected'
+    template that a confidently-non-matching recognizer would have
+    rejected under the old behavior, yet the select tap still succeeds
+    (using the real, calibrated fixed point) and the cycle proceeds
+    past slot selection entirely -- reaching the refresh loop instead
+    of failing at select."""
 
     runner = _runner_with_valid_captures()
-    recognizer = _ConfidentNoMatchRecognizer()  # confidently matches nothing
+    recognizer = _ConfidentNoMatchRecognizer()  # would have failed a template search
     cfg = _config(template_map={"mission_slot_unselected": "mission_slot_unselected.png"})
 
-    result = _run(runner, recognizer, cfg)  # must not raise
+    result = _run(runner, recognizer, cfg)  # must not raise, must not fail at "select"
 
     assert result.outcome is BountyOutcome.CAPTURE_UNAVAILABLE
-    assert "select tap failed" in result.detail
-    assert "template-based tap" in result.detail
+    assert "select tap failed" not in result.detail
+    # Reached (and failed at) the NEXT step instead -- proof slot
+    # selection itself was never the blocker here.
+    assert "refresh-open tap failed" in result.detail
+
+
+def test_slot_select_tap_uses_the_exact_configured_slot_select_point():
+    """Direct proof the select tap argv matches slot_select_points[N-1]
+    -- never a template-derived coordinate, never another slot's point."""
+
+    runner = _runner_with_valid_captures()
+    recognizer = LabelMappingRecognizer(matching_labels=_ALL_LABELS)  # slot 1 accepted immediately
+    cfg = _config()
+
+    _run(runner, recognizer, cfg)
+
+    expected_args = tuple(build_tap_args(cfg.screen_size, cfg.slot_select_points[0]))
+    assert (_SERIAL, expected_args) in runner.calls
 
 
 def test_refresh_open_dynamic_template_no_match_is_a_structured_error_not_a_crash():

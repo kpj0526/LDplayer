@@ -43,8 +43,20 @@ template_map:
   "보상 획득": "reward_result_header.png"
   "결과": "reward_result_header.png"
   "자유 토벌작전": "mission_slots_panel.png"
-  mission_slot_unselected: "mission_slot_unselected.png"
-  mission_slot_selected: "mission_slot_selected.png"
+  # SLOT-SELECT-CALIBRATION-001 (real-capture rework): mission_slot_unselected/
+  # mission_slot_selected are DELIBERATELY NOT mapped here. Real evidence
+  # (tests/fixtures/game_cal_001/source_extra/) showed two structural
+  # problems: (1) the crop bakes in the literal mission title text
+  # ("자유 토벌작전"), the exact anti-pattern GAME-CAL-001 already fixed
+  # elsewhere; (2) even with a perfect crop, a single "find this anywhere
+  # on screen" search can never tell slot 1 apart from slot 3 when both
+  # show identical unselected styling -- template matching is the wrong
+  # tool for "pick the Nth row of a list". Leaving these two labels
+  # unmapped makes _tap_template() return None (not a hard False) for
+  # them, so slot selection always uses the real, position-calibrated
+  # slot_select_points/select_complete_point below instead -- exactly
+  # the mechanism actually suited to this UI. Do not add real crops for
+  # these two labels without first solving problem (2).
   button_refresh_confirm: "button_refresh_confirm.png"
   button_refresh_4400: "button_refresh_4400.png"
   button_refresh_6600: "button_refresh_6600.png"
@@ -71,12 +83,24 @@ template_map:
 # Tap points to select/check each of the 5 bounty slots. Exactly 5
 # entries expected by the state machine (config itself allows any
 # non-empty list; ldmanager.bounty_mission iterates whatever it's given).
+#
+# SLOT-SELECT-CALIBRATION-001 (real-capture rework): calibrated from a
+# real 1280x720 customer capture of the actual 임무 목록 (mission list)
+# panel -- see tests/fixtures/game_cal_001/source_extra/
+# mission_list_row1_completed.png and its PROVENANCE.md. Row band
+# boundaries were measured directly (mean-brightness scan of the list
+# column, not eyeballed) and centered: row 1 y=186-256 (center 221),
+# row 2 y=268-337 (center 302), row 3 y=350-418 (center 384), row 4
+# y=431-499 (center 465), row 5 y=513-581 (center 547); x centered on
+# the row banner (~150px of 1280). The prior placeholder values (evenly
+# spaced 0.20/0.35/0.50/0.65/0.80) were off by up to 0.11 -- enough to
+# miss the ~0.097-tall row bands entirely on a real capture.
 slot_select_points:
-  - {x: 0.10, y: 0.20}
-  - {x: 0.10, y: 0.35}
-  - {x: 0.10, y: 0.50}
-  - {x: 0.10, y: 0.65}
-  - {x: 0.10, y: 0.80}
+  - {x: 0.1172, y: 0.3069}
+  - {x: 0.1172, y: 0.4194}
+  - {x: 0.1172, y: 0.5333}
+  - {x: 0.1172, y: 0.6458}
+  - {x: 0.1172, y: 0.7597}
 
 # A mission is only accepted when BOTH of these are recognized in the
 # currently-selected slot's opened mission panel -- phrase alone or
@@ -112,7 +136,13 @@ complete_state_roi: {x: 0.4375, y: 0.7083, width: 0.1172, height: 0.0694}
 complete_state_label: "complete_badge"
 
 # Complete -> reward -> claim -> result -> close -> mission list.
-select_complete_point: {x: 0.10, y: 0.20}
+# SLOT-SELECT-CALIBRATION-001: matches slot_select_points[0] above (the
+# real, calibrated row-1 position) -- this mock flow selects a fixed
+# position to complete, same as the prior placeholder implicitly did
+# (its value matched the OLD slot_select_points[0] placeholder too).
+# NEEDS_REAL_TEST: this remains "always row 1" -- it does not yet track
+# which of the 5 locked slots actually became eligible.
+select_complete_point: {x: 0.1172, y: 0.3069}
 complete_button_point: {x: 0.85, y: 0.90}
 reward_screen_roi: {x: 0.30, y: 0.30, width: 0.40, height: 0.15}
 reward_screen_label: "보상 획득"

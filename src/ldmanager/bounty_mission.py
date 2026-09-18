@@ -214,25 +214,23 @@ def _accept_or_refresh_slot(
             BountyOutcome.STOPPED, (), f"Stopped before slot {slot_index}."
         )
 
-    dynamic_select = _tap_template(runner, serial, config, recognizer, "mission_slot_unselected")
-    if dynamic_select is None:
-        select_result = runner.run(serial, build_tap_args(config.screen_size, config.slot_select_points[slot_index - 1]))
-        selected_ok = select_result.ok
-        select_detail = f"rc={select_result.returncode}"
-    else:
-        # LIVE-SERIAL-001-adjacent fix: dynamic_select is True/False here,
-        # never None -- no fixed-point tap was sent, so there is no ADB
-        # returncode to report. Referencing an unassigned fixed-tap
-        # result here was a real, previously-undetected UnboundLocalError
-        # (only ever exercised once a real "mission_slot_unselected"
-        # template started returning a confident False on a live
-        # capture -- see docs/HANDOFF_CODE.md).
-        selected_ok = dynamic_select
-        select_detail = "template-based tap: no confident match, or the located tap itself failed"
-    if not selected_ok:
+    # SLOT-SELECT-CALIBRATION-001: always position-based, never a
+    # _tap_template() image search. A real customer capture proved two
+    # structural problems with matching a "mission_slot_unselected"
+    # template here: (1) that crop bakes in the literal mission-title
+    # text, the exact anti-pattern GAME-CAL-001 fixed elsewhere; (2)
+    # even a perfect crop cannot tell slot 1 apart from slot 3 when both
+    # show identical unselected styling -- a single whole-frame search
+    # has no notion of "the Nth matching row". Position-based tapping is
+    # the actually-correct mechanism for "select the Nth row of a list",
+    # so this step no longer attempts template matching at all -- see
+    # docs/HANDOFF_CODE.md's TAP-FALLBACK-CRASH-001/
+    # SLOT-SELECT-CALIBRATION-001 sections.
+    select_result = runner.run(serial, build_tap_args(config.screen_size, config.slot_select_points[slot_index - 1]))
+    if not select_result.ok:
         return None, BountyCycleResult(
             BountyOutcome.CAPTURE_UNAVAILABLE, (),
-            f"Slot {slot_index}: select tap failed ({select_detail}).",
+            f"Slot {slot_index}: select tap failed (rc={select_result.returncode}).",
         )
 
     if should_stop():
@@ -444,13 +442,11 @@ def run_one_cycle(
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before completing.")
 
-    dynamic_complete_select = _tap_template(runner, serial, config, recognizer, "mission_slot_selected")
-    if dynamic_complete_select is None:
-        select_complete = runner.run(serial, build_tap_args(config.screen_size, config.select_complete_point))
-        complete_select_ok = select_complete.ok
-    else:
-        complete_select_ok = dynamic_complete_select
-    if not complete_select_ok:
+    # SLOT-SELECT-CALIBRATION-001: same reasoning as the slot-select step
+    # above -- always position-based, never a "mission_slot_selected"
+    # template search.
+    select_complete = runner.run(serial, build_tap_args(config.screen_size, config.select_complete_point))
+    if not select_complete.ok:
         return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), "Select-complete tap failed.")
 
     if should_stop():

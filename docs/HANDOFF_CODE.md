@@ -3097,3 +3097,133 @@ Run 3x in a row: `378 passed` every time, 0 failures. (Prior baseline
   mission detail view) and confirm the account panel now shows a plain
   "select tap failed (template-based tap: ...)" error message instead
   of an `UnboundLocalError` traceback.
+
+## SLOT-SELECT-CALIBRATION-001: slot selection is now always position-based
+
+**Trigger**: after `TAP-FALLBACK-CRASH-001` shipped (`v1.0.3-rc.4`), the
+user reported Start still didn't work on a real device -- no more
+crash, but a `capture_unavailable` error, even with LD1 sitting on the
+real 임무 목록 (mission list) screen. A new real 1280x720 capture was
+supplied to diagnose it further.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause (deeper than TAP-FALLBACK-CRASH-001)
+
+`TAP-FALLBACK-CRASH-001` fixed the crash itself, but the underlying
+call it wrapped -- `_tap_template(runner, serial, config, recognizer,
+"mission_slot_unselected")` -- was still structurally unable to
+succeed in production. Two independent problems, both found by
+measuring the real supplied capture
+(`tests/fixtures/game_cal_001/source_extra/mission_list_row1_completed.png`):
+
+1. **The configured crop bakes in the mission title text** ("자유
+   토벌작전") -- the exact anti-pattern `GAME-CAL-001` already
+   eliminated elsewhere in this project. A different mission title
+   would never match it at all.
+2. **Template matching cannot express "the Nth row".** `_tap_template`
+   searches the *entire frame* for the single highest-confidence match
+   and taps wherever that lands. With 4-5 visually identical
+   "자유 토벌작전" rows on screen, this mechanism has no way to
+   distinguish slot 1 from slot 3 -- it can only ever say "somewhere a
+   matching row exists," never "row `slot_index` specifically."
+   Worse: once `config.template_map` has *any* real entries (as
+   production always does), `_tap_template` treats an unconfigured or
+   non-matching label as a confident, hard `False` -- it never silently
+   falls back to a fixed point. So simply leaving
+   `mission_slot_unselected`/`mission_slot_selected` out of
+   `template_map` (which the prior packet already did) does **not**
+   restore the old fixed-point behavior; it still returns `False`, so
+   Start would remain non-functional (safely erroring, but never
+   actually selecting a slot) without a deeper fix.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py` -- slot selection
+(`_accept_or_refresh_slot`) and "select the completed mission"
+(`run_one_cycle`) no longer attempt template matching at all. Both now
+tap `config.slot_select_points[slot_index - 1]` /
+`config.select_complete_point` directly and unconditionally --
+position-based tapping is the mechanism actually suited to "pick the
+Nth row of a list," and template matching's earlier
+dynamic-with-fixed-fallback design is retained only where it's the
+right tool (refresh-open, refresh-confirm, accept, complete-button,
+claim, close -- each targets one specific, visually distinct button,
+not one of several identical-looking rows).
+
+`configs/bounty.example.yaml` -- `slot_select_points`/
+`select_complete_point` replaced with **real, measured** coordinates:
+row-band boundaries were found by scanning mean column brightness (not
+eyeballed) across the real capture's list column, giving row centers
+y = 0.3069 / 0.4194 / 0.5333 / 0.6458 / 0.7597 (x = 0.1172 throughout).
+The prior placeholder values (evenly spaced 0.20/0.35/0.50/0.65/0.80)
+were off by up to 0.11 -- comfortably enough to miss a ~0.097-tall row
+band entirely, which independently explains why slot selection could
+never have worked correctly even before any template was involved.
+`mission_slot_unselected`/`mission_slot_selected` remain deliberately
+unmapped, now with an explicit comment explaining why real crops should
+not be added for them without solving problem (2) above first.
+
+### Regression tests
+
+- `tests/test_bounty_mission.py`:
+  - `test_slot_select_is_always_position_based_never_template_matched`
+    -- a confidently-non-matching recognizer (which would have blocked
+    the old template-based select) no longer blocks slot selection at
+    all; the cycle proceeds past it to the next real check.
+  - `test_slot_select_tap_uses_the_exact_configured_slot_select_point`
+    -- asserts the recorded tap argv matches
+    `slot_select_points[0]` exactly.
+- `tests/test_bounty_config.py`:
+  - `test_example_bounty_config_slot_select_points_are_real_calibrated_values`
+    -- guards the shipped example config against silently drifting back
+    to the old placeholder values.
+  - `test_example_bounty_config_never_maps_the_unreliable_slot_templates`
+    -- guards against re-adding `mission_slot_unselected`/
+    `mission_slot_selected` to `template_map` (now dead weight; would
+    mislead a future calibration effort).
+- `tests/fixtures/game_cal_001/source_extra/mission_list_row1_completed.png`
+  (new) + `PROVENANCE.md` updated with the measured row-band evidence.
+
+### Test results
+
+```
+python -m pytest -q
+381 passed
+```
+
+Run 3x in a row: `381 passed` every time, 0 failures. (Prior baseline
+378 + 1 net new `test_bounty_mission.py` test (one replaced by two) + 2
+new `test_bounty_config.py` tests = 381.)
+
+### Commits
+
+- Implementation + tests + this handoff section, then a short
+  follow-up "docs: record SLOT-SELECT-CALIBRATION-001 commit hash in
+  handoff" commit recording the exact hash.
+
+### Limitations
+
+1. `select_complete_point` still always taps the row-1 position --
+   it does not yet track *which* of the 5 locked slots actually became
+   eligible/complete (same limitation the old placeholder implicitly
+   had; not newly introduced or newly fixed here).
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   the real capture was static (customer-supplied), and every test uses
+   `FakeAdbRunner`. Position-based tapping's real-world accuracy against
+   the customer's actual live client is `NEEDS_REAL_TEST`.
+3. The refresh-popup/reward/claim/result screens later in the same
+   five-slot flow remain uncalibrated placeholders -- this packet did
+   not touch them.
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `381 passed`).
+- On a real device: with LD1 on the real 임무 목록 screen, click Start
+  and confirm slot 1 is actually tapped (visually, or via the
+  diagnostic capture written after the tap) at the real row-1 position,
+  not somewhere else, and that the flow proceeds past slot selection
+  rather than immediately failing again.

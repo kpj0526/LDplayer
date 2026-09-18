@@ -68,3 +68,25 @@ claim in the table is independently re-verified by
 - No live device, no real ADB capture pipeline, and no real completion
   tap against an actual LDPlayer instance was exercised anywhere in
   this packet — only these 3 static real PNGs, offline.
+
+## source_extra/ (SLOT-SELECT-CALIBRATION-001)
+
+A 4th real capture, supplied later by the customer after a live crash
+report (`UnboundLocalError` on slot selection, see
+`docs/HANDOFF_CODE.md`'s `TAP-FALLBACK-CRASH-001` section):
+
+| File | Real screen | Notes |
+|---|---|---|
+| `mission_list_row1_completed.png` | Same 임무 modal, 임무 목록 (mission list) panel with 5 rows visible (row 1 selected/highlighted, showing its 완료 detail) | Used to measure real pixel row-band boundaries for `slot_select_points`/`select_complete_point` (see `configs/bounty.example.yaml`'s comments for the exact measured Y-boundaries and centers) |
+
+This capture also proved a structural problem with the (never actually
+enabled in the shipped example config) `mission_slot_unselected`/
+`mission_slot_selected` template idea from the original MVP-001-CV
+packet: its crop bakes in the literal mission-title text ("자유
+토벌작전"), and even a perfect crop cannot distinguish "row 1" from
+"row 3" when both show identical unselected styling — a single
+whole-frame template search has no notion of *which* matching row is
+the Nth one. `configs/bounty.example.yaml` deliberately leaves both
+labels unmapped so slot selection always uses the real,
+position-calibrated points instead — the correct tool for "tap the Nth
+row of a list."

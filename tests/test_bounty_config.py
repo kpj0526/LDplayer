@@ -48,6 +48,36 @@ def test_example_bounty_config_loads_successfully():
     assert config.max_refresh_attempts >= 1
 
 
+def test_example_bounty_config_slot_select_points_are_real_calibrated_values():
+    """SLOT-SELECT-CALIBRATION-001: guards against silently drifting back
+    to the old, never-validated placeholder points (evenly-spaced
+    0.20/0.35/0.50/0.65/0.80) that were off by up to 0.11 from the real,
+    measured row-band centers -- see configs/bounty.example.yaml's
+    comments and tests/fixtures/game_cal_001/PROVENANCE.md."""
+
+    config = load_bounty_config(EXAMPLE_BOUNTY_CONFIG)
+    expected_y = (0.3069, 0.4194, 0.5333, 0.6458, 0.7597)
+    assert len(config.slot_select_points) == 5
+    for point, y in zip(config.slot_select_points, expected_y):
+        assert point.x == pytest.approx(0.1172, abs=1e-4)
+        assert point.y == pytest.approx(y, abs=1e-4)
+    assert config.select_complete_point.x == pytest.approx(0.1172, abs=1e-4)
+    assert config.select_complete_point.y == pytest.approx(0.3069, abs=1e-4)
+
+
+def test_example_bounty_config_never_maps_the_unreliable_slot_templates():
+    """SLOT-SELECT-CALIBRATION-001: mission_slot_unselected/
+    mission_slot_selected must stay unmapped -- bounty_mission.py no
+    longer even attempts a template search for slot selection, but this
+    guards against a future edit re-adding a template_map entry that
+    would now simply go unused (and could mislead someone recalibrating
+    into thinking it's still consulted)."""
+
+    config = load_bounty_config(EXAMPLE_BOUNTY_CONFIG)
+    assert "mission_slot_unselected" not in config.template_map
+    assert "mission_slot_selected" not in config.template_map
+
+
 def test_refresh_popup_fields_are_not_a_cost_field_by_construction():
     # Structural anti-regression: the two popup verification fields must
     # be distinct from any notion of "cost" -- this asserts they exist
