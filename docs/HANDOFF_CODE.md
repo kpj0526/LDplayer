@@ -4910,7 +4910,7 @@ Run 3x in a row: `443 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- `PLACEHOLDER_COMMIT_HASH` -- `REFRESH-RESULT-DISMISS-002: pace the
+- `6ece9b0` -- `REFRESH-RESULT-DISMISS-002: pace the
   ack-popup check itself` (implementation + tests + this HANDOFF
   section, in one commit)
 - Followed by a short "docs: record REFRESH-RESULT-DISMISS-002 commit
