@@ -5001,7 +5001,7 @@ Run 3x in a row: `444 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- `PLACEHOLDER_COMMIT_HASH` -- `RETRY-PACING-002: pace the
+- `3d0ec90` -- `RETRY-PACING-002: pace the
   acceptability check right after select too` (implementation + tests
   + this HANDOFF section, in one commit)
 - Followed by a short "docs: record RETRY-PACING-002 commit hash in
