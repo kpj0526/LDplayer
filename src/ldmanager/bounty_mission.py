@@ -242,6 +242,16 @@ def _accept_or_refresh_slot(
             BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (after select)."
         )
 
+    # RETRY-PACING-002: same reasoning as REFRESH-RESULT-DISMISS-002 --
+    # selecting a slot opens its detail popup (ACCEPT-CONFIRM-001), and
+    # this acceptability check is a single read with no retry loop of
+    # its own. A zero-delay read right after the select tap can catch
+    # the screen mid-transition -- best case a false NON_TARGET_
+    # CONFIRMED (sends an already-good mission through a needless
+    # refresh), worst case RECOGNITION_FAILED, which is FATAL and
+    # stops the whole worker outright. One pause here is cheap
+    # insurance against a much more expensive failure mode.
+    sleep_fn(config.retry_delay_seconds)
     already_ok = _mission_is_acceptable(runner, serial, config, recognizer)
     if already_ok is MissionAssessment.CAPTURE_UNAVAILABLE:
         return None, BountyCycleResult(

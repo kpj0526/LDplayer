@@ -846,9 +846,12 @@ def test_retry_delay_seconds_actually_paces_the_popup_verify_loop():
     result = _run(runner, recognizer, cfg, sleep_fn=sleep_calls.append)
 
     assert result.outcome is BountyOutcome.REFRESH_POPUP_NOT_VERIFIED
-    # 3 attempts -> exactly 2 pacing sleeps between them, never a 3rd
-    # (no point pacing after the last attempt, about to give up anyway).
-    assert sleep_calls == [2.5, 2.5]
+    # 1 pre-check pace (RETRY-PACING-002, before the initial
+    # acceptability read right after selecting the slot) + 3 popup-
+    # verify attempts -> exactly 2 pacing sleeps between them, never a
+    # 3rd (no point pacing after the last attempt, about to give up
+    # anyway) = 3 total.
+    assert sleep_calls == [2.5, 2.5, 2.5]
 
 
 def test_retry_delay_seconds_zero_is_a_real_but_instant_pace():
@@ -863,7 +866,31 @@ def test_retry_delay_seconds_zero_is_a_real_but_instant_pace():
 
     _run(runner, recognizer, cfg, sleep_fn=sleep_calls.append)
 
-    assert sleep_calls == [0.0]
+    assert sleep_calls == [0.0, 0.0]
+
+
+def test_retry_pacing_002_paces_the_acceptability_check_right_after_select():
+    """RETRY-PACING-002: real customer skepticism, well-founded -- a
+    delay already existed elsewhere in this flow (the popup-verify
+    loop, RETRY-PACING-001) and the refresh flow still failed, so a
+    fresh audit was done rather than assuming the same fix would work
+    twice. Found a real, separate gap: selecting a slot opens its
+    detail popup (ACCEPT-CONFIRM-001), but the acceptability check
+    right after had zero delay of its own -- unlike the popup-verify
+    loop, this check has no retry loop to self-heal through, so a
+    mid-transition misread here isn't just slower, it's a real
+    RECOGNITION_FAILED risk (which halts the whole worker). Direct
+    proof sleep_fn is invoked with retry_delay_seconds immediately
+    after the select tap, before the very first acceptability read."""
+
+    sleep_calls: list[float] = []
+    runner = _runner_with_valid_captures()
+    recognizer = LabelMappingRecognizer(matching_labels=_ALL_LABELS)  # accepted immediately, no refresh
+    cfg = _config(retry_delay_seconds=4.0)
+
+    _run(runner, recognizer, cfg, sleep_fn=sleep_calls.append)
+
+    assert 4.0 in sleep_calls
 
 
 # --- EARLY-COMPLETE-JUMP-001: stop touring once a slot is found complete

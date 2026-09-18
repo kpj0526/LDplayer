@@ -4933,3 +4933,98 @@ Run 3x in a row: `443 passed` every time, 0 failures. (Prior baseline
 - Re-run `pytest -q` (expect `443 passed`).
 - On a real device: confirm the acknowledgment popup (when it appears)
   now actually gets dismissed instead of appearing stuck/unresponsive.
+
+## RETRY-PACING-002: pace the acceptability check right after select too
+
+**Trigger**: user pushback after `REFRESH-RESULT-DISMISS-002` shipped
+-- "저번에도 대기가 있었는데 안됬잖아 다른문제아냐?" (there was
+already a delay before too, and it didn't work -- isn't this a
+different problem?). Fair, well-founded skepticism: a delay already
+existed elsewhere in this exact flow (the popup-verify loop,
+`RETRY-PACING-001`) and refresh still failed, so a full audit of every
+tap-then-check transition in the module was done rather than assuming
+the same class of fix would land correctly a third time by guesswork.
+
+### Status: implemented, tested, regression-verified.
+
+### Audit
+
+Every `runner.run(...)` tap call site in `bounty_mission.py` was
+checked for what immediately follows it. Most feed into a bounded,
+multi-attempt verify loop (popup-verify, complete-retry, reward/
+result/mission-list-verify, kill-progress poll) -- these already pace
+BETWEEN attempts (`RETRY-PACING-001`), so even though the very FIRST
+attempt in each loop still has no pre-delay, a mid-transition miss on
+attempt 1 self-heals via the later, properly-paced attempts. One real
+gap stood out: `_accept_or_refresh_slot`'s initial select tap is
+followed by `_mission_is_acceptable` -- a single read with NO retry
+loop of its own. Selecting a slot opens its detail popup
+(`ACCEPT-CONFIRM-001`), so a zero-delay read here can catch the screen
+mid-transition -- best case a false `NON_TARGET_CONFIRMED` (sends an
+already-good mission through a needless refresh), worst case
+`RECOGNITION_FAILED`, which is a FATAL outcome that halts the whole
+worker outright. This is a materially worse failure mode than the
+other, self-healing gaps -- worth fixing even though the same delay
+value is already paid elsewhere in the loops that follow it.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py`: a single `sleep_fn(config.
+retry_delay_seconds)` now runs immediately after the initial slot
+select tap, before the first `_mission_is_acceptable` read. The
+kill-progress poll loop's per-slot select+check (structurally similar
+but checking a stable, already-rendered detail view rather than a
+freshly-opened popup, and already covered by the outer poll loop's
+between-pass pacing) was deliberately left as-is, to avoid adding
+several more seconds per cycle for a comparatively low-risk spot.
+
+### Regression tests
+
+- `tests/test_bounty_mission.py` --
+  `test_retry_pacing_002_paces_the_acceptability_check_right_after_select`:
+  direct proof `sleep_fn` is invoked with `retry_delay_seconds`
+  immediately after the select tap, before the first acceptability
+  read. Updated `test_retry_delay_seconds_actually_paces_the_popup_
+  verify_loop` and `test_retry_delay_seconds_zero_is_a_real_but_
+  instant_pace`'s expected `sleep_calls` sequences to include this new
+  pre-check pace.
+
+### Test results
+
+```
+python -m pytest -q
+444 passed
+```
+
+Run 3x in a row: `444 passed` every time, 0 failures. (Prior baseline
+443 + 1 new test = 444.)
+
+### Commits
+
+- `PLACEHOLDER_COMMIT_HASH` -- `RETRY-PACING-002: pace the
+  acceptability check right after select too` (implementation + tests
+  + this HANDOFF section, in one commit)
+- Followed by a short "docs: record RETRY-PACING-002 commit hash in
+  handoff" commit recording the real hash.
+
+### Limitations
+
+1. Adds one more `retry_delay_seconds` (1.5s in the shipped example)
+   to every slot select, across every slot, every cycle -- a
+   deliberate, bounded trade-off for a fatal-failure-mode risk.
+2. The kill-progress poll loop's per-slot select+check was NOT paced
+   individually (see Audit above) -- if this turns out to also need
+   it, that's a candidate for a future packet, backed by real evidence
+   rather than assumption.
+3. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the existing fake-runner/recognizer test harness.
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `444 passed`).
+- On a real device: watch specifically for any `recognition_failed`
+  (a fatal, worker-stopping outcome) occurring right after a slot
+  select -- this packet targets exactly that failure mode.
