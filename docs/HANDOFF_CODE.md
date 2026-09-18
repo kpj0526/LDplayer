@@ -4121,7 +4121,7 @@ bounty_mission tests = 419.)
 
 ### Commits
 
-- `PLACEHOLDER_COMMIT_HASH` -- `ACCEPT-CONFIRM-001: tap the
+- `25b6760` -- `ACCEPT-CONFIRM-001: tap the
   accept-mission confirm button on the fast path too` (implementation +
   tests + this HANDOFF section, in one commit)
 - Followed by a short "docs: record ACCEPT-CONFIRM-001 commit hash in
