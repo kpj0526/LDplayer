@@ -4000,7 +4000,7 @@ real-asset tests and 2 new config-guard tests.)
 
 ### Commits
 
-- `PLACEHOLDER_COMMIT_HASH` -- `REFRESH-CALIBRATION-001: real
+- `dae5fea` -- `REFRESH-CALIBRATION-001: real
   calibration for the refresh/reroll flow` (implementation + tests +
   this HANDOFF section, in one commit)
 - Followed by a short "docs: record REFRESH-CALIBRATION-001 commit
