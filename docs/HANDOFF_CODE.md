@@ -3198,9 +3198,11 @@ new `test_bounty_config.py` tests = 381.)
 
 ### Commits
 
-- Implementation + tests + this handoff section, then a short
-  follow-up "docs: record SLOT-SELECT-CALIBRATION-001 commit hash in
-  handoff" commit recording the exact hash.
+- `d30534e` — `SLOT-SELECT-CALIBRATION-001: slot selection is now
+  always position-based` (implementation + tests + this HANDOFF
+  section, in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `d30534e`.
 
 ### Limitations
 
