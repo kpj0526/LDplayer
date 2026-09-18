@@ -99,31 +99,61 @@ row of a list."
 | `reward_odds_label.png` | `reward_screen.png` | x:595-685, y:198-235 | `reward_screen_label` ("확률") — confirmed (real `OpenCVTemplateRecognizer`, `tests/test_reward_screen_real_assets.py`) to match only `reward_screen.png`, never any of the other 4 real captures |
 | `reward_claim_button.png` | `reward_screen.png` | x:551-732, y:487-536 | `button_claim_reward` — the real "보상 받기" button, replacing an old, never-validated placeholder of the same config key; same real cross-check as above |
 
-### 2 more real captures (safety verification, no new derived crops)
+### Safety verification for `COMPLETE-DETAIL-001` (correction below)
 
-Supplied by the customer while diagnosing a live "Complete tap failed"
-result, to check whether the existing `button_complete.png` template
-(an older, pre-`GAME-CAL-001` asset, never previously cross-checked
-against these specific screens) was producing a false positive on a
-genuinely-incomplete mission:
+Two captures were supplied by the customer while diagnosing a live
+"Complete tap failed" result, to check whether the existing
+`button_complete.png` template (an older, pre-`GAME-CAL-001` asset,
+never previously cross-checked against these specific screens) was
+producing a false positive on a genuinely-incomplete mission. **Both
+files were saved under names that turned out to be inaccurate**: two
+copies of the SAME "닫기" (Close) result popup (야왕궁 토벌작전) were
+saved as `in_progress_51_of_200.png` and `close_result_screen.png` --
+neither actually contained the "모든 몬스터 처치 (51/200)" screen shown
+alongside it at the time (that specific frame was never saved to
+disk). Both mislabeled/duplicate files have since been removed; the
+real "닫기" screen they actually contained is now correctly saved as
+`result_close_screen.png` (below), and this doesn't change the earlier
+safety conclusion, since `button_complete.png` was tested against the
+real Close-popup content either way:
 
-| File | Real screen | `button_complete.png` match? |
-|---|---|---|
-| `in_progress_51_of_200.png` | 모든 몬스터 처치 (51/200), currency action cost 4400 — a target-200 mission, distinct from the target-165/180/450 examples already on file | confidence 0.774, below the 0.8 threshold — correctly NOT matched |
-| `close_result_screen.png` | A different mission's (야왕궁 토벌작전) reward-preview/result popup, single reward icon, "닫기" (Close) button | confidence 0.774, below the 0.8 threshold — correctly NOT matched |
+`button_complete.png` confidence against the real Close-popup content:
+0.774, safely below the 0.8 threshold -- correctly NOT matched. Across
+all real captures now on file, `button_complete.png` matches only
+screens with a genuinely visible "완료" button. The real cause of
+"Complete tap failed" was traced to the (separately fixed)
+`select_complete_point` "always row 1" limitation --
+`COMPLETE-SLOT-TRACKING-001` in `docs/HANDOFF_CODE.md`.
 
-Conclusion: `button_complete.png` was **not** the cause of the
-"Complete tap failed" result. Direct measurement across all 7 real
-captures now on file shows it correctly matches only screens with a
-genuinely visible "완료" button (`completed_target.png`,
-`mission_list_row1_completed.png`, and `reward_screen.png` — the last
-because a real "완료" button from the *underlying* screen is still
-partially visible around the reward popup) and correctly stays below
-threshold on every genuinely-incomplete screen, including these two
-new ones. The real cause was traced to the already-documented
-`select_complete_point` "always row 1" limitation (see
-`REWARD-SCREEN-CALIBRATION-001` above and the `COMPLETE-DETAIL-001`
-section of `docs/HANDOFF_CODE.md`): eligibility can be confirmed
-correctly while row 1 specifically isn't the mission that became
-eligible, in which case the complete-tap step correctly refuses to tap
-(no confident match) rather than tapping the wrong thing.
+### `result_close_screen.png` (RESULT-CLOSE-CALIBRATION-001)
+
+The real post-claim "결과"/close screen -- reached for real after a
+real claim tap, and where a live run repeatedly stalled (`docs/HANDOFF_CODE.md`'s
+`RESULT-CLOSE-CALIBRATION-001` section). Same visual family as
+`reward_screen.png` (same emblem/title/"확률" layout) but with only
+ONE reward icon and a "닫기" (Close) button instead of "보상 받기".
+
+Investigated whether the "보상 받기"/"닫기" buttons could be reliably
+told apart by template matching (to give `result_screen`/
+`button_close_reward` their own dedicated real anchor, the same way
+`reward_claim_button.png` was calibrated) -- even a tight, text-only
+crop of each (no ornate border) scored too close to safely separate
+(a "닫기" crop scored 0.80 against the real `reward_screen.png`, right
+at the 0.8 threshold). **Conclusion: these two buttons cannot be
+reliably told apart by template matching alone** (same gold-button
+frame, only ~2 characters of text differ). No derived template crop
+was kept for this reason.
+
+Instead: `result_screen_label` reuses `reward_odds_label` ("확률" --
+confirmed present on both the reward AND result popups at ~0.81-1.0
+confidence, never on a plain detail/list screen at ~0.26-0.30) as
+the completion check, and `mission_list_label` was recalibrated to
+reuse `mission_objective_label` ("임무 목표" -- confirmed present on
+every plain detail/list real capture at ~0.998-1.0, and confirmed to
+NOT match either popup at ~0.07, a far larger and safer margin than
+the old placeholder "현상금 목록" ever had). `close_result_point` was
+measured directly from `result_close_screen.png` (same real,
+measured position as `claim_point` -- same button frame, different
+game state) and is now used unconditionally (no dynamic template
+search at all for this one step -- see
+`bounty_mission.py`'s `RESULT-CLOSE-CALIBRATION-001` comment).

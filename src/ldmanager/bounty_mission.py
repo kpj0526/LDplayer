@@ -592,16 +592,24 @@ def run_one_cycle(
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before closing result.")
 
-    dynamic_close = _tap_template(runner, serial, config, recognizer, "button_close_reward")
-    if dynamic_close is None:
-        close = runner.run(serial, build_tap_args(config.screen_size, config.close_result_point))
-        close_ok = close.ok
-        close_detail = f"rc={close.returncode}, stderr={_short(close.stderr)}"
-    else:
-        close_ok = dynamic_close
-        close_detail = "no confident button_close_reward match on the current screen"
-    if not close_ok:
-        return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), f"Close-result tap failed ({close_detail}).")
+    # RESULT-CLOSE-CALIBRATION-001: always position-based, never a
+    # "button_close_reward" template search. Real measurement (see
+    # docs/HANDOFF_CODE.md) showed the "보상 받기"/"닫기" buttons --
+    # same position, same ornate gold-button frame, only ~2 characters
+    # of text differ -- cannot be reliably told apart by template
+    # matching alone (a tight text-only crop still scored close enough
+    # to risk a false positive against the OTHER button). The real,
+    # measured fixed point is exactly as safe here as
+    # slot_select_points/select_complete_point are for slot selection
+    # (SLOT-SELECT-CALIBRATION-001): the preceding result_screen_label
+    # check already confirmed we're on a real post-complete popup
+    # before this fixed-point tap ever fires.
+    close = runner.run(serial, build_tap_args(config.screen_size, config.close_result_point))
+    if not close.ok:
+        return BountyCycleResult(
+            BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes),
+            f"Close-result tap failed (rc={close.returncode}, stderr={_short(close.stderr)}).",
+        )
 
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before mission-list verification.")

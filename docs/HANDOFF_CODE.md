@@ -3680,3 +3680,118 @@ Run 3x in a row: `393 passed` every time, 0 failures. (Prior baseline
   correct mission instead of safely stalling at "Complete tap failed."
 - With 2+ real LD instances mapped, confirm no cross-account
   interference during a live run.
+
+## RESULT-CLOSE-CALIBRATION-001: real calibration for the result/close screen
+
+**Trigger**: after `COMPLETE-SLOT-TRACKING-001` shipped, the user's
+live run progressed further and then stalled repeatedly on the same
+post-claim "결과"/"닫기" (Close) popup screen — `result_screen_roi`/
+`label`/`close_result_point`/`button_close_reward` had never been
+calibrated against any real capture. The user supplied a fresh real
+1280x720 Test-capture of the exact stuck screen.
+
+### Status: implemented, tested, regression-verified. Includes a
+correction to an earlier documentation mistake (see below).
+
+### Correction to `COMPLETE-DETAIL-001`'s fixtures
+
+While saving real captures for that earlier packet's false-positive
+safety check, two files were mistakenly saved under inaccurate names:
+`in_progress_51_of_200.png` and `close_result_screen.png` both actually
+contained the **same** "닫기" result popup — neither was the real
+"모든 몬스터 처치 (51/200)" screen shown alongside them at the time (that
+frame was never saved). Both files have been removed; the safety
+conclusion they were used for (`button_complete.png` does not false-
+positive on the real Close popup, confidence 0.774 < 0.8) remains
+correct and unaffected, since the popup content they actually did
+contain was still tested. See `tests/fixtures/game_cal_001/
+PROVENANCE.md` for the full correction.
+
+### Root cause
+
+Investigated whether the "보상 받기" (claim) and "닫기" (close) buttons
+could be reliably distinguished by template matching, the same way
+`reward_claim_button.png` was calibrated in `REWARD-SCREEN-
+CALIBRATION-001`. Even a tight, text-only crop of each (excluding the
+shared ornate border) scored too close for safety — a "닫기" crop
+scored 0.80 against the real `reward_screen.png`, right at the 0.8
+threshold. **These two buttons cannot be reliably told apart by
+template matching alone** (identical gold-button frame, only ~2
+characters of text differ).
+
+### Fix
+
+Rather than fight an unreliable text-match, two ALREADY-calibrated,
+high-margin real anchors are reused instead:
+- `result_screen_label` now reuses `reward_odds_label` ("확률") —
+  confirmed present on both the reward and result popups
+  (~0.81-1.0 confidence) and confirmed absent from every plain
+  detail/list real capture (~0.26-0.30).
+- `mission_list_label` now reuses `mission_objective_label` ("임무
+  목표") — confirmed present on every plain detail/list real capture
+  (~0.998-1.0) and confirmed absent from both popups (~0.07) — a far
+  more precise "we actually left the popup" signal than the old,
+  never-calibrated placeholder ("현상금 목록") ever had.
+- `close_result_point` was measured directly from the real capture
+  (same position as `claim_point` — same button frame, different game
+  state).
+
+`src/ldmanager/bounty_mission.py` — the close step no longer attempts
+any `button_close_reward` template search at all (mirroring
+`SLOT-SELECT-CALIBRATION-001`'s reasoning): it always taps
+`close_result_point` directly, safe because the preceding
+`result_screen_label` check already confirmed a real post-complete
+popup is showing. `configs/bounty.example.yaml` no longer maps
+`button_close_reward` at all (documented why).
+
+### Regression tests
+
+- `tests/test_result_close_real_assets.py` (new, 6 tests) — real
+  capture is a genuine 1280x720 PNG; `result_screen_label` matches only
+  the real result/close screen and never any plain detail/list real
+  capture; `mission_list_label` matches every plain detail/list real
+  capture and never the popup; `button_close_reward` confirmed absent
+  from the shipped config.
+- `tests/test_bounty_mission.py` —
+  `test_close_result_tap_uses_the_exact_configured_close_point_never_a_template`:
+  confirms the close tap argv matches `close_result_point` exactly.
+
+### Test results
+
+```
+python -m pytest -q
+400 passed
+```
+
+Run 3x in a row: `400 passed` every time, 0 failures. (Prior baseline
+393 + 6 + 1 = 400.)
+
+### Commits
+
+- Implementation + tests + this handoff section, then a short
+  follow-up "docs: record RESULT-CLOSE-CALIBRATION-001 commit hash in
+  handoff" commit recording the exact hash.
+
+### Limitations
+
+1. This completes real calibration for every step of the five-slot
+   flow's happy path that a real live run has reached so far (select,
+   accept, complete, reward, claim, result, close). The
+   mission-list-return step immediately after close has not itself
+   been separately exercised live yet (it reuses the already-verified
+   `mission_objective_label` anchor, but the exact next real screen
+   after "닫기" has not been directly observed).
+2. No live ADB/LDPlayer/game session was used to verify this fix —
+   verified against the one real supplied capture, offline.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `400 passed`) and
+  `tests/test_result_close_real_assets.py` specifically.
+- On a real device: confirm a live run now proceeds past the result/
+  close step (tapping the real "닫기" button at the measured position)
+  and reaches mission-list verification -- the likely next real
+  blocker, if any.

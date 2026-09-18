@@ -616,3 +616,25 @@ def test_kill_progress_polling_never_crosses_accounts_with_multiple_ld_instances
     b_complete_index = runner_b.calls.index((serial_b, complete_button_args))
     assert runner_a.calls[a_complete_index - 1] == (serial_a, slot_2_args)
     assert runner_b.calls[b_complete_index - 1] == (serial_b, slot_4_args)
+
+
+# --- RESULT-CLOSE-CALIBRATION-001: close is always position-based ---------
+
+
+def test_close_result_tap_uses_the_exact_configured_close_point_never_a_template():
+    """The close step no longer attempts any "button_close_reward"
+    template search at all (production deliberately never configures
+    that key either -- the two lookalike buttons "보상 받기"/"닫기"
+    cannot be told apart reliably by template matching alone, see
+    RESULT-CLOSE-CALIBRATION-001) -- it always taps close_result_point
+    directly."""
+
+    runner = _runner_with_valid_captures()
+    recognizer = LabelMappingRecognizer(matching_labels=_ALL_LABELS)
+    cfg = _config()
+
+    result = _run(runner, recognizer, cfg)
+
+    assert result.outcome is BountyOutcome.COMPLETED_CYCLE
+    expected_args = tuple(build_tap_args(cfg.screen_size, cfg.close_result_point))
+    assert (_SERIAL, expected_args) in runner.calls
