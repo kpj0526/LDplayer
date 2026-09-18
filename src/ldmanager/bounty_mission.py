@@ -451,7 +451,16 @@ def run_one_cycle(
                     complete_badge = _recognize(runner, serial, config, recognizer, config.complete_state_roi, config.complete_state_label)
                 already_complete = complete_badge is not None and complete_badge.matched
             if already_complete:
+                # EARLY-COMPLETE-JUMP-001: stop accepting/refreshing the
+                # remaining slots this pass and go straight to claiming
+                # this one -- real customer question: after finding a
+                # complete slot partway down the list, why keep touring
+                # the rest before acting on it? Any slot not yet visited
+                # this round keeps its existing runtime state (locked
+                # slots stay locked; anything else is picked up again on
+                # the next cycle) -- nothing is lost, just deferred.
                 eligible_slot_index = slot_index
+                break
 
     if runtime is not None:
         runtime.phase = "WAITING_KILL_PROGRESS"
@@ -533,37 +542,44 @@ def run_one_cycle(
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before completing.")
 
-    # COMPLETE-SLOT-TRACKING-001: re-select the EXACT slot just verified
-    # eligible above (never a fixed "always row 1" point) -- the
-    # kill-progress loop already left that slot's detail open, but a
-    # fresh, explicit re-select here keeps this step correct even if a
-    # future change interleaves other actions between the two.
-    select_complete = runner.run(serial, build_tap_args(config.screen_size, config.slot_select_points[eligible_slot_index - 1]))
-    if not select_complete.ok:
-        return BountyCycleResult(
-            BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes),
-            f"Select-complete tap failed (rc={select_complete.returncode}, stderr={_short(select_complete.stderr)}).",
-        )
+    # COMPLETE-RETRY-001: real customer question -- if the complete tap
+    # doesn't confidently land (typically because select_complete_point
+    # is momentarily not showing the eligible mission's detail view),
+    # why give up on the first miss instead of just re-selecting and
+    # trying again? Bounded retry, re-selecting the EXACT slot just
+    # verified eligible above each attempt (never a fixed "always row
+    # 1" point -- COMPLETE-SLOT-TRACKING-001).
+    complete_ok = False
+    complete_detail = ""
+    for _complete_attempt in range(1, config.max_complete_verify_attempts + 1):
+        if should_stop():
+            return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before complete button.")
 
-    if should_stop():
-        return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before complete button.")
+        select_complete = runner.run(serial, build_tap_args(config.screen_size, config.slot_select_points[eligible_slot_index - 1]))
+        if not select_complete.ok:
+            complete_detail = f"select-complete tap failed (rc={select_complete.returncode}, stderr={_short(select_complete.stderr)})"
+            continue
 
-    dynamic_complete = _tap_template(runner, serial, config, recognizer, "button_complete")
-    if dynamic_complete is None:
-        complete_tap = runner.run(serial, build_tap_args(config.screen_size, config.complete_button_point))
-        complete_ok = complete_tap.ok
-        complete_detail = f"rc={complete_tap.returncode}, stderr={_short(complete_tap.stderr)}"
-    else:
-        complete_ok = dynamic_complete
-        # STDERR-DETAIL-001-adjacent: no confident "button_complete" match
-        # on THIS fresh capture -- this is the expected, safe outcome if
-        # the screen currently showing isn't the one that was actually
-        # eligible (see select_complete_point's known "always row 1"
-        # limitation, docs/HANDOFF_CODE.md) -- never an ADB failure.
-        complete_detail = "no confident button_complete match on the current screen (select_complete_point may not be showing the eligible mission)"
+        if should_stop():
+            return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before complete button.")
+
+        dynamic_complete = _tap_template(runner, serial, config, recognizer, "button_complete")
+        if dynamic_complete is None:
+            complete_tap = runner.run(serial, build_tap_args(config.screen_size, config.complete_button_point))
+            complete_ok = complete_tap.ok
+            complete_detail = f"rc={complete_tap.returncode}, stderr={_short(complete_tap.stderr)}"
+        else:
+            complete_ok = dynamic_complete
+            # STDERR-DETAIL-001-adjacent: no confident "button_complete"
+            # match on THIS fresh capture -- never an ADB failure.
+            complete_detail = "no confident button_complete match on the current screen (select_complete_point may not be showing the eligible mission)"
+        if complete_ok:
+            break
+
     if not complete_ok:
         return BountyCycleResult(
-            BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), f"Complete tap failed ({complete_detail}).",
+            BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes),
+            f"Complete tap failed after {config.max_complete_verify_attempts} attempt(s) ({complete_detail}).",
         )
 
     if should_stop():

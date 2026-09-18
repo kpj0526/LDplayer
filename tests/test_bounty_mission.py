@@ -104,19 +104,20 @@ def test_full_cycle_reaches_completed_state_once():
     result = _run(runner, recognizer, _config())
 
     assert result.outcome is BountyOutcome.COMPLETED_CYCLE
-    # 10 slot outcomes: 5 initial accepts + 5 re-accepts after claim.
-    assert len(result.slots) == 10
+    # 6 slot outcomes: 1 initial accept (EARLY-COMPLETE-JUMP-001: every
+    # label matches here, so slot 1 is found complete on its own accept
+    # check and the loop jumps straight to claiming it -- slots 2-5
+    # are never visited this pass) + 5 re-accepts after claim.
+    assert len(result.slots) == 6
     assert all(s.accepted for s in result.slots)
-    # No slot needed a refresh (already acceptable): 5 initial accept
-    # selects + 5 accept-confirm taps (ACCEPT-CONFIRM-001: every
-    # already-acceptable slot now also taps accept_mission_point) +
-    # (EARLY-COMPLETE-CHECK-001: slot 1's completion is detected on that
-    # SAME accept-loop pass, reusing the view already open -- no extra
-    # kill-progress-phase select tap needed at all) select-complete +
+    # 1 initial accept select + 1 accept-confirm tap (ACCEPT-CONFIRM-001)
+    # + (EARLY-COMPLETE-CHECK-001/EARLY-COMPLETE-JUMP-001: slot 1's
+    # completion is detected and acted on immediately, no kill-progress-
+    # phase taps and no slots 2-5 accept taps at all) select-complete +
     # complete + claim + close (4) + 5 re-accept selects + 5 more
     # accept-confirm taps (legacy stateless path, since no runtime is
-    # passed here) = 24.
-    assert len(runner.calls) == (5 + 5) + 4 + (5 + 5)
+    # passed here) = 16.
+    assert len(runner.calls) == (1 + 1) + 4 + (5 + 5)
 
 
 # --- phrase-only / quantity-only must reject (never one signal alone) ----
@@ -695,6 +696,98 @@ def test_completion_targets_the_slot_that_actually_became_eligible_not_row_1():
     assert runner.calls[complete_index - 1] == (_SERIAL, slot_3_args)
     # Never blindly re-selects row 1 right before completing.
     assert runner.calls[complete_index - 1] != (_SERIAL, slot_1_args)
+
+
+# --- EARLY-COMPLETE-JUMP-001: stop touring once a slot is found complete
+
+
+def test_early_complete_jump_stops_accepting_remaining_slots_once_one_is_eligible():
+    """Real customer question: after finding a complete slot partway
+    down the list, why keep touring/accepting the rest before acting
+    on it? With slot 3 the eligible one, slots 4 and 5 must never be
+    visited at all during this pass -- the accept loop jumps straight
+    to completing slot 3 instead of finishing the walk first."""
+
+    cfg = _config()
+    state: dict = {"current_slot": None}
+    runner = _SlotAwareRunner(_runner_with_valid_captures(), state, cfg.slot_select_points, cfg.screen_size)
+    recognizer = _SlotAwareRecognizer(
+        state, eligible_slot=3,
+        always_matching={_PHRASE, _QTY, _REWARD, _RESULT, _MISSION_LIST},
+    )
+
+    result = _run(runner, recognizer, cfg)
+
+    assert result.outcome is BountyOutcome.COMPLETED_CYCLE
+    slot_4_args = (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.slot_select_points[3])))
+    slot_5_args = (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.slot_select_points[4])))
+    complete_button_args = (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.complete_button_point)))
+    complete_index = runner.calls.index(complete_button_args)
+    calls_before_complete = runner.calls[: complete_index + 1]
+    assert slot_4_args not in calls_before_complete
+    assert slot_5_args not in calls_before_complete
+
+
+# --- COMPLETE-RETRY-001: re-select and retry a missed complete tap --------
+
+
+def test_complete_tap_retries_by_reselecting_instead_of_failing_on_first_miss():
+    """Real customer question: if the complete tap doesn't confidently
+    land, isn't the obvious fix to re-select and try again, instead of
+    giving up immediately? First attempt's button_complete check
+    misses (NO_MATCH), second attempt matches -- must still reach
+    COMPLETED_CYCLE, having re-tapped the eligible slot's select point
+    once per attempt."""
+
+    class _CompleteRetryRecognizer:
+        def __init__(self):
+            self._complete_checks = 0
+            self.calls: list = []
+
+        def recognize(self, image_bytes, roi, expected_label, threshold):
+            self.calls.append(expected_label)
+            if expected_label == "button_complete":
+                self._complete_checks += 1
+                if self._complete_checks >= 2:
+                    return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test", (0.5, 0.5))
+                return RecognitionResult(RecognitionStatus.NO_MATCH, None, 0.05, "test")
+            return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test", (0.5, 0.5))
+
+    runner = _runner_with_valid_captures()
+    recognizer = _CompleteRetryRecognizer()
+    cfg = _config(template_map={"button_complete": "button_complete.png", "button_claim_reward": "reward_claim_button.png"})
+
+    result = _run(runner, recognizer, cfg)
+
+    assert result.outcome is BountyOutcome.COMPLETED_CYCLE
+    # 1 initial-accept select + 2 select-complete taps (one per attempt,
+    # the first of which missed and was retried) + 1 more for the
+    # legacy stateless re-accept pass after claim (no runtime passed
+    # here) = 4.
+    slot_1_args = (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.slot_select_points[0])))
+    assert len([call for call in runner.calls if call == slot_1_args]) == 4
+    assert recognizer.calls.count("button_complete") == 2
+
+
+def test_complete_tap_failure_detail_reports_the_attempt_count():
+    """A complete tap that never confidently lands within
+    max_complete_verify_attempts must report that bound in the detail,
+    not just a bare failure."""
+
+    class _NeverCompleteRecognizer:
+        def recognize(self, image_bytes, roi, expected_label, threshold):
+            if expected_label == "button_complete":
+                return RecognitionResult(RecognitionStatus.NO_MATCH, None, 0.05, "test")
+            return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test", (0.5, 0.5))
+
+    runner = _runner_with_valid_captures()
+    recognizer = _NeverCompleteRecognizer()
+    cfg = _config(template_map={"button_complete": "button_complete.png"}, max_complete_verify_attempts=2)
+
+    result = _run(runner, recognizer, cfg)
+
+    assert result.outcome is BountyOutcome.CAPTURE_UNAVAILABLE
+    assert "Complete tap failed after 2 attempt(s)" in result.detail
 
 
 # --- EARLY-COMPLETE-CHECK-001: don't re-walk slots already known complete

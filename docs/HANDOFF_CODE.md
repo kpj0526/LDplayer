@@ -4150,3 +4150,104 @@ bounty_mission tests = 419.)
   target mission is already showing on the first check (no refresh
   needed) instead of stalling on the open "확인" popup -- the likely
   next real blocker, if any, is whatever real screen follows this tap.
+
+## EARLY-COMPLETE-JUMP-001 / COMPLETE-RETRY-001: act on a complete slot immediately, and retry a missed complete tap
+
+**Trigger**: user question after `ACCEPT-CONFIRM-001` shipped: (1) "왜
+자꾸 순회공연해 한번완료누르고 내려가서 완료있으면 바로 작업하고
+없으면 돌리고해야지" -- after finding a complete slot partway down
+the list, why does the flow keep touring/accepting the remaining slots
+before acting on it? (2) "완료되고 확인눌렀을때 잘 안되잖아? 그럼
+한번더 리셋하는게 당연한 상식아니야?" -- when the complete tap doesn't
+land, isn't re-selecting and retrying the obvious fix instead of
+failing outright?
+
+### Status: implemented, tested, regression-verified.
+
+### Fix 1: EARLY-COMPLETE-JUMP-001
+
+`run_one_cycle`'s main accept loop already checked each freshly-
+accepted slot for completion inline (`EARLY-COMPLETE-CHECK-001`), but
+still kept iterating and accepting/refreshing every remaining slot
+before moving on to the complete/claim/close section. Now, the moment
+a slot is found complete during this loop, it `break`s immediately --
+any slots not yet visited this pass simply keep their existing runtime
+state (already-locked slots stay locked; anything else is picked up
+again on the next cycle) rather than being pointlessly
+accepted/refreshed first. `src/ldmanager/bounty_mission.py`'s accept
+loop.
+
+### Fix 2: COMPLETE-RETRY-001
+
+The complete tap (select the eligible slot's detail, then tap
+"완료") previously failed the whole cycle outright
+(`CAPTURE_UNAVAILABLE`) on the very first miss -- including the common,
+recoverable case where `select_complete_point`'s fresh capture simply
+didn't happen to show the eligible mission's detail view yet. Now
+bounded-retried (new `max_complete_verify_attempts` config field,
+default 3): each attempt re-selects the eligible slot and retries the
+complete tap; only exhausting all attempts fails the cycle, and the
+detail now reports the attempt count.
+
+### Regression tests
+
+- `tests/test_bounty_mission.py` --
+  `test_early_complete_jump_stops_accepting_remaining_slots_once_one_is_eligible`
+  (slot 3 eligible; slots 4/5's select points proven never tapped
+  before the complete tap), `test_complete_tap_retries_by_reselecting_
+  instead_of_failing_on_first_miss` (first `button_complete` check
+  misses, second matches; still reaches `COMPLETED_CYCLE`, having
+  re-tapped the eligible slot's select point once per attempt),
+  `test_complete_tap_failure_detail_reports_the_attempt_count`.
+- Updated `test_full_cycle_reaches_completed_state_once`'s slot-count
+  and tap-count assertions: since its recognizer matches every label
+  unconditionally, slot 1 is now found complete on its own first check
+  and the cycle jumps straight to claiming it (6 slot outcomes / 16
+  taps, down from 10 / 24 -- slots 2-5 are genuinely never visited this
+  pass, which is the fix working as intended, not a regression).
+
+### Test results
+
+```
+python -m pytest -q
+422 passed
+```
+
+Run 3x in a row: `422 passed` every time, 0 failures. (Prior baseline
+419 + 3 new tests = 422.)
+
+### Commits
+
+- `PLACEHOLDER_COMMIT_HASH` -- `EARLY-COMPLETE-JUMP-001/COMPLETE-
+  RETRY-001: act on a complete slot immediately, and retry a missed
+  complete tap` (implementation + tests + this HANDOFF section, in one
+  commit)
+- Followed by a short "docs: record EARLY-COMPLETE-JUMP-001/COMPLETE-
+  RETRY-001 commit hash in handoff" commit recording the real hash.
+
+### Limitations
+
+1. Skipping the remaining slots' accept/refresh this pass means their
+   target-phrase state isn't re-verified until a later cycle visits
+   them -- acceptable since nothing about their state changed by
+   skipping them (they simply keep whatever runtime state they already
+   had).
+2. `max_complete_verify_attempts`'s retry re-selects the SAME slot each
+   time; if the real root cause of a miss is something other than a
+   momentarily-stale capture (e.g. the slot's popup was never really
+   eligible), the retry will predictably keep missing until the bound
+   is hit and the cycle fails with a clear, attempt-counted detail --
+   never silently.
+3. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the existing fake-runner/recognizer test harness.
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `422 passed`).
+- On a real device with a slot that completes partway down the list:
+  confirm the flow claims it immediately rather than finishing the
+  full slot walk first, and that a real complete-tap miss (if it ever
+  occurs) recovers via retry instead of failing the whole cycle.

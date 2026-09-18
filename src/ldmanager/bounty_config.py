@@ -126,6 +126,11 @@ class BountyMissionConfig:
     max_refresh_attempts: int = 5
     max_popup_verify_attempts: int = 3
     max_kill_progress_poll_attempts: int = 10
+    # COMPLETE-RETRY-001: if the complete tap doesn't confidently land
+    # (e.g. the eligible slot's detail view isn't actually showing on
+    # this fresh capture), re-select that same slot and try again,
+    # bounded, instead of failing on the first miss.
+    max_complete_verify_attempts: int = 3
     max_reward_verify_attempts: int = 3
     max_result_verify_attempts: int = 3
     max_mission_list_verify_attempts: int = 3
@@ -371,6 +376,7 @@ def load_bounty_config(explicit_path: Optional[Path] = None) -> BountyMissionCon
         max_refresh_attempts=_positive_int(raw, "max_refresh_attempts", 5, path),
         max_popup_verify_attempts=_positive_int(raw, "max_popup_verify_attempts", 3, path),
         max_kill_progress_poll_attempts=_positive_int(raw, "max_kill_progress_poll_attempts", 10, path),
+        max_complete_verify_attempts=_positive_int(raw, "max_complete_verify_attempts", 3, path),
         max_reward_verify_attempts=_positive_int(raw, "max_reward_verify_attempts", 3, path),
         max_result_verify_attempts=_positive_int(raw, "max_result_verify_attempts", 3, path),
         max_mission_list_verify_attempts=_positive_int(raw, "max_mission_list_verify_attempts", 3, path),
