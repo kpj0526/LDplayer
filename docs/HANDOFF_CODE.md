@@ -3870,7 +3870,7 @@ Run 3x in a row: `401 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- `PLACEHOLDER_COMMIT_HASH` — `EARLY-COMPLETE-CHECK-001: don't re-walk
+- `6035d34` — `EARLY-COMPLETE-CHECK-001: don't re-walk
   slots already known complete` (implementation + tests + this
   HANDOFF section, in one commit)
 - Followed by a short "docs: record EARLY-COMPLETE-CHECK-001 commit
