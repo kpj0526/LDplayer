@@ -79,15 +79,17 @@ def test_example_bounty_config_never_maps_the_unreliable_slot_templates():
 
 
 def test_example_bounty_config_refresh_fields_are_real_calibrated_values():
-    """REFRESH-CALIBRATION-001: guards against silently drifting back to
-    the old, never-validated placeholder points/labels (refresh_button_
-    point 0.85/0.90, refresh_confirm_point 0.55/0.60, anchor label
-    "새로고침", title label "확인") -- see configs/bounty.example.yaml's
-    comments and tests/fixtures/game_cal_001/PROVENANCE.md."""
+    """REFRESH-CALIBRATION-001/REFRESH-TRIGGER-CORRECTION-001: guards
+    against silently drifting back to a never-validated placeholder
+    value, or back to REFRESH-CALIBRATION-001's own real-but-wrong-box
+    value (0.7227/0.9313, the persistent list-view currency-action box
+    -- not interactive once the accept popup is already open) -- see
+    configs/bounty.example.yaml's comments and
+    tests/fixtures/game_cal_001/PROVENANCE.md."""
 
     config = load_bounty_config(EXAMPLE_BOUNTY_CONFIG)
-    assert config.refresh_button_point.x == pytest.approx(0.7227, abs=1e-4)
-    assert config.refresh_button_point.y == pytest.approx(0.9313, abs=1e-4)
+    assert config.refresh_button_point.x == pytest.approx(0.4141, abs=1e-4)
+    assert config.refresh_button_point.y == pytest.approx(0.7292, abs=1e-4)
     assert config.refresh_confirm_point.x == pytest.approx(0.5867, abs=1e-4)
     assert config.refresh_confirm_point.y == pytest.approx(0.7278, abs=1e-4)
     assert config.refresh_popup_anchor_label == "refresh_popup_renew_label"

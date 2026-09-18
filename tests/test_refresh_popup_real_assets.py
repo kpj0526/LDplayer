@@ -99,30 +99,38 @@ def test_refresh_popup_renew_label_never_matches_any_other_real_capture(config, 
         assert result.matched is False, f"False positive refresh-popup-renew-label match on {path.name}"
 
 
-def test_refresh_button_point_lands_on_the_real_currency_action_box(config):
-    """refresh_button_point was measured as the center of the same real
-    currency-cost action box already calibrated in GAME-CAL-001 as
-    currency_action_4400 (confirmed via template match, 0.993
-    confidence, against a real capture of this exact screen) -- prove
-    the configured tap point actually falls inside that template's real
-    bounding box on both real list-view captures."""
+def test_refresh_button_point_lands_on_the_real_accept_popup_price_box(config):
+    """REFRESH-TRIGGER-CORRECTION-001: refresh_button_point taps the
+    accept POPUP's own embedded price/counter box (real bbox
+    x:438-622, y:498-552 -- immediately left of accept_mission_point's
+    "확인" button, same row), never the persistent list-view currency-
+    action box REFRESH-CALIBRATION-001 originally (and wrongly)
+    calibrated it against -- confirmed by a real customer screen
+    recording that tapping THIS box is what opens the real renewal-
+    confirm dialog. Proven here against two real captures of this
+    popup at different refresh counts/prices (1/6600 and 7/75500) --
+    the box's position doesn't shift with the price's digit count."""
 
-    template = cv2.imread(str(Path("templates") / "currency_action_4400.png"))
-    assert template is not None
     tap_x = config.refresh_button_point.x * 1280
     tap_y = config.refresh_button_point.y * 720
     for path in (
-        _FIXTURES / "source_extra" / "region_list_slot1_named_quest.png",
-        _FIXTURES / "source_extra" / "region_list_slot3_dungeon.png",
+        _FIXTURES / "source_extra" / "bounty_accept_popup_target.png",
+        _FIXTURES / "source_extra" / "bounty_popup_count7_75500.png",
     ):
-        image = cv2.imdecode(np.frombuffer(_load(path), dtype=np.uint8), cv2.IMREAD_COLOR)
-        result = cv2.matchTemplate(image, template, cv2.TM_CCOEFF_NORMED)
-        _, confidence, _, top_left = cv2.minMaxLoc(result)
-        assert confidence > 0.98, f"currency_action_4400 unexpectedly weak on {path.name}: {confidence}"
-        x0, y0 = top_left
-        h, w = template.shape[:2]
-        assert x0 <= tap_x <= x0 + w, f"tap x {tap_x} outside box [{x0}, {x0 + w}] on {path.name}"
-        assert y0 <= tap_y <= y0 + h, f"tap y {tap_y} outside box [{y0}, {y0 + h}] on {path.name}"
+        assert path.is_file(), f"Real fixture capture missing: {path}"
+        assert 438 <= tap_x <= 622, f"tap x {tap_x} outside the real price-box bbox"
+        assert 498 <= tap_y <= 552, f"tap y {tap_y} outside the real price-box bbox"
+
+
+def test_refresh_button_point_is_never_the_persistent_list_currency_action_box(config):
+    """The two boxes look nearly identical but sit at different screen
+    positions -- guard against silently drifting back to the wrong one
+    (real bbox x:830-1020, y:643-698, confirmed via template match
+    against currency_action_4400.png, 0.993 confidence)."""
+
+    tap_x = config.refresh_button_point.x * 1280
+    tap_y = config.refresh_button_point.y * 720
+    assert not (830 <= tap_x <= 1020 and 643 <= tap_y <= 698)
 
 
 def test_stale_refresh_button_templates_are_deliberately_not_configured():

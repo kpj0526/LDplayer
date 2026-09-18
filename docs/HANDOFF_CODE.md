@@ -4327,3 +4327,100 @@ Run 3x in a row: `429 passed` every time, 0 failures. (Prior baseline
 - Re-run `pytest -q` (expect `429 passed`).
 - On a real device: confirm no console window flashes during a live
   run (Test capture, Start, several taps).
+
+## REFRESH-TRIGGER-CORRECTION-001: refresh_button_point was tapping the wrong (but visually near-identical) box
+
+**Trigger**: after `NO-CONSOLE-FLICKER-001` shipped, the user reported
+`REFRESH-CALIBRATION-001`'s fix still didn't work on the dungeon-type
+mission ("십변도 토벌작전[던전]") -- confirmed from a supplied video's
+app log: `cycles: 10 last: refresh_popup_not_verified`, `Slot 3:
+refresh popup never verified structurally within 3 attempt(s)`. The
+user then supplied a second, short screen recording demonstrating a
+manual, successful refresh of that exact mission.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`REFRESH-CALIBRATION-001` calibrated `refresh_button_point` against
+the persistent currency-action box visible on the plain list view (no
+popup open) -- real, confidently cross-validated against
+`currency_action_4400.png`, but the WRONG box. The video showed the
+user tapping a DIFFERENT box instead: the accept popup's own embedded
+price/counter box, immediately left of the "확인" button on the same
+row -- visually almost identical (same counter+price+icon styling,
+same gold border) but at a different screen position. Since
+`ACCEPT-CONFIRM-001` established that selecting a slot immediately
+shows this popup (not a bare list row), `refresh_button_point`'s tap
+always fires while the popup is already open -- and the underlying
+list's box, though it may still be visible peeking out from behind the
+popup in some captures, is not interactive at that moment (the modal
+popup blocks it). This is why `_verify_refresh_popup` never confirmed
+the real renewal dialog: the tap was landing somewhere inert instead
+of the actual trigger.
+
+### Fix
+
+`configs/bounty.example.yaml`: `refresh_button_point` is now the real,
+measured center of the popup's own price box (x:438-622, y:498-552 in
+1280x720, rel `0.4141`/`0.7292`) -- confirmed identical across two real
+captures at different refresh counts/prices (1/6600 and 7/75500), i.e.
+unaffected by the price's digit count. `src/ldmanager/bounty_mission.py`'s
+comments updated to describe the correct box.
+
+### Regression tests
+
+- `tests/test_refresh_popup_real_assets.py` --
+  `test_refresh_button_point_lands_on_the_real_accept_popup_price_box`
+  (new, replaces the now-wrong `test_refresh_button_point_lands_on_
+  the_real_currency_action_box`): confirms the tap point falls inside
+  the real popup price-box bbox on both real captures.
+  `test_refresh_button_point_is_never_the_persistent_list_currency_
+  action_box` (new): explicit negative guard against regressing back
+  to the old, wrong box's bbox.
+- `tests/test_bounty_config.py` --
+  `test_example_bounty_config_refresh_fields_are_real_calibrated_values`
+  updated to the new value, with an explanatory docstring covering
+  both the original placeholder AND `REFRESH-CALIBRATION-001`'s own
+  real-but-wrong value.
+
+### Test results
+
+```
+python -m pytest -q
+430 passed
+```
+
+Run 3x in a row: `430 passed` every time, 0 failures. (Prior baseline
+429 + 1 net new test = 430 -- one test replaced, one added.)
+
+### Commits
+
+- `PLACEHOLDER_COMMIT_HASH` -- `REFRESH-TRIGGER-CORRECTION-001:
+  refresh_button_point was tapping the wrong (but visually near-
+  identical) box` (implementation + tests + this HANDOFF section, in
+  one commit)
+- Followed by a short "docs: record REFRESH-TRIGGER-CORRECTION-001
+  commit hash in handoff" commit recording the real hash.
+
+### Limitations
+
+1. The two boxes' near-identical visual styling is a real, recurring
+   risk in this UI -- any future similar "counter + price + icon"
+   element should be cross-checked against ALL real captures showing
+   both a popup-open and popup-closed state before being assumed to be
+   the same element.
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the real supplied captures and the customer's
+   screen recording, offline.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `430 passed`).
+- On a real device: confirm a live run now proceeds past a non-target
+  slot's refresh/reroll step on BOTH regular "자유 토벌작전" and
+  dungeon-type ("...[던전]") missions, reaching the real renewal-
+  confirm dialog instead of "refresh popup never verified".

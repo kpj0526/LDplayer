@@ -158,15 +158,23 @@ mission_quantity_label: "200"
 accept_mission_point: {x: 0.5867, y: 0.7292}
 
 # Refresh (reroll) flow for the currently-selected slot.
-# REFRESH-CALIBRATION-001 (real-capture rework): refresh_button_point is
-# the real, measured center of the currency-cost action box (the same
-# real, already-calibrated currency_action_4400 crop used by
-# screen_classification.py -- confirmed via template match, 0.993
-# confidence, against a real capture of this exact screen) -- always
-# tapped directly, never a dynamic OR-search across the 4 stale/
-# unreliable button_refresh_4400/6600/9900/14900 placeholder assets
-# (see template_map's comment above for why they were removed).
-refresh_button_point: {x: 0.7227, y: 0.9313}
+# REFRESH-TRIGGER-CORRECTION-001: refresh_button_point is the real,
+# measured center of the accept POPUP's OWN embedded price/counter box
+# (immediately left of accept_mission_point's "확인" button, same row)
+# -- confirmed via a real customer screen recording: tapping this
+# exact box (not the underlying list's persistent currency-action box
+# -- see the correction note below) opens the real "지역 퀘스트를
+# 갱신 하시겠습니까?" dialog. REFRESH-CALIBRATION-001 originally
+# calibrated this point against the WRONG box -- the persistent
+# currency-action indicator visible on the plain list view -- which
+# looks nearly identical but sits at a different screen position and,
+# because the accept popup is already open by the time this tap fires
+# (select immediately shows it -- see ACCEPT-CONFIRM-001), is not
+# interactive at that moment. Always tapped directly, never a dynamic
+# OR-search across the 4 stale/unreliable button_refresh_4400/6600/
+# 9900/14900 placeholder assets (see template_map's comment above for
+# why they were removed).
+refresh_button_point: {x: 0.4141, y: 0.7292}
 
 # Structural popup verification -- two independent, cost-INDEPENDENT
 # landmarks that must BOTH be recognized before the confirm button is

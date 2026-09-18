@@ -281,18 +281,22 @@ def _accept_or_refresh_slot(
                 BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (refresh attempt {attempt})."
             )
 
-        # REFRESH-CALIBRATION-001: always position-based, never a
-        # _tap_any_template() image search. A real customer capture
-        # proved button_refresh_4400/6600/9900/14900 (pre-GAME-CAL-001
-        # placeholder assets, never real crops) never confidently match
-        # -- and because template_map being non-empty overall makes
+        # REFRESH-CALIBRATION-001 / REFRESH-TRIGGER-CORRECTION-001:
+        # always position-based, never a _tap_any_template() image
+        # search. A real customer capture proved button_refresh_4400/
+        # 6600/9900/14900 (pre-GAME-CAL-001 placeholder assets, never
+        # real crops) never confidently match -- and because
+        # template_map being non-empty overall makes
         # _tap_any_template() return a hard False (not None), this
         # silently blocked the fixed-point fallback from ever running
         # (the same TAP-FALLBACK-CRASH-001/SLOT-SELECT-CALIBRATION-001
-        # gotcha). The real currency-cost action box is positionally
-        # fixed regardless of its currently displayed price, so this
+        # gotcha). refresh_button_point taps the accept popup's OWN
+        # embedded price/counter box (the popup is already open by
+        # this point -- select immediately shows it) -- positionally
+        # fixed regardless of its currently displayed price -- so this
         # step no longer attempts template matching at all -- see
-        # docs/HANDOFF_CODE.md's REFRESH-CALIBRATION-001 section.
+        # docs/HANDOFF_CODE.md's REFRESH-CALIBRATION-001 and
+        # REFRESH-TRIGGER-CORRECTION-001 sections.
         open_popup = runner.run(serial, build_tap_args(config.screen_size, config.refresh_button_point))
         if not open_popup.ok:
             return None, BountyCycleResult(

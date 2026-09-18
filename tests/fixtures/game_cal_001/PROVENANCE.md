@@ -299,3 +299,35 @@ permanent regression coverage. If a live run still stalls somewhere in
 this sequence, the failure is likely at a step downstream of
 `bounty_detail_complete_final.png` (the complete tap itself, or
 whatever follows) -- not yet covered by any real capture.
+
+### Correction to REFRESH-CALIBRATION-001's `refresh_button_point` (REFRESH-TRIGGER-CORRECTION-001)
+
+The customer supplied a short screen recording demonstrating a manual,
+successful refresh of a dungeon-type mission ("십변도
+토벌작전[던전]"): they tapped the accept popup's OWN embedded price/
+counter box (immediately left of the "확인" button, same row) -- NOT
+the persistent currency-action box on the underlying list view that
+`REFRESH-CALIBRATION-001` had calibrated `refresh_button_point`
+against. That tap visibly opened the real "지역 퀘스트를 갱신
+하시겠습니까?" dialog, confirming the correct trigger.
+
+**Root cause of the original miscalibration**: these two boxes share
+nearly identical visual styling (counter + price + icon, same gold
+border) and were never directly compared side by side. `REFRESH-
+CALIBRATION-001` measured and cross-validated its box against
+`currency_action_4400.png` (GAME-CAL-001's crop, itself validated
+against `in_progress_target.png`/`region_list_*.png` -- all captures
+with NO popup open) -- a real, confidently-matching box, just the
+WRONG one for this tap. Since `ACCEPT-CONFIRM-001` established that
+selecting a slot immediately shows the accept popup (not a bare list
+row), `refresh_button_point`'s tap always fires while that popup is
+already open, and the underlying list's box is not interactive at
+that moment (the popup blocks it).
+
+**Fix**: `refresh_button_point` is now the real, measured center of
+the popup's own price box (bbox x:438-622, y:498-552 in the 1280x720
+real captures `bounty_accept_popup_target.png` and
+`bounty_popup_count7_75500.png` -- confirmed identical position at
+refresh counts 1 and 7 / prices 6600 and 75500, i.e. unaffected by the
+price's digit count, the same way `accept_mission_point`'s "확인"
+button position was already confirmed unaffected).
