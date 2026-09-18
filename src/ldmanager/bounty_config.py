@@ -79,6 +79,13 @@ class BountyMissionConfig:
     mission_phrase_label: str
     mission_quantity_roi: RelativeRegion
     mission_quantity_label: str
+    # ACCEPT-CONFIRM-001: real, measured center of the "확인" button on
+    # the mission-detail popup that opens after selecting a slot -- must
+    # be tapped whenever the target phrase/quantity is already matched
+    # (with or without a preceding refresh), or that popup is left open
+    # and blocks all further progress. Never a template search (see
+    # bounty_mission.py's ACCEPT-CONFIRM-001 comment for why).
+    accept_mission_point: RelativeCoordinate
 
     # Refresh (reroll) flow.
     refresh_button_point: RelativeCoordinate
@@ -335,6 +342,7 @@ def load_bounty_config(explicit_path: Optional[Path] = None) -> BountyMissionCon
         mission_phrase_label=_label(raw, "mission_phrase_label", path),
         mission_quantity_roi=_region(raw, "mission_quantity_roi", path),
         mission_quantity_label=_label(raw, "mission_quantity_label", path),
+        accept_mission_point=_point(raw, "accept_mission_point", path),
         refresh_button_point=_point(raw, "refresh_button_point", path),
         refresh_popup_anchor_roi=_region(raw, "refresh_popup_anchor_roi", path),
         refresh_popup_anchor_label=_label(raw, "refresh_popup_anchor_label", path),

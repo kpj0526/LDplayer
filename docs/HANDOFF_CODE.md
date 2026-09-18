@@ -4035,3 +4035,118 @@ real-asset tests and 2 new config-guard tests.)
   whether the tapped currency-action box actually opens this exact
   popup on every mission type (dungeon-type included), per Limitation 1
   above.
+
+## ACCEPT-CONFIRM-001: tap the accept-mission confirm button on the fast path too
+
+**Trigger**: after `REFRESH-CALIBRATION-001` shipped, the user
+reported a live run stuck on the "자유 토벌작전" mission-detail popup
+(임무 목표: 모든 몬스터 처치 (0/200), price 6600, "확인" button) --
+the actual TARGET mission, showing on the very first check (no refresh
+needed). The user supplied a real 1280x720 capture of the exact stuck
+screen.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`_accept_or_refresh_slot` has two paths to "target confirmed": the
+fast path (phrase/quantity already match on the first check) and the
+path after a refresh+confirm round-trip. Only the second path ever
+tapped an accept/confirm button (via `_tap_template(..., "button_
+accept_mission")`) -- itself a stale, unreliable pre-GAME-CAL-001
+placeholder asset (180x55, scores only 0.726 against a real capture of
+this popup, below the 0.8 threshold). The fast path returned
+`SlotOutcome(slot_index, True, ...)` without ever tapping anything,
+leaving this popup open on screen; every subsequent slot's select tap
+then landed harmlessly on the still-open popup instead of the mission
+list underneath, and the whole cycle stalled indefinitely -- exactly
+the screen the customer reported.
+
+Confirmed with the real capture: the shipped config's actual
+production acceptance signal (`mission_target_phrase`, the combined
+OR-matched phrase+quantity template) matches this real popup at 0.982
+confidence -- i.e. this is precisely the real state where the old fast
+path fired and got stuck.
+
+### Fix
+
+Added a new required config field, `accept_mission_point`, real-
+measured directly from the customer's capture (real "확인" button
+bounding box x:662-840, y:500-550, center rel 0.5867/0.7292 -- measured
+to within 1px of `REFRESH-CALIBRATION-001`'s `refresh_confirm_point`,
+kept separate anyway since the two popups are semantically distinct).
+`src/ldmanager/bounty_mission.py`: both the fast path and the
+post-refresh path now always tap `accept_mission_point` directly --
+never a template search (mirroring every prior *-CALIBRATION-001
+packet's reasoning). `configs/bounty.example.yaml` no longer maps
+`button_accept_mission` at all.
+
+### Regression tests
+
+- `tests/test_accept_popup_real_assets.py` (new, 5 tests) -- real
+  capture is a genuine 1280x720 PNG; the production `mission_target_
+  phrase` signal confirms this real popup as the target mission
+  (reproducing the exact stuck state); the stale `button_accept_
+  mission.png` template confirmed NOT confidently matching this real
+  popup; `accept_mission_point` confirmed to land inside the real
+  button's measured bounding box; the stale template confirmed absent
+  from the shipped config.
+- `tests/test_bounty_config.py` --
+  `test_example_bounty_config_accept_mission_point_is_a_real_calibrated_value`.
+- `tests/test_bounty_mission.py` --
+  `test_already_acceptable_slot_still_taps_the_accept_mission_confirm_button`
+  (direct proof of the fix: the fast path, exercised via a recognizer
+  that matches everything on the first check -- no refresh -- still
+  taps `accept_mission_point`), `test_accept_mission_tap_failure_
+  detail_includes_the_real_adb_stderr`; updated the two existing tap-
+  count assertions (`test_full_cycle_reaches_completed_state_once`,
+  `test_kill_progress_incomplete_never_taps_complete_or_reward`) to
+  account for the one additional tap per already-acceptable slot.
+- Added the new required `accept_mission_point` field to every other
+  direct `BountyMissionConfig(...)` test constructor
+  (`tests/test_live_serial_propagation.py`,
+  `tests/test_screen_classification.py`) and the raw-YAML fixture in
+  `tests/test_app.py`.
+
+### Test results
+
+```
+python -m pytest -q
+419 passed
+```
+
+Run 3x in a row: `419 passed` every time, 0 failures. (Prior baseline
+411 + 5 new accept-popup real-asset + 1 new config-guard + 2 new
+bounty_mission tests = 419.)
+
+### Commits
+
+- `PLACEHOLDER_COMMIT_HASH` -- `ACCEPT-CONFIRM-001: tap the
+  accept-mission confirm button on the fast path too` (implementation +
+  tests + this HANDOFF section, in one commit)
+- Followed by a short "docs: record ACCEPT-CONFIRM-001 commit hash in
+  handoff" commit recording the real hash.
+
+### Limitations
+
+1. `accept_mission_point` and `refresh_confirm_point` happen to
+   measure to the same real screen position across the two real
+   captures on file -- if the game ever renders these two popups at
+   different positions in some other state, only the one that was
+   actually captured is verified; this stays a documented, watched
+   coincidence, not an assumption baked into the code (they are two
+   separate config fields, not aliased).
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the real supplied capture, offline.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `419 passed`) and
+  `tests/test_accept_popup_real_assets.py` specifically.
+- On a real device: confirm a live run now proceeds past a slot whose
+  target mission is already showing on the first check (no refresh
+  needed) instead of stalling on the open "확인" popup -- the likely
+  next real blocker, if any, is whatever real screen follows this tap.

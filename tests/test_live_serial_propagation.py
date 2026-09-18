@@ -57,6 +57,7 @@ def _bounty_config() -> BountyMissionConfig:
         slot_select_points=tuple(RelativeCoordinate(x=0.1, y=0.1 * i) for i in range(1, 6)),
         mission_phrase_roi=_roi(), mission_phrase_label=_PHRASE,
         mission_quantity_roi=_roi(0.2), mission_quantity_label=_QTY,
+        accept_mission_point=RelativeCoordinate(x=0.55, y=0.72),
         refresh_button_point=RelativeCoordinate(x=0.9, y=0.9),
         refresh_popup_anchor_roi=_roi(0.3), refresh_popup_anchor_label=_POPUP_ANCHOR,
         refresh_popup_title_roi=_roi(0.4), refresh_popup_title_label=_POPUP_TITLE,

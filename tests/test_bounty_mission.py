@@ -38,6 +38,7 @@ def _config(**overrides) -> BountyMissionConfig:
         mission_phrase_label=_PHRASE,
         mission_quantity_roi=_roi(0.2),
         mission_quantity_label=_QTY,
+        accept_mission_point=RelativeCoordinate(x=0.55, y=0.72),
         refresh_button_point=RelativeCoordinate(x=0.9, y=0.9),
         refresh_popup_anchor_roi=_roi(0.3),
         refresh_popup_anchor_label=_POPUP_ANCHOR,
@@ -107,13 +108,15 @@ def test_full_cycle_reaches_completed_state_once():
     assert len(result.slots) == 10
     assert all(s.accepted for s in result.slots)
     # No slot needed a refresh (already acceptable): 5 initial accept
-    # selects (EARLY-COMPLETE-CHECK-001: slot 1's completion is detected
-    # on that SAME accept-loop pass, reusing the view already open --
-    # no extra kill-progress-phase select tap needed at all) +
-    # select-complete + complete + claim + close (4) + 5 re-accept
-    # selects (legacy stateless path, since no runtime is passed here)
-    # = 14.
-    assert len(runner.calls) == 5 + 4 + 5
+    # selects + 5 accept-confirm taps (ACCEPT-CONFIRM-001: every
+    # already-acceptable slot now also taps accept_mission_point) +
+    # (EARLY-COMPLETE-CHECK-001: slot 1's completion is detected on that
+    # SAME accept-loop pass, reusing the view already open -- no extra
+    # kill-progress-phase select tap needed at all) select-complete +
+    # complete + claim + close (4) + 5 re-accept selects + 5 more
+    # accept-confirm taps (legacy stateless path, since no runtime is
+    # passed here) = 24.
+    assert len(runner.calls) == (5 + 5) + 4 + (5 + 5)
 
 
 # --- phrase-only / quantity-only must reject (never one signal alone) ----
@@ -205,11 +208,13 @@ def test_kill_progress_incomplete_never_taps_complete_or_reward():
 
     assert result.outcome is BountyOutcome.KILL_PROGRESS_NOT_COMPLETE
     assert len(result.slots) == 5
-    # 5 initial accept selects, then COMPLETE-SLOT-TRACKING-001's
-    # per-slot polling visits all 5 candidate slots on each of the 3
-    # bounded poll attempts (never finding a match) = 5 + 3*5 = 20;
-    # nothing for complete/reward/claim.
-    assert len(runner.calls) == 5 + 3 * 5
+    # 5 initial accept selects + 5 accept-confirm taps (ACCEPT-CONFIRM-
+    # 001: every already-acceptable slot also taps accept_mission_point),
+    # then COMPLETE-SLOT-TRACKING-001's per-slot polling visits all 5
+    # candidate slots on each of the 3 bounded poll attempts (never
+    # finding a match) = (5+5) + 3*5 = 25; nothing for complete/reward/
+    # claim.
+    assert len(runner.calls) == (5 + 5) + 3 * 5
 
 
 def test_kill_progress_via_explicit_complete_badge_is_also_eligible():
@@ -430,6 +435,59 @@ def test_slot_select_tap_uses_the_exact_configured_slot_select_point():
 
     expected_args = tuple(build_tap_args(cfg.screen_size, cfg.slot_select_points[0]))
     assert (_SERIAL, expected_args) in runner.calls
+
+
+def test_already_acceptable_slot_still_taps_the_accept_mission_confirm_button():
+    """ACCEPT-CONFIRM-001: real customer report -- a live run got stuck
+    on the mission-detail popup that opens after selecting a slot whose
+    target phrase/quantity was ALREADY matched (no refresh needed). The
+    old code returned "accepted" without ever tapping that popup's
+    "확인" button, leaving it open on screen and blocking every
+    subsequent slot's select tap. Direct proof the fast path (no
+    refresh) still taps accept_mission_point, exactly like the
+    post-refresh path already did."""
+
+    runner = _runner_with_valid_captures()
+    recognizer = LabelMappingRecognizer(matching_labels=_ALL_LABELS)  # slot 1 accepted immediately, no refresh
+    cfg = _config()
+
+    _run(runner, recognizer, cfg)
+
+    expected_args = tuple(build_tap_args(cfg.screen_size, cfg.accept_mission_point))
+    assert (_SERIAL, expected_args) in runner.calls
+
+
+def test_accept_mission_tap_failure_detail_includes_the_real_adb_stderr():
+    """Same STDERR-DETAIL-001 guarantee for the new accept-confirm tap."""
+
+    cfg = _config()
+    select_args = tuple(build_tap_args(cfg.screen_size, cfg.slot_select_points[0]))
+    accept_args = tuple(build_tap_args(cfg.screen_size, cfg.accept_mission_point))
+    runner = FakeAdbRunner(
+        capture_results={
+            (_SERIAL, DEFAULT_CAPTURE_ARGS): AdbBinaryResult(
+                serial=_SERIAL, args=DEFAULT_CAPTURE_ARGS, returncode=0,
+                stdout_bytes=_VALID_PNG, stderr="",
+            )
+        },
+        command_results={
+            (_SERIAL, select_args): AdbCommandResult(
+                serial=_SERIAL, args=select_args, returncode=0, stdout="", stderr="",
+            ),
+            (_SERIAL, accept_args): AdbCommandResult(
+                serial=_SERIAL, args=accept_args, returncode=125,
+                stdout="", stderr="error: device offline",
+            ),
+        },
+    )
+    recognizer = LabelMappingRecognizer(matching_labels=_ALL_LABELS)  # target already matched, no refresh
+
+    result = _run(runner, recognizer, cfg)
+
+    assert result.outcome is BountyOutcome.CAPTURE_UNAVAILABLE
+    assert "accept-mission tap failed" in result.detail
+    assert "rc=125" in result.detail
+    assert "error: device offline" in result.detail
 
 
 def test_refresh_open_is_always_position_based_never_template_matched():

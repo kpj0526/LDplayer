@@ -53,6 +53,7 @@ def _config(**overrides) -> BountyMissionConfig:
         mission_phrase_label="phrase",
         mission_quantity_roi=_roi(0.2),
         mission_quantity_label="qty",
+        accept_mission_point=RelativeCoordinate(x=0.55, y=0.72),
         refresh_button_point=RelativeCoordinate(x=0.9, y=0.9),
         refresh_popup_anchor_roi=_roi(0.3),
         refresh_popup_anchor_label="popup-anchor",

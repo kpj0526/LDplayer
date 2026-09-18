@@ -235,3 +235,42 @@ never eyeballed.
   way.
 - No live ADB/LDPlayer/game session was used to verify this fix --
   verified against the real supplied captures, offline.
+
+### `bounty_accept_popup_target.png` (ACCEPT-CONFIRM-001)
+
+A real customer live run got stuck on this exact screen -- the "자유
+토벌작전" mission-detail popup that opens after selecting a slot,
+showing the real target phrase "모든 몬스터 처치 (0/200)" (matches
+`mission_target_phrase` at 0.982 confidence). Confirmed near-identical
+(mean pixel diff 1.08/255 -- compression-level noise only) to the
+earlier `bounty_detail_popup.png` capture, but saved and documented
+separately since it's the specific capture used to diagnose and fix
+this bug (the earlier one was sent only as a "here's what this looks
+like" reference, before the bug was understood).
+
+**Root cause**: `run_one_cycle`'s per-slot acceptance check
+(`_accept_or_refresh_slot`) has two paths to "target confirmed": (1)
+the FAST path, when the target phrase/quantity already matches on the
+very first check (no refresh needed), and (2) the path after a
+refresh+confirm round-trip. Only path (2) ever tapped an accept/
+confirm button (`button_accept_mission`, itself a stale, unreliable
+pre-GAME-CAL-001 placeholder asset -- 180x55, scores only 0.726
+against this real popup, below the 0.8 threshold). Path (1) returned
+"accepted" without tapping anything at all, leaving this popup open on
+screen -- every subsequent slot's select tap then landed harmlessly on
+the still-open popup instead of the mission list underneath, and the
+whole cycle stalled here indefinitely. This is exactly the screen the
+customer reported being stuck on.
+
+**Fix**: both paths now always tap a single real, measured
+`accept_mission_point` directly (no template search) -- its real
+"확인" button bounding box was measured as x:662-840, y:500-550
+(center 751,525 -- rel 0.5867/0.7292), by the same mean-brightness
+row/column scan methodology used throughout this fixture set.
+Interestingly, this measures to within 1px of `refresh_confirm_point`
+(x:660-842, y:498-550, from `region_quest_renew_confirm.png` in
+`REFRESH-CALIBRATION-001`) -- both popups appear to share the same
+modal footer button-bar convention -- but `accept_mission_point` was
+kept as its own, separately-measured/documented config field rather
+than silently reused, since the two popups are semantically distinct
+and nothing guarantees they'll always coincide.

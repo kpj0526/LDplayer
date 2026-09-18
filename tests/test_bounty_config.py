@@ -109,6 +109,18 @@ def test_example_bounty_config_never_maps_the_stale_refresh_button_templates():
         assert label not in config.template_map
 
 
+def test_example_bounty_config_accept_mission_point_is_a_real_calibrated_value():
+    """ACCEPT-CONFIRM-001: guards against silently regressing
+    accept_mission_point away from the real, measured value -- see
+    configs/bounty.example.yaml's comments and
+    tests/fixtures/game_cal_001/PROVENANCE.md."""
+
+    config = load_bounty_config(EXAMPLE_BOUNTY_CONFIG)
+    assert config.accept_mission_point.x == pytest.approx(0.5867, abs=1e-4)
+    assert config.accept_mission_point.y == pytest.approx(0.7292, abs=1e-4)
+    assert "button_accept_mission" not in config.template_map
+
+
 def test_refresh_popup_fields_are_not_a_cost_field_by_construction():
     # Structural anti-regression: the two popup verification fields must
     # be distinct from any notion of "cost" -- this asserts they exist

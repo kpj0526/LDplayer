@@ -70,7 +70,13 @@ template_map:
   # and refresh-confirm always taps refresh_confirm_point once the
   # popup is verified structurally. See docs/HANDOFF_CODE.md's
   # REFRESH-CALIBRATION-001 section.
-  button_accept_mission: "button_accept_mission.png"
+  #
+  # ACCEPT-CONFIRM-001: button_accept_mission is deliberately NOT
+  # mapped here either -- same stale-asset problem (180x55, scores
+  # only 0.726 against a real capture of the popup it's meant to
+  # match, below the 0.8 threshold). accept_mission_point below is
+  # always used directly instead. See docs/HANDOFF_CODE.md's
+  # ACCEPT-CONFIRM-001 section.
   button_complete: "button_complete.png"
   # REWARD-SCREEN-CALIBRATION-001 (real-capture rework): replaced with a
   # real crop from an actual customer "보상 받기" (Get Reward) screen --
@@ -136,6 +142,20 @@ mission_phrase_roi: {x: 0.30, y: 0.20, width: 0.40, height: 0.08}
 mission_phrase_label: "모든 몬스터 처치"
 mission_quantity_roi: {x: 0.30, y: 0.30, width: 0.20, height: 0.06}
 mission_quantity_label: "200"
+
+# ACCEPT-CONFIRM-001 (real-capture rework): a real customer live run
+# got stuck on the mission-detail popup that opens after selecting a
+# slot whose target phrase/quantity ALREADY matched (no refresh
+# needed) -- the flow never tapped this popup's "확인" button in that
+# case (only the post-refresh path did), leaving it open and blocking
+# every subsequent slot's select tap. Real, measured center of that
+# "확인" button -- see tests/fixtures/game_cal_001/source_extra/
+# bounty_accept_popup_target.png and its PROVENANCE.md entry. Always
+# used directly (no dynamic button_accept_mission template search --
+# that asset is a pre-GAME-CAL-001 placeholder, 180x55, that only
+# scores 0.726 against this real popup, below the 0.8 threshold; see
+# bounty_mission.py's ACCEPT-CONFIRM-001 comment).
+accept_mission_point: {x: 0.5867, y: 0.7292}
 
 # Refresh (reroll) flow for the currently-selected slot.
 # REFRESH-CALIBRATION-001 (real-capture rework): refresh_button_point is

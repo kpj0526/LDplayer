@@ -250,6 +250,21 @@ def _accept_or_refresh_slot(
             BountyOutcome.RECOGNITION_FAILED, (), f"Slot {slot_index}: target recognition is uncertain; no refresh sent."
         )
     if already_ok is MissionAssessment.TARGET_CONFIRMED:
+        # ACCEPT-CONFIRM-001: a real customer live run got stuck here --
+        # this fast path (target already matched, no refresh needed)
+        # previously returned without ever tapping the mission-detail
+        # popup's "확인" button, leaving it open on screen and blocking
+        # every subsequent slot's select tap. Always taps
+        # accept_mission_point directly (real, measured; never a
+        # template search -- see docs/HANDOFF_CODE.md's
+        # ACCEPT-CONFIRM-001 section for why).
+        accept = runner.run(serial, build_tap_args(config.screen_size, config.accept_mission_point))
+        if not accept.ok:
+            return None, BountyCycleResult(
+                BountyOutcome.CAPTURE_UNAVAILABLE, (),
+                f"Slot {slot_index}: accept-mission tap failed "
+                f"(rc={accept.returncode}, stderr={_short(accept.stderr)}).",
+            )
         return SlotOutcome(slot_index, True, 0, "Already acceptable; no refresh needed."), None
 
     detail = ""
@@ -346,11 +361,17 @@ def _accept_or_refresh_slot(
                 f"Slot {slot_index}: refreshed mission recognition is uncertain; no further refresh sent.",
             )
         if acceptable is MissionAssessment.TARGET_CONFIRMED:
-            accepted = _tap_template(runner, serial, config, recognizer, "button_accept_mission")
-            if accepted is False or (accepted is None and config.template_map):
+            # ACCEPT-CONFIRM-001: same fix as the fast path above --
+            # always accept_mission_point directly, never a template
+            # search (button_accept_mission is the same kind of stale,
+            # pre-GAME-CAL-001 placeholder asset already fixed for the
+            # refresh buttons in REFRESH-CALIBRATION-001).
+            accept = runner.run(serial, build_tap_args(config.screen_size, config.accept_mission_point))
+            if not accept.ok:
                 return None, BountyCycleResult(
-                    BountyOutcome.RECOGNITION_FAILED, (),
-                    f"Slot {slot_index}: target found but accept button was not confidently located.",
+                    BountyOutcome.CAPTURE_UNAVAILABLE, (),
+                    f"Slot {slot_index}: accept-mission tap failed "
+                    f"(rc={accept.returncode}, stderr={_short(accept.stderr)}).",
                 )
             return SlotOutcome(slot_index, True, attempt, "Accepted after refresh."), None
         detail = f"attempt {attempt}: phrase/quantity not both matched"
