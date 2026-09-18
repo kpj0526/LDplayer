@@ -4638,7 +4638,7 @@ Run 3x in a row: `436 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- `PLACEHOLDER_COMMIT_HASH` -- `RETRY-BUDGET-001/ERROR-VISIBILITY-001:
+- `01a7cfe` -- `RETRY-BUDGET-001/ERROR-VISIBILITY-001:
   widen the retry budget and surface flagged-but-not-fatal outcomes in
   the GUI` (implementation + tests + both HANDOFF sections, in one
   commit)
