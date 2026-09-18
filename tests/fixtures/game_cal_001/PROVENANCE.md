@@ -274,3 +274,28 @@ modal footer button-bar convention -- but `accept_mission_point` was
 kept as its own, separately-measured/documented config field rather
 than silently reused, since the two popups are semantically distinct
 and nothing guarantees they'll always coincide.
+
+### High refresh-count real captures (verification, no fix needed)
+
+The customer manually refreshed one bounty slot repeatedly (observed
+counts up to 7, prices up to 75,500 -- confirming refresh counts and
+prices go well past the 4 tiers seen in earlier captures) and supplied
+the screens along the way, plus the non-target "야왕궁 토벌작전" (강시
+처치) popup encountered mid-refresh, plus the final detail view
+reached once a mission that's already complete gets accepted (shows
+"완료" instead of a "0/200" counter).
+
+| File | Real screen | Result |
+|---|---|---|
+| `bounty_popup_count7_75500.png` | Target popup, refresh count 7, price 75,500 | `mission_target_phrase` matches (0.982); `accept_mission_point`'s real button bbox (x:662-840, y:500-550) is UNCHANGED by the price's digit count -- confirmed via direct row/column scan, identical to the low-count capture |
+| `region_popup_nontarget_gangsi.png` | "야왕궁 토벌작전" / 강시 처치 non-target popup | Correctly rejected: `mission_target_phrase` does not match (0.737 < 0.8); `refresh_popup_title_label` does not false-positive on it either (0.722 < 0.8) |
+| `bounty_detail_complete_final.png` | Final detail view: "임무 목표: 모든 몬스터 처치 완료" + real 완료 button, no popup | Correctly detected as BOTH target (`mission_target_phrase`, phrase-only, matches at 0.999) AND complete (`complete_state_label` matches at 0.999, `button_complete` matches at 0.903) |
+
+No bug found in this batch -- REFRESH-CALIBRATION-001/ACCEPT-CONFIRM-
+001's real-measured positions and GAME-CAL-001's completion detection
+all independently verified correct against these 3 new real captures.
+Added as `tests/test_high_refresh_count_real_assets.py` (6 tests) for
+permanent regression coverage. If a live run still stalls somewhere in
+this sequence, the failure is likely at a step downstream of
+`bounty_detail_complete_final.png` (the complete tap itself, or
+whatever follows) -- not yet covered by any real capture.
