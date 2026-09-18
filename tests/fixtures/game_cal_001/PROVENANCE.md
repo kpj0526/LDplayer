@@ -371,3 +371,22 @@ check (not a bounded retry loop) right after the confirm tap: if
 `reward_screen_label` matches, tap `close_result_point` to dismiss it
 before re-checking mission acceptability. If the popup isn't showing,
 this is a harmless no-op.
+
+### Correction to REFRESH-RESULT-DISMISS-001's scope (REFRESH-RESULT-DISMISS-003)
+
+The customer supplied another real capture of the exact same
+acknowledgment popup (`refresh_result_popup_1.png`/`_2.png`'s type --
+"자유 토벌작전" / "확률" / one reward icon / "닫기"), still stuck
+after `REFRESH-RESULT-DISMISS-001`/`002` shipped. Investigation found
+those packets only ever dismissed this popup after
+`refresh_confirm_point` (the renewal-confirm path) -- but it appears
+just as reliably after `accept_mission_point` (locking in a mission,
+whether already-acceptable on the first check or after a refresh),
+which neither of the two `accept_mission_point` call sites in
+`_accept_or_refresh_slot` ever dismissed. Both "confirm the renewal"
+and "accept/lock in this mission" are the same kind of action from the
+game's perspective (committing to a mission), so both show this same
+acknowledgment. Fixed by extracting the dismiss logic into a shared
+`_dismiss_ack_popup_if_shown` helper and calling it after all three
+tap sites (`refresh_confirm_point`, and both `accept_mission_point`
+call sites) instead of just the one.

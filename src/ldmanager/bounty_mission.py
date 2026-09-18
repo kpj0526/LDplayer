@@ -202,6 +202,52 @@ def _verify_refresh_popup(runner, serial, config, recognizer) -> Optional[bool]:
     return anchor.matched and title.matched
 
 
+def _dismiss_ack_popup_if_shown(
+    *, slot_index: int, serial: str, runner: AdbRunner, recognizer: Recognizer,
+    config: BountyMissionConfig, should_stop: ShouldStop, sleep_fn: SleepFn,
+) -> Optional[BountyCycleResult]:
+    """REFRESH-RESULT-DISMISS-001/002/003: real customer reports --
+    locking in a mission (tapping accept_mission_point, whether the
+    fast "already acceptable" path or after a refresh) can show one
+    more brief acknowledgment popup for that mission (title + "확률"
+    odds + a single reward icon + "닫기") before the screen settles.
+    REFRESH-RESULT-DISMISS-003: the first two versions of this fix
+    only handled it after refresh_confirm_point -- but a real customer
+    capture proved it just as reliably appears after accept_mission_
+    point too (both are "lock this mission in" actions from the
+    game's perspective), and neither accept_mission_point call site
+    had ever dismissed it -- the popup sat there blocking every
+    subsequent step in the SAME way "refresh popup never verified"
+    did before REFRESH-RESULT-DISMISS-001. Structurally identical to
+    reward_screen (same real "확률" anchor, 1.0 confidence on real
+    captures) and its close button sits at the exact same real,
+    already-measured position as close_result_point/claim_point --
+    both already-calibrated assets are reused, no new template or
+    position needed. A single retry_delay_seconds pause before one
+    best-effort check (not a multi-attempt loop, to avoid adding
+    several seconds of dead time to every accept/refresh round-trip
+    including the likely-more-common case where it never shows).
+    Returns ``None`` on success (dismissed, or never shown -- both
+    fine), or a terminal :class:`BountyCycleResult` on a real failure.
+    """
+
+    sleep_fn(config.retry_delay_seconds)
+    ack_popup = _recognize(runner, serial, config, recognizer, config.reward_screen_roi, config.reward_screen_label)
+    if ack_popup is not None and ack_popup.matched:
+        dismiss = runner.run(serial, build_tap_args(config.screen_size, config.close_result_point))
+        if not dismiss.ok:
+            return BountyCycleResult(
+                BountyOutcome.CAPTURE_UNAVAILABLE, (),
+                f"Slot {slot_index}: refresh-result-dismiss tap failed "
+                f"(rc={dismiss.returncode}, stderr={_short(dismiss.stderr)}).",
+            )
+        if should_stop():
+            return BountyCycleResult(
+                BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (after refresh-result dismiss)."
+            )
+    return None
+
+
 def _accept_or_refresh_slot(
     *, slot_index: int, serial: str, runner: AdbRunner, recognizer: Recognizer,
     config: BountyMissionConfig, should_stop: ShouldStop, sleep_fn: SleepFn,
@@ -277,6 +323,16 @@ def _accept_or_refresh_slot(
                 f"Slot {slot_index}: accept-mission tap failed "
                 f"(rc={accept.returncode}, stderr={_short(accept.stderr)}).",
             )
+        # REFRESH-RESULT-DISMISS-003: locking in a mission via
+        # accept_mission_point can show the same brief "확률"
+        # acknowledgment popup the refresh path already dismisses --
+        # see _dismiss_ack_popup_if_shown's docstring.
+        ack_failure = _dismiss_ack_popup_if_shown(
+            slot_index=slot_index, serial=serial, runner=runner, recognizer=recognizer,
+            config=config, should_stop=should_stop, sleep_fn=sleep_fn,
+        )
+        if ack_failure is not None:
+            return None, ack_failure
         return SlotOutcome(slot_index, True, 0, "Already acceptable; no refresh needed."), None
 
     detail = ""
@@ -373,52 +429,12 @@ def _accept_or_refresh_slot(
                 BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (after confirm)."
             )
 
-        # REFRESH-RESULT-DISMISS-001 / REFRESH-RESULT-DISMISS-002: real
-        # customer report -- after confirming the renewal, the game
-        # shows one more brief acknowledgment popup for the newly-
-        # rolled mission (title + "확률" odds + a single reward icon +
-        # "닫기") before returning to the normal accept-popup state.
-        # The refresh loop never knew about this screen, so it sat
-        # there indefinitely -- every subsequent popup-verify/mission-
-        # acceptability check saw this unexpected screen and correctly
-        # reported "not verified"/"not acceptable", looping forever
-        # without ever dismissing it. Structurally identical to
-        # reward_screen (same real "확률" anchor, confirmed via a real
-        # customer capture, 1.0 confidence) and its close button sits
-        # at the exact same real, already-measured position as
-        # close_result_point/claim_point -- both already-calibrated
-        # assets are reused here, no new template or position needed.
-        #
-        # REFRESH-RESULT-DISMISS-002: the FIRST version of this check
-        # fired immediately after the confirm tap, with no pacing --
-        # the same RETRY-PACING-001 mistake, a second time, in this
-        # exact spot. If the acknowledgment popup takes a moment to
-        # render, a zero-delay check reads the screen before it's
-        # there, never dismisses it, and the popup blocks the very
-        # next check too -- indistinguishable from "the close tap
-        # doesn't work" from the outside. A single retry_delay_seconds
-        # pause before this (still single, still best-effort) check is
-        # enough -- once actually rendered, the real "확률" anchor
-        # matches reliably (confirmed at 1.0 confidence on real
-        # captures), so this isn't a "keep re-checking" problem the
-        # way a slow-to-render popup elsewhere might be; a bounded
-        # multi-attempt loop here would instead add several seconds of
-        # dead time to EVERY refresh round-trip, including the (likely
-        # far more common) case where this popup never shows at all.
-        sleep_fn(config.retry_delay_seconds)
-        ack_popup = _recognize(runner, serial, config, recognizer, config.reward_screen_roi, config.reward_screen_label)
-        if ack_popup is not None and ack_popup.matched:
-            dismiss = runner.run(serial, build_tap_args(config.screen_size, config.close_result_point))
-            if not dismiss.ok:
-                return None, BountyCycleResult(
-                    BountyOutcome.CAPTURE_UNAVAILABLE, (),
-                    f"Slot {slot_index}: refresh-result-dismiss tap failed "
-                    f"(rc={dismiss.returncode}, stderr={_short(dismiss.stderr)}).",
-                )
-            if should_stop():
-                return None, BountyCycleResult(
-                    BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (after refresh-result dismiss)."
-                )
+        ack_failure = _dismiss_ack_popup_if_shown(
+            slot_index=slot_index, serial=serial, runner=runner, recognizer=recognizer,
+            config=config, should_stop=should_stop, sleep_fn=sleep_fn,
+        )
+        if ack_failure is not None:
+            return None, ack_failure
 
         acceptable = _mission_is_acceptable(runner, serial, config, recognizer)
         if acceptable is MissionAssessment.CAPTURE_UNAVAILABLE:
@@ -444,6 +460,14 @@ def _accept_or_refresh_slot(
                     f"Slot {slot_index}: accept-mission tap failed "
                     f"(rc={accept.returncode}, stderr={_short(accept.stderr)}).",
                 )
+            # REFRESH-RESULT-DISMISS-003: same as the fast path above --
+            # see _dismiss_ack_popup_if_shown's docstring.
+            ack_failure = _dismiss_ack_popup_if_shown(
+                slot_index=slot_index, serial=serial, runner=runner, recognizer=recognizer,
+                config=config, should_stop=should_stop, sleep_fn=sleep_fn,
+            )
+            if ack_failure is not None:
+                return None, ack_failure
             return SlotOutcome(slot_index, True, attempt, "Accepted after refresh."), None
         detail = f"attempt {attempt}: phrase/quantity not both matched"
 

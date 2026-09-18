@@ -112,13 +112,16 @@ def test_full_cycle_reaches_completed_state_once():
     assert len(result.slots) == 6
     assert all(s.accepted for s in result.slots)
     # 1 initial accept select + 1 accept-confirm tap (ACCEPT-CONFIRM-001)
-    # + (EARLY-COMPLETE-CHECK-001/EARLY-COMPLETE-JUMP-001: slot 1's
+    # + 1 ack-popup-dismiss tap (REFRESH-RESULT-DISMISS-003: every label
+    # matches here, including the ack popup's own "확률" anchor, so the
+    # dismiss check fires after every accept_mission_point tap) +
+    # (EARLY-COMPLETE-CHECK-001/EARLY-COMPLETE-JUMP-001: slot 1's
     # completion is detected and acted on immediately, no kill-progress-
     # phase taps and no slots 2-5 accept taps at all) select-complete +
     # complete + claim + close (4) + 5 re-accept selects + 5 more
-    # accept-confirm taps (legacy stateless path, since no runtime is
-    # passed here) = 16.
-    assert len(runner.calls) == (1 + 1) + 4 + (5 + 5)
+    # accept-confirm taps + 5 more ack-popup-dismiss taps (legacy
+    # stateless path, since no runtime is passed here) = 22.
+    assert len(runner.calls) == (1 + 1 + 1) + 4 + (5 + 5 + 5)
 
 
 # --- phrase-only / quantity-only must reject (never one signal alone) ----
@@ -647,6 +650,77 @@ def test_refresh_result_ack_popup_is_dismissed_before_rechecking_acceptability()
     assert close_args in runner.calls
     # The dismiss tap happens after the confirm tap, in the same round-trip.
     assert runner.calls.index(close_args) > runner.calls.index(confirm_args)
+
+
+def test_ack_popup_is_dismissed_after_the_fast_path_accept_too():
+    """REFRESH-RESULT-DISMISS-003: real customer report -- the popup
+    kept blocking progress even after REFRESH-RESULT-DISMISS-001/002
+    shipped. Root cause: those packets only dismissed it after
+    refresh_confirm_point -- but a real customer capture proved it
+    just as reliably appears after accept_mission_point too (locking
+    in an ALREADY-acceptable mission, no refresh involved at all), and
+    that fast path never dismissed it. Direct proof: with everything
+    (including the ack popup) matching on the very first check, the
+    dismiss tap still happens right after the fast-path accept tap."""
+
+    runner = _runner_with_valid_captures()
+    recognizer = LabelMappingRecognizer(matching_labels=_ALL_LABELS)  # accepted immediately, no refresh
+    cfg = _config()
+
+    result = _run(runner, recognizer, cfg)
+
+    # Every label matches, including kill-progress, so slot 1 is found
+    # complete on its own accept check (EARLY-COMPLETE-JUMP-001) and the
+    # cycle runs all the way to completion -- irrelevant to what this
+    # test checks: the FIRST accept tap must still be followed by a
+    # dismiss tap right after it.
+    assert result.outcome is BountyOutcome.COMPLETED_CYCLE
+    close_args = (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.close_result_point)))
+    accept_args = (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.accept_mission_point)))
+    accept_index = runner.calls.index(accept_args)
+    close_index = runner.calls.index(close_args)
+    assert close_index == accept_index + 1
+
+
+def test_ack_popup_is_dismissed_after_the_post_refresh_accept_too():
+    """Same fix, the post-refresh accept site: the mission only becomes
+    acceptable after one full refresh+confirm round-trip, and the ack
+    popup (matching from the very start, including on this final
+    accept) must still be dismissed after THIS accept_mission_point
+    tap, not just the earlier one inside the refresh loop."""
+
+    class _AcceptOnSecondCheckWithAckRecognizer:
+        def __init__(self):
+            self._phrase_checks = 0
+            self.calls: list = []
+
+        def recognize(self, image_bytes, roi, expected_label, threshold):
+            self.calls.append(expected_label)
+            if expected_label in {_POPUP_ANCHOR, _POPUP_TITLE, _REWARD}:
+                return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test", (0.5, 0.5))
+            if expected_label == _PHRASE:
+                self._phrase_checks += 1
+            if expected_label in (_PHRASE, _QTY) and self._phrase_checks >= 2:
+                return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test", (0.5, 0.5))
+            return RecognitionResult(RecognitionStatus.NO_MATCH, None, 0.05, "test")
+
+    runner = _runner_with_valid_captures()
+    recognizer = _AcceptOnSecondCheckWithAckRecognizer()
+    cfg = _config(max_kill_progress_poll_attempts=1)
+
+    result = _run(runner, recognizer, cfg)  # must not raise, must not hang
+
+    assert result.outcome is BountyOutcome.KILL_PROGRESS_NOT_COMPLETE
+    close_args = (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.close_result_point)))
+    accept_args = (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.accept_mission_point)))
+    # Two accept taps happen (fast-path check fails first, refresh
+    # loop's own accept succeeds second) -- the LAST close tap must
+    # follow the LAST accept tap.
+    accept_indices = [i for i, call in enumerate(runner.calls) if call == accept_args]
+    close_indices = [i for i, call in enumerate(runner.calls) if call == close_args]
+    assert accept_indices, "accept_mission_point was never tapped"
+    assert close_indices, "close_result_point was never tapped"
+    assert close_indices[-1] > accept_indices[-1]
 
 
 def test_refresh_result_ack_popup_check_is_paced_not_instant():

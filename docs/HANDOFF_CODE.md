@@ -5028,3 +5028,88 @@ Run 3x in a row: `444 passed` every time, 0 failures. (Prior baseline
 - On a real device: watch specifically for any `recognition_failed`
   (a fatal, worker-stopping outcome) occurring right after a slot
   select -- this packet targets exactly that failure mode.
+
+## REFRESH-RESULT-DISMISS-003: dismiss the ack popup after accept_mission_point too
+
+**Trigger**: user reported still being stuck at the exact same
+acknowledgment popup ("자유 토벌작전" / "확률" / one reward icon /
+"닫기") after `REFRESH-RESULT-DISMISS-001`/`002` shipped, with a fresh
+Stop-then-Test-capture screenshot confirming it.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`REFRESH-RESULT-DISMISS-001`/`002` only ever dismissed this popup
+after `refresh_confirm_point` (the renewal-confirm path). But the
+popup appears after **locking in a mission**, not specifically after
+confirming a renewal -- and `accept_mission_point` (tapped whenever a
+mission is accepted, whether already-acceptable on the very first
+check or after a refresh) is the OTHER place a mission gets locked in.
+Neither of `_accept_or_refresh_slot`'s two `accept_mission_point` call
+sites ever dismissed this popup, so it sat there blocking progress in
+exactly the same way the refresh-confirm path did before
+`REFRESH-RESULT-DISMISS-001` -- this was never fully fixed, only
+half-fixed, because the underlying trigger ("locking in a mission")
+is broader than the one path that was patched.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py`: the dismiss logic (pace, check
+`reward_screen_label`, tap `close_result_point` if shown) was
+extracted into a shared `_dismiss_ack_popup_if_shown` helper and is
+now called after all three tap sites that can lock in a mission: the
+`refresh_confirm_point` tap (as before), and both `accept_mission_
+point` tap sites (the fast "already acceptable" path and the
+post-refresh path). Still real, measured assets reused throughout --
+no new template or position.
+
+### Regression tests
+
+- `tests/test_bounty_mission.py` --
+  `test_ack_popup_is_dismissed_after_the_fast_path_accept_too`
+  (dismiss tap follows the fast-path accept tap immediately),
+  `test_ack_popup_is_dismissed_after_the_post_refresh_accept_too`
+  (same for the post-refresh accept path). Updated
+  `test_full_cycle_reaches_completed_state_once`'s tap-count assertion
+  (every accept now also dismisses the ack popup when it's showing).
+
+### Test results
+
+```
+python -m pytest -q
+446 passed
+```
+
+Run 3x in a row: `446 passed` every time, 0 failures. (Prior baseline
+444 + 2 new tests = 446.)
+
+### Commits
+
+- `PLACEHOLDER_COMMIT_HASH` -- `REFRESH-RESULT-DISMISS-003: dismiss
+  the ack popup after accept_mission_point too` (implementation +
+  tests + this HANDOFF section, in one commit)
+- Followed by a short "docs: record REFRESH-RESULT-DISMISS-003 commit
+  hash in handoff" commit recording the real hash.
+
+### Limitations
+
+1. This is the third iteration on this exact popup (`001` found it,
+   `002` paced it, `003` widened where it's dismissed) -- if it's
+   still not fully covered, the next most likely gap is a FOURTH tap
+   site this project hasn't identified yet, which would need new real
+   evidence to find rather than further speculation.
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the existing fake-runner/recognizer test harness
+   and the real supplied captures (already validated in
+   `REFRESH-RESULT-DISMISS-001`).
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `446 passed`).
+- On a real device: confirm the acknowledgment popup no longer blocks
+  progress after EITHER accepting an already-good mission OR
+  confirming a refresh -- both paths now dismiss it.
