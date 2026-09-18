@@ -20,6 +20,12 @@ class _DummyOutcome:
         self.outcome = value
 
 
+class _DummyOutcomeWithDetail:
+    def __init__(self, value: str, detail: str) -> None:
+        self.outcome = value
+        self.detail = detail
+
+
 def _make_worker(account_id, cycle_fn, **kwargs) -> AccountWorker:
     return AccountWorker(account_id, cycle_fn, sleep_fn=lambda s: None, **kwargs)
 
@@ -246,3 +252,59 @@ def test_runtime_status_also_syncs_on_an_error_cycle():
     assert status.errored is True
     assert status.phase == "CONFIGURING"  # synced before the error break, not lost
     assert status.locked_slots == 2
+
+
+# --- DIAGNOSTIC-DETAIL-001: the cycle result's own detail is surfaced ------
+
+
+def test_error_cycle_detail_reaches_last_error_and_recent_log():
+    """Real customer report: a generic 'capture_unavailable' with no way
+    to tell which of the many possible capture/tap steps actually
+    failed. The cycle result's own specific detail string must now
+    reach both last_error and the log, not just the generic outcome."""
+
+    def cycle(should_stop):
+        return _DummyOutcomeWithDetail("capture_unavailable", "Slot 1: select tap failed (rc=1).")
+
+    worker = _make_worker(AccountId.LD1, cycle)
+    worker.start()
+    time.sleep(0.05)
+    worker.stop(join_timeout=1.0)
+
+    status = worker.status()
+    assert status.errored is True
+    assert "capture_unavailable" in status.last_error
+    assert "Slot 1: select tap failed (rc=1)." in status.last_error
+    assert any("Slot 1: select tap failed (rc=1)." in line for line in status.recent_log)
+
+
+def test_non_error_cycle_detail_also_reaches_recent_log():
+    def cycle(should_stop):
+        return _DummyOutcomeWithDetail("completed_cycle", "Verified reward cycle complete; slots reset.")
+
+    worker = _make_worker(AccountId.LD2, cycle)
+    worker.start()
+    time.sleep(0.05)
+    worker.stop(join_timeout=1.0)
+
+    status = worker.status()
+    assert any("Verified reward cycle complete; slots reset." in line for line in status.recent_log)
+
+
+def test_a_result_without_detail_is_a_safe_noop_never_raises():
+    """Backward compatibility: a minimal fake result (like the plain
+    _DummyOutcome used throughout the rest of this file) has no
+    .detail attribute at all -- must never raise, must behave exactly
+    as before this packet."""
+
+    def cycle(should_stop):
+        return _DummyOutcome("adb_error")  # no .detail attribute
+
+    worker = _make_worker(AccountId.LD3, cycle)
+    worker.start()
+    time.sleep(0.05)
+    worker.stop(join_timeout=1.0)
+
+    status = worker.status()
+    assert status.errored is True
+    assert status.last_error == "adb_error: account worker stopped"

@@ -12,6 +12,17 @@ other worker.
 
 No GUI code, no recognition/game logic, and no ADB command construction
 lives here; this module only owns thread lifecycle + status bookkeeping.
+
+As of DIAGNOSTIC-DETAIL-001, ``last_error``/the log line for an error
+cycle also includes the cycle result's own specific ``detail`` string
+(via ``getattr(result, "detail", "")``, duck-typed exactly like
+``outcome`` already was) -- e.g. "Slot 1: select tap failed (rc=1)"
+rather than just the generic "capture_unavailable: account worker
+stopped". A real customer's live run previously produced only that
+generic outcome with no way to tell which of the many possible
+capture/tap steps actually failed short of reading source -- this
+closes that gap. Every non-error cycle's log line gets the same detail
+appended too, for the same reason.
 """
 
 from __future__ import annotations
@@ -127,6 +138,19 @@ class AccountWorker:
                 result = self._run_cycle(lambda: self._stop_event.is_set())
                 outcome = getattr(result, "outcome", result)
                 outcome_str = getattr(outcome, "value", str(outcome))
+                # DIAGNOSTIC-DETAIL-001: the cycle result's own rich,
+                # specific reason (e.g. "Slot 1: select tap failed
+                # (rc=1)") was previously computed by bounty_mission.py
+                # but never surfaced anywhere -- only this generic
+                # outcome_str reached the GUI/log, making a real
+                # capture_unavailable/etc. impossible to diagnose without
+                # reading source. Duck-typed (getattr, default "") so
+                # this stays decoupled from any specific result type --
+                # a fake/minimal test result with no .detail is still a
+                # safe no-op here, exactly like outcome/.value above.
+                # Passes through SensitiveDataRedactionFilter (logs.py)
+                # exactly like every other logged message.
+                detail = getattr(result, "detail", "") or ""
                 # REL-UPDATE-003 fix: this runtime-status sync previously sat
                 # *after* an unconditional `break` in the error branch below,
                 # making it dead code -- phase/locked_slots/slot_states never
@@ -143,14 +167,17 @@ class AccountWorker:
                         self._status.locked_slots = runtime.locked_count
                         self._status.slot_states = [item.value for item in runtime.slots]
                 if outcome_str in {"recognition_failed", "capture_unavailable", "stale_screen", "unknown_screen", "adb_error"}:
+                    last_error = f"{outcome_str}: account worker stopped" + (f" -- {detail}" if detail else "")
                     with self._lock:
                         self._status.errored = True
-                        self._status.last_error = f"{outcome_str}: account worker stopped"
-                    self._append_log(f"ERROR: {outcome_str}; account worker stopped")
+                        self._status.last_error = last_error
+                    self._append_log(f"ERROR: {outcome_str}; account worker stopped" + (f" -- {detail}" if detail else ""))
+                    if self._logger is not None:
+                        self._logger.error("cycle error outcome=%s detail=%s", outcome_str, detail)
                     break
-                self._append_log(f"cycle result: {outcome_str}")
+                self._append_log(f"cycle result: {outcome_str}" + (f" -- {detail}" if detail else ""))
                 if self._logger is not None:
-                    self._logger.info("cycle result: %s", outcome_str)
+                    self._logger.info("cycle result: %s detail=%s", outcome_str, detail)
 
                 if self._stop_event.is_set():
                     break

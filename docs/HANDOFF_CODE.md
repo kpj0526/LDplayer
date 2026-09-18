@@ -3229,3 +3229,81 @@ new `test_bounty_config.py` tests = 381.)
   diagnostic capture written after the tap) at the real row-1 position,
   not somewhere else, and that the flow proceeds past slot selection
   rather than immediately failing again.
+
+## DIAGNOSTIC-DETAIL-001: surface the real failure reason, not just the outcome
+
+**Trigger**: after `SLOT-SELECT-CALIBRATION-001` shipped
+(`v1.0.3-rc.5`), the user reported LD1 still stopped with a generic
+`capture_unavailable` (cycles: 2, `locked: 0/5`) on a real device. The
+GUI/log showed only `"capture_unavailable: account worker stopped"` --
+tracing the code confirmed `bounty_mission.run_one_cycle`'s own
+specific, per-step failure reason (`BountyCycleResult.detail`, e.g.
+`"Slot 1: select tap failed (rc=1)."`) was computed but **never
+surfaced anywhere** -- not the GUI, not the per-account log file. This
+made the customer's real failure impossible to diagnose from a
+screenshot alone.
+
+### Status: implemented, tested, regression-verified. Pure
+observability fix -- no capture/ADB/touch/outcome behavior changed.
+
+### Fix
+
+`src/ldmanager/controller.py` -- `AccountWorker._loop` now reads
+`getattr(result, "detail", "")` (duck-typed, exactly like the existing
+`outcome`/`.value` handling -- a result with no `.detail` at all is a
+safe no-op, never an error) and appends it to:
+- `status.last_error` (error-outcome cycles)
+- every `_append_log(...)` line (error and non-error cycles alike)
+- the per-account log file (`self._logger.error`/`.info`, now with a
+  `detail=%s` field) -- already passes through the existing
+  `SensitiveDataRedactionFilter` exactly like every other logged
+  message, so this doesn't bypass any existing secret-redaction
+  safeguard.
+
+### Regression tests
+
+`tests/test_controller.py` -- new `_DummyOutcomeWithDetail` test
+double + 3 tests:
+- `test_error_cycle_detail_reaches_last_error_and_recent_log`
+- `test_non_error_cycle_detail_also_reaches_recent_log`
+- `test_a_result_without_detail_is_a_safe_noop_never_raises` (backward
+  compatibility with every existing plain `_DummyOutcome`-shaped fake
+  used throughout the rest of this file/project)
+
+### Test results
+
+```
+python -m pytest -q
+384 passed
+```
+
+Run 3x in a row: `384 passed` every time, 0 failures. (Prior baseline
+381 + 3 new tests = 384.)
+
+### Commits
+
+- Implementation + tests + this handoff section, then a short
+  follow-up "docs: record DIAGNOSTIC-DETAIL-001 commit hash in
+  handoff" commit recording the exact hash.
+
+### Limitations
+
+1. This is purely an observability fix. It does not change, and is not
+   claimed to fix, whatever the customer's real underlying
+   `capture_unavailable` cause turns out to be on their live device --
+   that remains open, and this fix exists specifically so the *next*
+   occurrence is diagnosable from the GUI/log directly instead of
+   needing a screenshot round-trip.
+2. No live ADB/LDPlayer/game session was used to verify this --
+   verified with fake cycle-result doubles only.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `384 passed`).
+- On a real device: reproduce any error condition and confirm the GUI
+  panel's error text and the per-account log file now both show a
+  specific reason (e.g. "Slot 1: select tap failed (rc=...)") rather
+  than just a bare outcome name like "capture_unavailable".
