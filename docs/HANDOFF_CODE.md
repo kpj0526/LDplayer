@@ -3653,9 +3653,11 @@ Run 3x in a row: `393 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- Implementation + tests + this handoff section, then a short
-  follow-up "docs: record COMPLETE-SLOT-TRACKING-001 commit hash in
-  handoff" commit recording the exact hash.
+- `991d22d` — `COMPLETE-SLOT-TRACKING-001: complete the slot that's
+  actually eligible` (implementation + tests + this HANDOFF section,
+  in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `991d22d`.
 
 ### Limitations
 
