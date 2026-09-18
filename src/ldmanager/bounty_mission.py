@@ -52,6 +52,7 @@ and no login/reconnect logic exists here — see
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Optional
@@ -66,6 +67,7 @@ from .screenshot import capture_screenshot
 from .runtime import AccountMissionRuntime, SlotState
 
 ShouldStop = Callable[[], bool]
+SleepFn = Callable[[float], None]
 _FULL_SCREEN = RelativeRegion(x=0.0, y=0.0, width=1.0, height=1.0)
 
 
@@ -202,7 +204,7 @@ def _verify_refresh_popup(runner, serial, config, recognizer) -> Optional[bool]:
 
 def _accept_or_refresh_slot(
     *, slot_index: int, serial: str, runner: AdbRunner, recognizer: Recognizer,
-    config: BountyMissionConfig, should_stop: ShouldStop,
+    config: BountyMissionConfig, should_stop: ShouldStop, sleep_fn: SleepFn,
 ) -> "tuple[SlotOutcome | None, BountyCycleResult | None]":
     """Select+check one slot; refresh (bounded) until an acceptable
     mission is found. Returns ``(SlotOutcome, None)`` on a definitive
@@ -319,8 +321,16 @@ def _accept_or_refresh_slot(
             popup_verified = _verify_refresh_popup(runner, serial, config, recognizer)
             if popup_verified:
                 break
+            # RETRY-PACING-001: a real customer report traced back to
+            # this -- retry_delay_seconds was configured but never
+            # actually applied anywhere in this module, so every
+            # bounded verify loop fired its captures back-to-back with
+            # no pause for the game's own UI transition/animation to
+            # finish, spuriously reporting "never verified" even with a
+            # correct tap. Only pace BETWEEN attempts, never after the
+            # last one (about to give up either way).
             if popup_attempt < config.max_popup_verify_attempts:
-                continue
+                sleep_fn(config.retry_delay_seconds)
 
         if not popup_verified:
             # Never confirm blindly: structural verification failed --
@@ -393,6 +403,7 @@ def run_one_cycle(
     should_stop: ShouldStop = _default_should_stop,
     on_phase: Optional[Callable[[str], None]] = None,
     runtime: Optional[AccountMissionRuntime] = None,
+    sleep_fn: SleepFn = time.sleep,
 ) -> BountyCycleResult:
     """Run exactly one bounty cycle for one account/serial.
 
@@ -424,7 +435,7 @@ def run_one_cycle(
             on_phase(f"slot {slot_index}: select/check")
         slot_outcome, abort = _accept_or_refresh_slot(
             slot_index=slot_index, serial=serial, runner=runner, recognizer=recognizer,
-            config=config, should_stop=should_stop,
+            config=config, should_stop=should_stop, sleep_fn=sleep_fn,
         )
         if abort is not None:
             return BountyCycleResult(abort.outcome, tuple(slot_outcomes), abort.detail)
@@ -500,7 +511,7 @@ def run_one_cycle(
         if runtime is None or runtime.slots[i - 1] is SlotState.TARGET_LOCKED
     ]
 
-    for _attempt in range(1, config.max_kill_progress_poll_attempts + 1):
+    for _kp_attempt in range(1, config.max_kill_progress_poll_attempts + 1):
         if eligible:
             break
         if should_stop():
@@ -533,6 +544,12 @@ def run_one_cycle(
             progress_detail = f"slot {slot_index}: kill progress not yet complete"
         if eligible:
             break
+        # RETRY-PACING-001: real kill progress advances from real
+        # gameplay, not from anything this code does -- pace full
+        # passes over the candidate slots rather than hammering ADB
+        # continuously while waiting for it.
+        if _kp_attempt < config.max_kill_progress_poll_attempts:
+            sleep_fn(config.retry_delay_seconds)
 
     if not eligible or eligible_slot_index is None:
         return BountyCycleResult(
@@ -562,6 +579,8 @@ def run_one_cycle(
         select_complete = runner.run(serial, build_tap_args(config.screen_size, config.slot_select_points[eligible_slot_index - 1]))
         if not select_complete.ok:
             complete_detail = f"select-complete tap failed (rc={select_complete.returncode}, stderr={_short(select_complete.stderr)})"
+            if _complete_attempt < config.max_complete_verify_attempts:
+                sleep_fn(config.retry_delay_seconds)
             continue
 
         if should_stop():
@@ -579,6 +598,9 @@ def run_one_cycle(
             complete_detail = "no confident button_complete match on the current screen (select_complete_point may not be showing the eligible mission)"
         if complete_ok:
             break
+        # RETRY-PACING-001: see the popup-verify loop's comment above.
+        if _complete_attempt < config.max_complete_verify_attempts:
+            sleep_fn(config.retry_delay_seconds)
 
     if not complete_ok:
         return BountyCycleResult(
@@ -597,6 +619,9 @@ def run_one_cycle(
         if reward is not None and reward.matched:
             reward_ok = True
             break
+        # RETRY-PACING-001: see the popup-verify loop's comment above.
+        if attempt < config.max_reward_verify_attempts:
+            sleep_fn(config.retry_delay_seconds)
     if not reward_ok:
         return BountyCycleResult(
             BountyOutcome.REWARD_VERIFY_FAILED, tuple(slot_outcomes),
@@ -630,6 +655,9 @@ def run_one_cycle(
         if result is not None and result.matched:
             result_ok = True
             break
+        # RETRY-PACING-001: see the popup-verify loop's comment above.
+        if attempt < config.max_result_verify_attempts:
+            sleep_fn(config.retry_delay_seconds)
     if not result_ok:
         return BountyCycleResult(
             BountyOutcome.RESULT_VERIFY_FAILED, tuple(slot_outcomes),
@@ -671,6 +699,9 @@ def run_one_cycle(
         if listing is not None and listing.matched:
             list_ok = True
             break
+        # RETRY-PACING-001: see the popup-verify loop's comment above.
+        if attempt < config.max_mission_list_verify_attempts:
+            sleep_fn(config.retry_delay_seconds)
     if not list_ok:
         return BountyCycleResult(
             BountyOutcome.MISSION_LIST_VERIFY_FAILED, tuple(slot_outcomes),
@@ -690,7 +721,7 @@ def run_one_cycle(
     for slot_index in range(1, config.slot_count + 1):
         slot_outcome, abort = _accept_or_refresh_slot(
             slot_index=slot_index, serial=serial, runner=runner, recognizer=recognizer,
-            config=config, should_stop=should_stop,
+            config=config, should_stop=should_stop, sleep_fn=sleep_fn,
         )
         if abort is not None:
             return BountyCycleResult(abort.outcome, tuple(slot_outcomes) + tuple(re_accepted), abort.detail)

@@ -4424,3 +4424,104 @@ Run 3x in a row: `430 passed` every time, 0 failures. (Prior baseline
   slot's refresh/reroll step on BOTH regular "자유 토벌작전" and
   dungeon-type ("...[던전]") missions, reaching the real renewal-
   confirm dialog instead of "refresh popup never verified".
+
+## RETRY-PACING-001: retry_delay_seconds was configured but never actually applied
+
+**Trigger**: user reported "refresh popup not verified" still
+happening after `REFRESH-TRIGGER-CORRECTION-001` fixed the tap
+position. Investigated the whole retry/verify path from first
+principles rather than assuming another tap-position error.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`BountyMissionConfig.retry_delay_seconds` is a real, validated,
+documented config field (`configs/bounty.example.yaml` ships it as
+`1.0`) -- but `bounty_mission.py` never read or used it anywhere. Every
+bounded verify loop (refresh-popup verify, kill-progress poll,
+complete-tap retry, reward verify, result verify, mission-list verify)
+fired its capture+check attempts back-to-back with zero pause between
+them -- as fast as ADB round-trips allowed. If the real game UI takes
+even a few hundred milliseconds to finish a transition/fade-in
+animation after a tap (entirely plausible for a popup opening), every
+attempt in a 3-attempt bounded loop could fire and complete WHILE the
+animation was still in progress, and none of them would ever see the
+final rendered state -- a spurious "never verified" result with a
+perfectly correct tap. This is a different, deeper bug than
+`REFRESH-TRIGGER-CORRECTION-001`'s wrong-tap-position bug, and likely
+compounded it (would have caused occasional failures even with the
+right tap target).
+
+Note: `retry_delay_seconds` IS correctly used elsewhere in this
+codebase -- `guarded_touch.py`'s `paced_guarded_touch` (used by the
+older, separate `mission.py`/`mission_config.py` generic-mission
+flow) -- so this was specifically a `bounty_mission.py` gap, not a
+project-wide pattern that was simply never implemented anywhere.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py`: added an injectable `sleep_fn:
+Callable[[float], None] = time.sleep` parameter to `run_one_cycle`
+(threaded through to `_accept_or_refresh_slot`), and inserted
+`sleep_fn(config.retry_delay_seconds)` between (never after) failed
+attempts in all six bounded loops: refresh-popup verify,
+complete-tap retry, reward verify, result verify, mission-list verify
+(each per-attempt), and kill-progress polling (once per full pass over
+the candidate slots, since that loop waits on real gameplay progress,
+not a UI transition). `retry_delay_seconds: 0.0` (the test-harness
+default) is still a real, valid pace -- `sleep_fn` is always called,
+just with a zero delay, never skipped outright.
+
+### Regression tests
+
+- `tests/test_bounty_mission.py` --
+  `test_retry_delay_seconds_actually_paces_the_popup_verify_loop`:
+  direct proof `sleep_fn` is invoked with `retry_delay_seconds` exactly
+  `max_popup_verify_attempts - 1` times (between attempts, never after
+  the last one) when every attempt misses.
+  `test_retry_delay_seconds_zero_is_a_real_but_instant_pace`: confirms
+  `sleep_fn` is still called (with `0.0`) rather than skipped when the
+  configured delay is zero.
+
+### Test results
+
+```
+python -m pytest -q
+432 passed
+```
+
+Run 3x in a row: `432 passed` every time, 0 failures. (Prior baseline
+430 + 2 new tests = 432.)
+
+### Commits
+
+- `PLACEHOLDER_COMMIT_HASH` -- `RETRY-PACING-001: retry_delay_seconds
+  was configured but never actually applied` (implementation + tests +
+  this HANDOFF section, in one commit)
+- Followed by a short "docs: record RETRY-PACING-001 commit hash in
+  handoff" commit recording the real hash.
+
+### Limitations
+
+1. `retry_delay_seconds` is a single, global pace value shared by every
+   bounded loop in this module -- a UI element that genuinely needs a
+   longer settle time than others would still need its own dedicated
+   field if this one value (1.0s in the shipped example) turns out
+   insufficient for some specific step.
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified via an injectable `sleep_fn` test double, not by measuring
+   real UI transition timing on an actual device.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `432 passed`).
+- On a real device: confirm "refresh popup never verified" no longer
+  occurs on a correctly-tapped popup; if it still does, the next
+  candidate is `retry_delay_seconds: 1.0` simply being too short for
+  this specific device/instance's real UI transition time (increase it
+  in `configs/bounty.yaml` and retest before assuming another
+  calibration bug).

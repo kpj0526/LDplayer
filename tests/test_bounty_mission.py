@@ -698,6 +698,48 @@ def test_completion_targets_the_slot_that_actually_became_eligible_not_row_1():
     assert runner.calls[complete_index - 1] != (_SERIAL, slot_1_args)
 
 
+# --- RETRY-PACING-001: retry_delay_seconds must actually pace retries -----
+
+
+def test_retry_delay_seconds_actually_paces_the_popup_verify_loop():
+    """Real customer report: "refresh popup never verified" kept
+    happening even after REFRESH-TRIGGER-CORRECTION-001's tap fix.
+    Root cause: retry_delay_seconds was configured but never actually
+    applied anywhere in this module -- every bounded verify loop fired
+    its captures back-to-back with zero pause for the game's own UI
+    transition to finish. Direct proof sleep_fn is called with
+    retry_delay_seconds between (not after) popup-verify attempts."""
+
+    sleep_calls: list[float] = []
+    runner = _runner_with_valid_captures()
+    # Popup anchor/title never match -- forces every popup-verify
+    # attempt to miss, so the loop runs its full bound.
+    recognizer = LabelMappingRecognizer(matching_labels=frozenset({_PHRASE}))
+    cfg = _config(max_refresh_attempts=1, max_popup_verify_attempts=3, retry_delay_seconds=2.5)
+
+    result = _run(runner, recognizer, cfg, sleep_fn=sleep_calls.append)
+
+    assert result.outcome is BountyOutcome.REFRESH_POPUP_NOT_VERIFIED
+    # 3 attempts -> exactly 2 pacing sleeps between them, never a 3rd
+    # (no point pacing after the last attempt, about to give up anyway).
+    assert sleep_calls == [2.5, 2.5]
+
+
+def test_retry_delay_seconds_zero_is_a_real_but_instant_pace():
+    """retry_delay_seconds: 0.0 (the test-harness/legacy default) must
+    still invoke sleep_fn between attempts -- it's a real, valid pace
+    value, not a signal to skip pacing entirely."""
+
+    sleep_calls: list[float] = []
+    runner = _runner_with_valid_captures()
+    recognizer = LabelMappingRecognizer(matching_labels=frozenset({_PHRASE}))
+    cfg = _config(max_refresh_attempts=1, max_popup_verify_attempts=2, retry_delay_seconds=0.0)
+
+    _run(runner, recognizer, cfg, sleep_fn=sleep_calls.append)
+
+    assert sleep_calls == [0.0]
+
+
 # --- EARLY-COMPLETE-JUMP-001: stop touring once a slot is found complete
 
 
