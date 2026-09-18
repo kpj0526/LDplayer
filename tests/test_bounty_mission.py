@@ -6,6 +6,7 @@ from ldmanager.bounty_mission import BountyOutcome, run_one_cycle
 from ldmanager.coordinates import RelativeCoordinate, RelativeRegion, ScreenSize, build_tap_args
 from ldmanager.models import AccountId
 from ldmanager.recognition import PlaceholderRecognizer, RecognitionResult, RecognitionStatus
+from ldmanager.runtime import AccountMissionRuntime
 from ldmanager.screenshot import DEFAULT_CAPTURE_ARGS
 from tests.fakes import FakeAdbRunner, LabelMappingRecognizer
 
@@ -696,6 +697,30 @@ def test_completion_targets_the_slot_that_actually_became_eligible_not_row_1():
     assert runner.calls[complete_index - 1] == (_SERIAL, slot_3_args)
     # Never blindly re-selects row 1 right before completing.
     assert runner.calls[complete_index - 1] != (_SERIAL, slot_1_args)
+
+
+# --- PHASE-VISIBILITY-001: runtime.phase must advance past kill-progress --
+
+
+def test_runtime_phase_advances_through_the_post_completion_steps():
+    """Real customer debugging need: runtime.phase (the GUI's "phase:"
+    display) was only ever set once, to WAITING_KILL_PROGRESS, then
+    never updated again -- a run stuck anywhere from complete through
+    mission-list verification showed the same stale phase text no
+    matter how far it had actually progressed. Direct proof phase
+    reaches VERIFYING_MISSION_LIST (not stuck at WAITING_KILL_PROGRESS)
+    when the cycle gets all the way to -- and fails at -- that step."""
+
+    runner = _runner_with_valid_captures()
+    # Everything matches except mission_list_label -- forces the cycle
+    # through complete/claim/close and fails only at the final step.
+    recognizer = LabelMappingRecognizer(matching_labels=_ALL_LABELS - {_MISSION_LIST})
+    runtime = AccountMissionRuntime()
+
+    result = _run(runner, recognizer, _config(), runtime=runtime)
+
+    assert result.outcome is BountyOutcome.MISSION_LIST_VERIFY_FAILED
+    assert runtime.phase == "VERIFYING_MISSION_LIST"
 
 
 # --- RETRY-PACING-001: retry_delay_seconds must actually pace retries -----

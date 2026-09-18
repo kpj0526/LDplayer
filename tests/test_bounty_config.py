@@ -188,15 +188,21 @@ def test_non_positive_retry_bound_is_rejected(tmp_path):
 
 
 def test_example_bounty_config_retry_budget_was_widened():
-    """RETRY-BUDGET-001: a real live run reported "refresh popup never
-    verified" recurring intermittently even after RETRY-PACING-001 --
-    the timing margin was thin, not absent. Guards against silently
-    drifting back to the original, too-thin budget (3 attempts /
-    1.0s -- 2-3s worst case) rather than the widened one (5 attempts /
-    1.5s -- up to 6s worst case)."""
+    """RETRY-BUDGET-001/RETRY-BUDGET-002: a real live run reported
+    "refresh popup never verified" recurring intermittently even after
+    RETRY-PACING-001 -- the timing margin was thin, not absent. The
+    same symptom then recurred on mission_list_verify_failed, proving
+    the thin-margin problem applies to every UI-transition-dependent
+    verify loop, not just popup-verify. Guards against silently
+    drifting back to the original, too-thin budget (3 attempts / 1.0s
+    -- 2-3s worst case) on ANY of the five verify loops."""
 
     config = load_bounty_config(EXAMPLE_BOUNTY_CONFIG)
     assert config.max_popup_verify_attempts >= 5
+    assert config.max_complete_verify_attempts >= 5
+    assert config.max_reward_verify_attempts >= 5
+    assert config.max_result_verify_attempts >= 5
+    assert config.max_mission_list_verify_attempts >= 5
     assert config.retry_delay_seconds >= 1.5
 
 

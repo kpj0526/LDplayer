@@ -4664,3 +4664,94 @@ Run 3x in a row: `436 passed` every time, 0 failures. (Prior baseline
   the other five flagged outcomes) now shows red text in the GUI
   immediately, without needing to read the scrolling log, while the
   worker keeps running and retrying.
+
+## RETRY-BUDGET-002 / PHASE-VISIBILITY-001: widen the remaining verify budgets, and stop the phase display going stale
+
+**Trigger**: after `RETRY-BUDGET-001`/`ERROR-VISIBILITY-001` shipped
+and correctly surfaced a real failure in red, the user's next live run
+showed `mission_list_verify_failed` -- the SAME "thin timing margin"
+symptom `RETRY-BUDGET-001` fixed for popup-verify, now on a different
+step, in the log the visibility fix had just made readable. The same
+capture also showed `phase: WAITING_KILL_PROGRESS` while the cycle had
+actually progressed all the way through complete/claim/close and was
+failing at mission-list verification -- a stale, misleading phase
+display made worse debugging in exactly this kind of remote-diagnosis
+session.
+
+### Status: implemented, tested, regression-verified.
+
+### Fix 1: RETRY-BUDGET-002
+
+`configs/bounty.example.yaml`: `max_complete_verify_attempts`,
+`max_reward_verify_attempts`, `max_result_verify_attempts`, and
+`max_mission_list_verify_attempts` all raised 3 -> 5, matching
+`max_popup_verify_attempts`'s existing widened value. `RETRY-PACING-
+001` left every one of these loops completely unpaced until it
+shipped, so all five are equally exposed to the same thin-margin
+failure mode -- not just the one that happened to be reported first.
+
+### Fix 2: PHASE-VISIBILITY-001
+
+`src/ldmanager/bounty_mission.py`'s `run_one_cycle`: `runtime.phase`
+(the GUI's "phase:" display) is now updated at every major step --
+`COMPLETING`, `CLAIMING`, `CLOSING_RESULT`, `VERIFYING_MISSION_LIST`
+-- not just the original single `WAITING_KILL_PROGRESS` assignment.
+(Separately noted: this module's `on_phase` callback parameter is
+never wired to anything in production -- `app.py`'s cycle-function
+wrapper doesn't pass it -- so `runtime.phase`, which IS read by the
+GUI, was the only mechanism worth fixing here.)
+
+### Regression tests
+
+- `tests/test_bounty_config.py` --
+  `test_example_bounty_config_retry_budget_was_widened` extended to
+  cover all five `max_*_verify_attempts` fields, not just popup-verify.
+- `tests/test_bounty_mission.py` --
+  `test_runtime_phase_advances_through_the_post_completion_steps`:
+  direct proof `runtime.phase` reaches `VERIFYING_MISSION_LIST` (not
+  stuck at `WAITING_KILL_PROGRESS`) when the cycle progresses through
+  complete/claim/close and fails only at the final mission-list check.
+
+### Test results
+
+```
+python -m pytest -q
+437 passed
+```
+
+Run 3x in a row: `437 passed` every time, 0 failures. (Prior baseline
+436 + 1 new test = 437.)
+
+### Commits
+
+- `PLACEHOLDER_COMMIT_HASH` -- `RETRY-BUDGET-002/PHASE-VISIBILITY-001:
+  widen the remaining verify budgets, and stop the phase display going
+  stale` (implementation + tests + this HANDOFF section, in one
+  commit)
+- Followed by a short "docs: record RETRY-BUDGET-002/PHASE-
+  VISIBILITY-001 commit hash in handoff" commit recording the real
+  hash.
+
+### Limitations
+
+1. If a verify step still fails after this widened budget, it likely
+   needs real evidence (a screen recording of the exact miss) rather
+   than a further budget increase -- see `RETRY-PACING-001`'s QA note,
+   which applies equally to all five loops now.
+2. `runtime.phase` is still a coarse, step-level indicator (not
+   per-attempt) -- it tells you WHICH step is in progress, not how
+   many of that step's bounded attempts have been used so far (the log
+   line already reports the latter once the step concludes).
+3. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the existing fake-runner/recognizer test harness.
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `437 passed`).
+- On a real device: confirm the "phase:" display now updates as a live
+  run progresses through complete -> claim -> close -> mission-list
+  verification, and that any of the five verify steps now has more
+  room to succeed before reporting a failure.

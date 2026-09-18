@@ -558,6 +558,15 @@ def run_one_cycle(
         )
 
     # --- Complete -> reward -> claim -> result -> close -> mission list. ---
+    # PHASE-VISIBILITY-001: real customer debugging need -- runtime.phase
+    # (the GUI's "phase:" display) was only ever set once, to
+    # WAITING_KILL_PROGRESS, then never updated again for the rest of
+    # the cycle -- a run stuck anywhere from here through mission-list
+    # verification showed the same stale phase text regardless of how
+    # far it had actually progressed, making a live log hard to read
+    # at a glance during exactly this kind of remote debugging.
+    if runtime is not None:
+        runtime.phase = "COMPLETING"
     if on_phase:
         on_phase("completing: select + complete")
     if should_stop():
@@ -628,6 +637,8 @@ def run_one_cycle(
             f"Reward screen never verified within {config.max_reward_verify_attempts} attempt(s).",
         )
 
+    if runtime is not None:
+        runtime.phase = "CLAIMING"
     if on_phase:
         on_phase("claiming reward")
     if should_stop():
@@ -664,6 +675,8 @@ def run_one_cycle(
             f"Result screen never verified within {config.max_result_verify_attempts} attempt(s).",
         )
 
+    if runtime is not None:
+        runtime.phase = "CLOSING_RESULT"
     if on_phase:
         on_phase("closing result, returning to mission list")
     if should_stop():
@@ -688,6 +701,8 @@ def run_one_cycle(
             f"Close-result tap failed (rc={close.returncode}, stderr={_short(close.stderr)}).",
         )
 
+    if runtime is not None:
+        runtime.phase = "VERIFYING_MISSION_LIST"
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before mission-list verification.")
 
