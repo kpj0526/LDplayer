@@ -106,9 +106,13 @@ def test_full_cycle_reaches_completed_state_once():
     # 10 slot outcomes: 5 initial accepts + 5 re-accepts after claim.
     assert len(result.slots) == 10
     assert all(s.accepted for s in result.slots)
-    # No slot needed a refresh (already acceptable): only select taps
-    # for 10 slot-visits + select-complete + complete + claim + close = 14.
-    assert len(runner.calls) == 5 + 5 + 4
+    # No slot needed a refresh (already acceptable): 5 initial accept
+    # selects + 1 kill-progress-check select (COMPLETE-SLOT-TRACKING-001:
+    # slot 1 verifies eligible on the very first check, so the per-slot
+    # polling loop only visits it once, not all 5) + select-complete +
+    # complete + claim + close (4) + 5 re-accept selects (legacy
+    # stateless path, since no runtime is passed here) = 15.
+    assert len(runner.calls) == 5 + 1 + 4 + 5
 
 
 # --- phrase-only / quantity-only must reject (never one signal alone) ----
@@ -200,8 +204,11 @@ def test_kill_progress_incomplete_never_taps_complete_or_reward():
 
     assert result.outcome is BountyOutcome.KILL_PROGRESS_NOT_COMPLETE
     assert len(result.slots) == 5
-    # Only the 5 slot-select taps happened; nothing for complete/reward/claim.
-    assert len(runner.calls) == 5
+    # 5 initial accept selects, then COMPLETE-SLOT-TRACKING-001's
+    # per-slot polling visits all 5 candidate slots on each of the 3
+    # bounded poll attempts (never finding a match) = 5 + 3*5 = 20;
+    # nothing for complete/reward/claim.
+    assert len(runner.calls) == 5 + 3 * 5
 
 
 def test_kill_progress_via_explicit_complete_badge_is_also_eligible():
@@ -472,3 +479,140 @@ def test_refresh_confirm_dynamic_template_no_match_is_a_structured_error_not_a_c
     assert result.outcome is BountyOutcome.CAPTURE_UNAVAILABLE
     assert "refresh-confirm tap failed" in result.detail
     assert "template-based tap" in result.detail
+
+
+# --- COMPLETE-SLOT-TRACKING-001: complete the slot that's ACTUALLY eligible
+
+
+class _SlotAwareRunner:
+    """Wraps a FakeAdbRunner; tracks which slot_select_points position
+    was most recently tapped (state['current_slot']), so a paired
+    recognizer can respond as if only ONE specific slot's own detail
+    view is genuinely showing completion -- models the real UI, where
+    the mission list's rows carry no per-row completion indicator and
+    only an opened slot's own detail does."""
+
+    def __init__(self, inner, state, slot_points, screen_size):
+        self._inner = inner
+        self._state = state
+        self._slot_args = {
+            i: tuple(build_tap_args(screen_size, pt)) for i, pt in enumerate(slot_points, start=1)
+        }
+
+    def list_devices(self):
+        return self._inner.list_devices()
+
+    def capture_binary(self, serial, args):
+        return self._inner.capture_binary(serial, args)
+
+    def run(self, serial, args):
+        args_tuple = tuple(args)
+        for slot_index, slot_args in self._slot_args.items():
+            if args_tuple == slot_args:
+                self._state["current_slot"] = slot_index
+                break
+        return self._inner.run(serial, args)
+
+    @property
+    def calls(self):
+        return self._inner.calls
+
+    @property
+    def capture_calls(self):
+        return self._inner.capture_calls
+
+
+class _SlotAwareRecognizer:
+    """The kill-progress counter only matches while state['current_slot']
+    equals eligible_slot; every other configured label matches
+    unconditionally (models the 5 slots all sharing the same acceptable
+    phrase/quantity, and the later reward/result/list screens)."""
+
+    def __init__(self, state, eligible_slot, always_matching):
+        self._state = state
+        self._eligible_slot = eligible_slot
+        self._always = frozenset(always_matching)
+        self.calls: list = []
+
+    def recognize(self, image_bytes, roi, expected_label, threshold):
+        self.calls.append(expected_label)
+        if expected_label == _KILL_PROGRESS:
+            if self._state.get("current_slot") == self._eligible_slot:
+                return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test")
+            return RecognitionResult(RecognitionStatus.UNKNOWN, None, 0.0, "test: not this slot")
+        if expected_label in self._always:
+            return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test")
+        return RecognitionResult(RecognitionStatus.UNKNOWN, None, 0.0, "test: no match")
+
+
+def test_completion_targets_the_slot_that_actually_became_eligible_not_row_1():
+    """Real customer bug: select_complete_point always tapped row 1's
+    position regardless of which slot actually became eligible -- a
+    safe refusal (no wrong tap) when the eligible mission wasn't slot
+    1, but never actually completed it either. Verifies slot 3
+    specifically (not 1) is both detected as eligible AND the one
+    re-selected for the complete tap."""
+
+    cfg = _config()
+    state: dict = {"current_slot": None}
+    runner = _SlotAwareRunner(_runner_with_valid_captures(), state, cfg.slot_select_points, cfg.screen_size)
+    recognizer = _SlotAwareRecognizer(
+        state, eligible_slot=3,
+        always_matching={_PHRASE, _QTY, _REWARD, _RESULT, _MISSION_LIST},
+    )
+
+    result = _run(runner, recognizer, cfg)
+
+    assert result.outcome is BountyOutcome.COMPLETED_CYCLE
+    slot_3_args = tuple(build_tap_args(cfg.screen_size, cfg.slot_select_points[2]))
+    slot_1_args = tuple(build_tap_args(cfg.screen_size, cfg.slot_select_points[0]))
+    # The re-select-for-complete tap (the one immediately followed by the
+    # fixed complete_button_point tap) must be slot 3's position.
+    complete_button_args = tuple(build_tap_args(cfg.screen_size, cfg.complete_button_point))
+    complete_index = runner.calls.index((_SERIAL, complete_button_args))
+    assert runner.calls[complete_index - 1] == (_SERIAL, slot_3_args)
+    # Never blindly re-selects row 1 right before completing.
+    assert runner.calls[complete_index - 1] != (_SERIAL, slot_1_args)
+
+
+def test_kill_progress_polling_never_crosses_accounts_with_multiple_ld_instances():
+    """LD-multi-instance safety: two independent accounts (their own
+    runner/serial/recognizer), each with a DIFFERENT eligible slot,
+    running concurrently in spirit (sequentially here, independent
+    state) -- every select/complete/claim/close tap for each account
+    must stay scoped to that account's own serial, and each completes
+    its own correct slot, never the other's."""
+
+    cfg = _config()
+    serial_a, serial_b = _SERIAL, "127.0.0.1:6000"
+
+    state_a: dict = {"current_slot": None}
+    runner_a = _SlotAwareRunner(_runner_with_valid_captures(), state_a, cfg.slot_select_points, cfg.screen_size)
+    recognizer_a = _SlotAwareRecognizer(state_a, eligible_slot=2, always_matching={_PHRASE, _QTY, _REWARD, _RESULT, _MISSION_LIST})
+
+    state_b: dict = {"current_slot": None}
+    inner_b = FakeAdbRunner(
+        capture_results={(serial_b, DEFAULT_CAPTURE_ARGS): AdbBinaryResult(
+            serial=serial_b, args=DEFAULT_CAPTURE_ARGS, returncode=0, stdout_bytes=_VALID_PNG, stderr="",
+        )}
+    )
+    runner_b = _SlotAwareRunner(inner_b, state_b, cfg.slot_select_points, cfg.screen_size)
+    recognizer_b = _SlotAwareRecognizer(state_b, eligible_slot=4, always_matching={_PHRASE, _QTY, _REWARD, _RESULT, _MISSION_LIST})
+
+    result_a = run_one_cycle(account_id=AccountId.LD1, serial=serial_a, runner=runner_a, recognizer=recognizer_a, config=cfg)
+    result_b = run_one_cycle(account_id=AccountId.LD2, serial=serial_b, runner=runner_b, recognizer=recognizer_b, config=cfg)
+
+    assert result_a.outcome is BountyOutcome.COMPLETED_CYCLE
+    assert result_b.outcome is BountyOutcome.COMPLETED_CYCLE
+    # Every recorded call for each account used only that account's serial.
+    assert all(call[0] == serial_a for call in runner_a.calls)
+    assert all(call[0] == serial_b for call in runner_b.calls)
+    # Each account's complete-tap sequence re-selected ITS OWN eligible
+    # slot (2 for A, 4 for B) -- never the other account's.
+    complete_button_args = tuple(build_tap_args(cfg.screen_size, cfg.complete_button_point))
+    slot_2_args = tuple(build_tap_args(cfg.screen_size, cfg.slot_select_points[1]))
+    slot_4_args = tuple(build_tap_args(cfg.screen_size, cfg.slot_select_points[3]))
+    a_complete_index = runner_a.calls.index((serial_a, complete_button_args))
+    b_complete_index = runner_b.calls.index((serial_b, complete_button_args))
+    assert runner_a.calls[a_complete_index - 1] == (serial_a, slot_2_args)
+    assert runner_b.calls[b_complete_index - 1] == (serial_b, slot_4_args)

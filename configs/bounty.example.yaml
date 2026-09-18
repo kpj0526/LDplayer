@@ -145,12 +145,12 @@ complete_state_roi: {x: 0.4375, y: 0.7083, width: 0.1172, height: 0.0694}
 complete_state_label: "complete_badge"
 
 # Complete -> reward -> claim -> result -> close -> mission list.
-# SLOT-SELECT-CALIBRATION-001: matches slot_select_points[0] above (the
-# real, calibrated row-1 position) -- this mock flow selects a fixed
-# position to complete, same as the prior placeholder implicitly did
-# (its value matched the OLD slot_select_points[0] placeholder too).
-# NEEDS_REAL_TEST: this remains "always row 1" -- it does not yet track
-# which of the 5 locked slots actually became eligible.
+# COMPLETE-SLOT-TRACKING-001: select_complete_point is kept for
+# config-schema/backward-compat stability only -- it is no longer
+# consulted by run_one_cycle's live completion path, which now
+# re-selects whichever slot_select_points[i] was actually verified
+# eligible (never a fixed "always row 1" point -- see
+# docs/HANDOFF_CODE.md's COMPLETE-SLOT-TRACKING-001 section).
 select_complete_point: {x: 0.1172, y: 0.3069}
 complete_button_point: {x: 0.85, y: 0.90}
 # REWARD-SCREEN-CALIBRATION-001 (real-capture rework): calibrated from

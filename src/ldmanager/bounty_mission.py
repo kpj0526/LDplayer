@@ -20,13 +20,23 @@ States implemented, in order:
    acceptance.
 2. After all 5 slots: poll (bounded) for kill-progress completion —
    either the "200/200" counter or an explicit complete-state badge.
-   **0-199/200 never taps select/complete/claim** — this function
-   simply reports "not yet" and returns; it is the caller's job to try
-   again later (real kill progress advances from real gameplay, not
-   from anything this code does).
-3. Only once eligible: select the completed mission, tap complete,
-   verify the reward screen, claim, verify the result screen, close
-   it, verify the mission list is showing again.
+   COMPLETE-SLOT-TRACKING-001: since a slot's own completion state is
+   only visible in *that slot's own opened detail view* (confirmed
+   against real captures — the mission-list rows themselves carry no
+   per-row completion indicator), each poll attempt visits every
+   still-candidate locked slot in turn (a plain select/navigation tap)
+   to check it individually, remembering exactly which `slot_index`
+   qualifies. **0-199/200 never taps complete/claim** — a select tap
+   during this polling is only ever navigation to *look*, never a
+   completion/claim action, and this function still simply reports
+   "not yet" and returns when nothing qualifies; it is the caller's job
+   to try again later (real kill progress advances from real gameplay,
+   not from anything this code does).
+3. Only once a *specific* slot is verified eligible: re-select that
+   SAME slot (never a different, possibly still-incomplete one — the
+   real customer bug this replaced: a fixed "always row 1" point),
+   tap complete, verify the reward screen, claim, verify the result
+   screen, close it, verify the mission list is showing again.
 4. Re-refresh + re-accept each slot (reusing step 1's per-slot helper)
    so the caller can repeat the whole cycle.
 
@@ -422,34 +432,67 @@ def run_one_cycle(
     if runtime is not None:
         runtime.phase = "WAITING_KILL_PROGRESS"
 
-    # --- Kill-progress: bounded polling, 0-199/200 never touches anything. ---
+    # --- Kill-progress: bounded polling, per LOCKED slot. -----------------
+    # COMPLETE-SLOT-TRACKING-001: a single full-screen check here cannot
+    # tell WHICH of the (up to 5) locked slots became eligible -- the
+    # completion badge/counter is only visible in a slot's OWN opened
+    # detail view (the list rows themselves carry no per-row completion
+    # indicator; confirmed from real customer captures). Each poll
+    # attempt therefore visits every still-candidate LOCKED slot in turn
+    # (a plain select/navigation tap -- never complete/claim) and checks
+    # THAT slot's own detail for completion, remembering exactly which
+    # slot_index qualified. 0-199/200 still never taps complete/claim;
+    # only a real, per-slot-verified completion proceeds past this loop,
+    # and the completion step below acts on that SAME verified slot
+    # (never a different, still-incomplete one -- the real customer bug
+    # this replaces: select_complete_point previously always tapped row
+    # 1 regardless of which slot actually became eligible).
     if on_phase:
         on_phase("kill progress: observing")
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before kill-progress check.")
 
+    candidate_slots = [
+        i for i in range(1, config.slot_count + 1)
+        if runtime is None or runtime.slots[i - 1] is SlotState.TARGET_LOCKED
+    ]
+
     eligible = False
+    eligible_slot_index: Optional[int] = None
     progress_detail = ""
     for _attempt in range(1, config.max_kill_progress_poll_attempts + 1):
         if should_stop():
             return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped during kill-progress check.")
-        progress = _recognize(runner, serial, config, recognizer, config.kill_progress_roi, config.kill_progress_complete_label)
-        if progress is not None and progress.matched:
-            eligible = True
+        for slot_index in candidate_slots:
+            if should_stop():
+                return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped during kill-progress check.")
+            select_result = runner.run(serial, build_tap_args(config.screen_size, config.slot_select_points[slot_index - 1]))
+            if not select_result.ok:
+                progress_detail = f"slot {slot_index}: select tap failed (rc={select_result.returncode}, stderr={_short(select_result.stderr)})"
+                continue
+            if should_stop():
+                return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped during kill-progress check.")
+            progress = _recognize(runner, serial, config, recognizer, config.kill_progress_roi, config.kill_progress_complete_label)
+            if progress is not None and progress.matched:
+                eligible = True
+                eligible_slot_index = slot_index
+                break
+            # A completed active mission exposes the actual Complete button.
+            # Locate that button by image (not by a fixed coordinate) before
+            # allowing the completion transition.
+            if "button_complete" in config.template_map:
+                complete_badge = _recognize(runner, serial, config, recognizer, _FULL_SCREEN, "button_complete")
+            else:
+                complete_badge = _recognize(runner, serial, config, recognizer, config.complete_state_roi, config.complete_state_label)
+            if complete_badge is not None and complete_badge.matched:
+                eligible = True
+                eligible_slot_index = slot_index
+                break
+            progress_detail = f"slot {slot_index}: kill progress not yet complete"
+        if eligible:
             break
-        # A completed active mission exposes the actual Complete button.
-        # Locate that button by image (not by a fixed coordinate) before
-        # allowing the completion transition.
-        if "button_complete" in config.template_map:
-            complete_badge = _recognize(runner, serial, config, recognizer, _FULL_SCREEN, "button_complete")
-        else:
-            complete_badge = _recognize(runner, serial, config, recognizer, config.complete_state_roi, config.complete_state_label)
-        if complete_badge is not None and complete_badge.matched:
-            eligible = True
-            break
-        progress_detail = "kill progress not yet complete"
 
-    if not eligible:
+    if not eligible or eligible_slot_index is None:
         return BountyCycleResult(
             BountyOutcome.KILL_PROGRESS_NOT_COMPLETE, tuple(slot_outcomes),
             f"0-199/200: not eligible yet ({progress_detail}); no complete/reward action taken.",
@@ -461,10 +504,12 @@ def run_one_cycle(
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before completing.")
 
-    # SLOT-SELECT-CALIBRATION-001: same reasoning as the slot-select step
-    # above -- always position-based, never a "mission_slot_selected"
-    # template search.
-    select_complete = runner.run(serial, build_tap_args(config.screen_size, config.select_complete_point))
+    # COMPLETE-SLOT-TRACKING-001: re-select the EXACT slot just verified
+    # eligible above (never a fixed "always row 1" point) -- the
+    # kill-progress loop already left that slot's detail open, but a
+    # fresh, explicit re-select here keeps this step correct even if a
+    # future change interleaves other actions between the two.
+    select_complete = runner.run(serial, build_tap_args(config.screen_size, config.slot_select_points[eligible_slot_index - 1]))
     if not select_complete.ok:
         return BountyCycleResult(
             BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes),

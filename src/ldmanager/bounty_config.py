@@ -95,6 +95,11 @@ class BountyMissionConfig:
     complete_state_label: str
 
     # Complete -> reward -> claim -> result -> close -> mission list.
+    # COMPLETE-SLOT-TRACKING-001: select_complete_point is no longer
+    # consulted by run_one_cycle's live completion path -- it now
+    # re-selects whichever slot_select_points[i] was actually verified
+    # eligible (never a fixed "always row 1" point). Kept as a required
+    # field for config-schema/backward-compat stability only.
     select_complete_point: RelativeCoordinate
     complete_button_point: RelativeCoordinate
     reward_screen_roi: RelativeRegion

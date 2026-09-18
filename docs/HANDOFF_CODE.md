@@ -3580,3 +3580,101 @@ Run 3x in a row: `391 passed` every time, 0 failures. (Prior baseline
 - Independently review whether `select_complete_point`'s "always row 1"
   limitation should now be prioritized as its own follow-up packet --
   this session left it diagnosable but unresolved.
+
+## COMPLETE-SLOT-TRACKING-001: complete the slot that's actually eligible
+
+**Trigger**: user directive to fix the `select_complete_point`
+"always row 1" limitation for real (flagged but not fixed in
+`SLOT-SELECT-CALIBRATION-001`/`COMPLETE-DETAIL-001`), with an explicit
+requirement to keep multi-account (LD1..LD9) isolation correct.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause (confirmed against real evidence)
+
+A slot's completion state is only visible in **that slot's own opened
+detail view** — confirmed from every real capture on file: the
+mission-list rows themselves carry no per-row completion indicator.
+The previous design ran ONE full-screen completion check against
+whatever was currently displayed, then unconditionally re-selected
+**row 1's fixed position** to complete — correct only when the
+eligible mission happened to be at row 1.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py`'s kill-progress polling now visits
+**every still-candidate locked slot individually** on each bounded
+poll attempt: a plain select/navigation tap (never complete/claim) to
+open that slot's own detail, then the same kill-progress-counter /
+complete-badge check as before, scoped to that one slot. The exact
+`slot_index` that qualifies is remembered, and the completion step
+re-selects **that same slot** (never a different, possibly
+still-incomplete one) before tapping complete. `0-199/200` still never
+taps complete/claim — only the added navigation (select) taps are new,
+and only ever to *look*, consistent with every other safety guarantee
+in this project.
+
+`select_complete_point` is no longer consulted by the live completion
+path (kept in the config schema for backward compatibility only,
+documented as such in both `bounty_config.py` and
+`configs/bounty.example.yaml`).
+
+### Regression tests
+
+`tests/test_bounty_mission.py`:
+- `test_completion_targets_the_slot_that_actually_became_eligible_not_row_1`
+  -- a `_SlotAwareRunner`/`_SlotAwareRecognizer` pair models a real
+  screen where only slot 3's own detail shows completion; asserts the
+  tap immediately preceding the complete-button tap is slot 3's
+  position, never slot 1's.
+- `test_kill_progress_polling_never_crosses_accounts_with_multiple_ld_instances`
+  -- two independent accounts (own runner/serial/recognizer), each with
+  a DIFFERENT eligible slot (2 and 4), run one after another: every
+  recorded tap for each stays scoped to that account's own serial, and
+  each completes its own correct slot, never the other's -- the
+  explicit LD1..LD9 multi-instance safety check this packet was asked
+  to include.
+- Two pre-existing tests (`test_full_cycle_reaches_completed_state_once`,
+  `test_kill_progress_incomplete_never_taps_complete_or_reward`) had
+  their exact tap-count assertions updated to reflect the new,
+  correctly-larger (but still fully bounded) per-slot polling call
+  pattern -- their pass/fail *behavior* is unchanged, only the literal
+  count of navigation taps.
+
+### Test results
+
+```
+python -m pytest -q
+393 passed
+```
+
+Run 3x in a row: `393 passed` every time, 0 failures. (Prior baseline
+391 + 2 new tests = 393.)
+
+### Commits
+
+- Implementation + tests + this handoff section, then a short
+  follow-up "docs: record COMPLETE-SLOT-TRACKING-001 commit hash in
+  handoff" commit recording the exact hash.
+
+### Limitations
+
+1. Per-slot polling means up to `slot_count` extra select/navigation
+   taps per poll attempt (bounded by `max_kill_progress_poll_attempts`)
+   -- more real ADB traffic than before, though still entirely
+   navigation, never complete/claim, and still fully bounded.
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified with fake/stateful test doubles that model "only one
+   specific slot's detail shows completion," not a real device.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `393 passed`).
+- On a real device: with 2+ locked slots where the eligible one is NOT
+  row 1, confirm the flow now actually reaches and completes the
+  correct mission instead of safely stalling at "Complete tap failed."
+- With 2+ real LD instances mapped, confirm no cross-account
+  interference during a live run.
