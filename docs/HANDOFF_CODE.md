@@ -2840,3 +2840,127 @@ being folded back into the full-suite stability runs above.
   just-saved serial (e.g. via its log/diagnostics).
 - Confirm `v1.0.3-rc.2`'s tag, release, and asset hash are all
   unchanged from the `REL-003` section above.
+
+## REL-004: customer-test prerelease with the LIVE-SERIAL-001 fix (v1.0.3-rc.3)
+
+**Trigger**: user confirmed the published `v1.0.3-rc.2` release predated
+the `LIVE-SERIAL-001` fix (a real customer crash: `ValueError: Invalid
+ADB serial: ''` when Start was clicked shortly after a GUI mapping
+Save, because the worker's cycle function had captured its serial once
+at `build_controller()` time and never learned about the later Save).
+User explicitly asked to publish the newer, fixed state as the new
+customer-test prerelease ("새롭게된걸로변경해" — "change it to the
+newer one").
+
+### Status: published as a GitHub prerelease. CUSTOMER-TEST / MVP.
+`NEEDS_REAL_TEST` — not final, no claim of live game success.
+
+### Source
+
+- Source commit (exact build input, working tree clean): `7cbd5d5`
+  (`docs: record LIVE-SERIAL-001 commit hash in handoff`)
+- Implementation commit: `966ff15` (`LIVE-SERIAL-001: repair live
+  per-account serial propagation`)
+- No `src/` changes between `966ff15` and the tagged commit (`git diff
+  --stat 966ff15..HEAD` touches only `docs/HANDOFF_CODE.md`) --
+  confirmed before building.
+
+### Release
+
+- Tag: `v1.0.3-rc.3` (did not previously exist)
+- GitHub prerelease URL: https://github.com/kpj0526/LDplayer/releases/tag/v1.0.3-rc.3
+- Marked explicitly: **CUSTOMER-TEST / MVP**, **NEEDS_REAL_TEST**, not
+  final -- same limitations/safe-test-steps language as `REL-003`,
+  updated to call out the serial-propagation fix.
+- Supersedes `v1.0.3-rc.2` for customer testing going forward; `rc.2`
+  itself is untouched (not edited, not retagged, not withdrawn -- its
+  own limitation was narrower: it worked correctly as long as an
+  account was mapped and saved *before* `build_controller()` ran, i.e.
+  before the app's first launch after a config reset -- LIVE-SERIAL-001
+  is specifically about a Save happening *after* the app is already
+  running).
+
+### Build + package
+
+- Built via `scripts\build_windows.ps1` from the exact source commit
+  above (clean working tree).
+- `ldmanager.exe`: 4,823,381 bytes, SHA-256
+  `a080e1388108e50f63b42fec90990da852ee64812398030bf9e2dc9dff7fe526`
+  -- distinct from both `v1.0.3-rc.2`'s exe hash
+  (`ab693fff9e1a7ba78759add60b11b860ee9ca5d9d561582b574291344f9332bf`)
+  and the withdrawn `v1.0.3-rc.1`'s.
+- Packaged ZIP: `ldmanager-v1.0.3-rc.3-windows.zip`, 67,644,402 bytes,
+  SHA-256 `62a8bf9d8b474698d6b0ac28bf9f8b473e887246bc9875fab102c8afca72b6bb`
+  -- distinct from `v1.0.3-rc.2`'s zip hash
+  (`174c34b625ad2087c5a070e604fbb8880e4f9d2935ec8e85829ab10844a4f6da`).
+  Contents verified via `unzip -l` before upload: `ldmanager.exe`, all
+  5 real calibration templates (`mission_header.png`,
+  `mission_objective_label.png`, `complete_badge.png`,
+  `currency_action_4400.png`, `mission_target_phrase.png`),
+  `docs\RUN_GUIDE.md` + `docs\REAL_CAPTURE_CHECKLIST.md`,
+  `configs\*.example.yaml`, `VERSION`, `CHANGELOG.md`,
+  `README_FIRST_RUN.txt`.
+
+### Commits / tag / push
+
+- This handoff-update commit (docs-only) is on `kpj0526/Code`.
+- Tag `v1.0.3-rc.3` created at this commit.
+- Pushed: `kpj0526/Code` branch (including the two LIVE-SERIAL-001
+  commits that were sitting local-only before this task) and the
+  `v1.0.3-rc.3` tag only -- no other branch/tag touched, `main` not
+  touched.
+
+### What's new vs. v1.0.3-rc.2
+
+- The `LIVE-SERIAL-001` fix (see that section above): a mapping Save
+  made *after* the app is already running now reaches an already-built
+  worker's very next cycle immediately -- no app restart required, and
+  a still-blank/not-yet-saved account fails as a contained, zero-touch
+  result instead of an uncaught `ValueError`.
+- No other behavioral change since `v1.0.3-rc.2`.
+
+### Limitations (mirrored in the release body)
+
+1. **CUSTOMER-TEST / MVP build, not a final release.** No claim of
+   real LD/game completion success anywhere in this build.
+2. **`NEEDS_REAL_TEST`**: recognition/calibration is verified against 3
+   static, customer-supplied 1280x720 PNGs offline (`GAME-CAL-001
+   REAL-CAPTURE REWORK`), and the serial-propagation fix is verified
+   with fake ADB/recognizer doubles (`LIVE-SERIAL-001`) -- neither was
+   exercised against a live ADB capture from a running LDPlayer
+   instance. No live ADB/LDPlayer/game session was operated anywhere in
+   producing this release.
+3. Only one currency-action cost and one mission-title pairing have
+   real calibration; other missions/costs/screens remain placeholder.
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this release.
+
+### Customer safe-test steps (mirrored in the release body)
+
+1. Extract the ZIP anywhere and run `ldmanager.exe`.
+2. Map **exactly one** account's ADB serial explicitly (Refresh ADB
+   devices, then pick/type the serial for that one LDx panel, Save).
+3. Use **Test capture** on that one account before doing anything else,
+   and confirm the panel reports the screen as recognized (not a
+   mismatch) before considering Start.
+4. Begin with that **one** account only -- do not Start All.
+5. Start can now safely follow a Save made in the same session, with no
+   app restart needed (the fix this release adds).
+6. **Stop immediately** if the panel reports a mismatch, an unknown
+   screen, or any error -- save/send the diagnostic capture written
+   under `diagnostics\captures\<LDx>\`.
+7. This build does not prove, and must not be treated as proving, that
+   any real in-game action succeeds on a live account.
+
+### QA focus points
+
+- Independently verify the exact asset SHA-256 above against the
+  published release download.
+- Confirm the release is marked prerelease, includes the
+  CUSTOMER-TEST/MVP + NEEDS_REAL_TEST language, and calls out the
+  LIVE-SERIAL-001 fix.
+- Confirm `v1.0.3-rc.1` and `v1.0.3-rc.2` are both untouched.
+- Reproduce the original crash scenario if a real environment is
+  available: map an account *after* the app is already running, Save,
+  then Start without restarting -- confirm no `ValueError` and that the
+  correct serial is used.
