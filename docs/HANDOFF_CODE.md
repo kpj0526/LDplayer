@@ -4826,7 +4826,7 @@ Run 3x in a row: `442 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- `PLACEHOLDER_COMMIT_HASH` -- `REFRESH-RESULT-DISMISS-001: dismiss
+- `b51df7b` -- `REFRESH-RESULT-DISMISS-001: dismiss
   the post-refresh acknowledgment popup` (implementation + tests +
   this HANDOFF section, in one commit)
 - Followed by a short "docs: record REFRESH-RESULT-DISMISS-001 commit
