@@ -2964,3 +2964,134 @@ newer one").
   available: map an account *after* the app is already running, Save,
   then Start without restarting -- confirm no `ValueError` and that the
   correct serial is used.
+
+## TAP-FALLBACK-CRASH-001: fix UnboundLocalError on a real dynamic-tap miss
+
+**Trigger**: user-supplied live screenshot of the running app (on
+`v1.0.3-rc.2`). LD1's Test capture succeeded (`Screen verified:
+completed (mission_header, mission_objective_label, button_complete)`,
+mapping `emulator-5558 [ok]`), but the account panel showed:
+
+```
+ERROR
+UnboundLocalError: cannot access local variable 'select' where it is
+not associated with a value
+```
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`bounty_mission.py`'s dynamic-tap/fixed-fallback pattern, used
+throughout `run_one_cycle`/`_accept_or_refresh_slot`, has this shape:
+
+```python
+dynamic_select = _tap_template(runner, serial, config, recognizer, "mission_slot_unselected")
+if dynamic_select is None:
+    select = runner.run(...)          # select is only ever assigned here
+    selected_ok = select.ok
+else:
+    selected_ok = dynamic_select
+if not selected_ok:
+    ... f"... (rc={select.returncode})" ...   # referenced unconditionally
+```
+
+`_tap_template`/`_tap_any_template` return exactly one of three things:
+`None` (the label isn't configured in `template_map` at all -- legacy/
+fixture mode), `False` (a real capture happened but no confident match,
+or the located tap itself failed), or `True` (the tap succeeded). The
+failure-detail f-string assumed `select`/`open_popup`/`confirm` was
+always assigned, but it is **only** assigned in the `dynamic_* is None`
+branch. Once a real `mission_slot_unselected` template is configured
+(as it has been since the original customer-video asset set) and the
+live frame simply doesn't show a confident match for it -- e.g. the
+account is sitting on a *different* screen, such as the already-
+completed detail view in the customer's screenshot -- `_tap_template`
+correctly returns `False`, the `else` branch runs, `select` is never
+created, and the very next line's `select.returncode` raises
+`UnboundLocalError`. This is a real, previously-undetected defect that
+predates every packet in this document except its accidental exposure:
+it stayed dormant as long as a "no confident match" ADB response was
+rare/never hit in whatever was previously tested, and became visible
+the moment a real, correctly-calibrated template started returning a
+genuine `False` against a real capture.
+
+The exact same shape exists at two more call sites in the same
+function: the refresh-popup-open tap (`open_popup.returncode`) and the
+refresh-confirm tap (`confirm.returncode`). The other four dynamic-tap
+sites in `run_one_cycle` (select-complete, complete, claim, close) use
+a plain string detail message with no `.returncode` reference, so they
+were never affected.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py` -- all three affected sites now build
+a `*_detail` string that is assigned on **both** branches: `f"rc={...}"`
+when the fixed-point fallback actually ran, or a fixed, honest
+"template-based tap: no confident match, or the located tap itself
+failed" string when the dynamic (template) path was taken (there is no
+ADB `returncode` to report there -- either no confident match was found
+at all, or the tap dispatched from that match itself failed). No
+control flow, no outcome, no touch/capture behavior changed -- this is
+purely a "the failure-detail message must never reference a value that
+was never computed" fix.
+
+### Regression tests
+
+`tests/test_bounty_mission.py` -- new `_ConfidentNoMatchRecognizer`
+test double (reports a genuinely confident `NO_MATCH`, not `UNKNOWN`,
+so `_mission_is_acceptable` reaches `NON_TARGET_CONFIRMED` rather than
+short-circuiting to `RECOGNITION_FAILED` -- needed to actually reach
+the refresh-open/confirm steps in a test) plus 3 new tests, one per
+affected call site, each configuring a real template for that one
+asset with a recognizer that confidently does not match it:
+
+- `test_slot_select_dynamic_template_no_match_is_a_structured_error_not_a_crash`
+- `test_refresh_open_dynamic_template_no_match_is_a_structured_error_not_a_crash`
+- `test_refresh_confirm_dynamic_template_no_match_is_a_structured_error_not_a_crash`
+
+Each asserts `run_one_cycle` does **not** raise, returns
+`BountyOutcome.CAPTURE_UNAVAILABLE` with the expected failure-detail
+text, reproducing the exact customer crash shape for all three call
+sites (not just the one the customer happened to hit first).
+
+### Test results
+
+```
+python -m pytest -q
+378 passed
+```
+
+Run 3x in a row: `378 passed` every time, 0 failures. (Prior baseline
+375 + 3 new tests = 378.)
+
+### Commits
+
+- Implementation + tests + this handoff section, then a short
+  follow-up "docs: record TAP-FALLBACK-CRASH-001 commit hash in
+  handoff" commit recording the exact hash.
+
+### Limitations
+
+1. No live ADB/LDPlayer/game session was used to reproduce this --
+   fixed and verified entirely from the customer's screenshot plus
+   direct source-code tracing and fake-recognizer regression tests.
+2. This fix addresses the specific "unassigned variable referenced in
+   a failure-detail message" defect at exactly the three call sites
+   that had it. It does not change any recognition/calibration/
+   completion-gating behavior from prior packets.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `378 passed`), especially
+  `tests/test_bounty_mission.py -k dynamic_template_no_match` (3
+  tests).
+- On a real device if available: reproduce the original customer
+  condition (an account sitting on a screen where `mission_slot_
+  unselected` doesn't confidently match, e.g. an already-completed
+  mission detail view) and confirm the account panel now shows a plain
+  "select tap failed (template-based tap: ...)" error message instead
+  of an `UnboundLocalError` traceback.

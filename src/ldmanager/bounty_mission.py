@@ -216,14 +216,23 @@ def _accept_or_refresh_slot(
 
     dynamic_select = _tap_template(runner, serial, config, recognizer, "mission_slot_unselected")
     if dynamic_select is None:
-        select = runner.run(serial, build_tap_args(config.screen_size, config.slot_select_points[slot_index - 1]))
-        selected_ok = select.ok
+        select_result = runner.run(serial, build_tap_args(config.screen_size, config.slot_select_points[slot_index - 1]))
+        selected_ok = select_result.ok
+        select_detail = f"rc={select_result.returncode}"
     else:
+        # LIVE-SERIAL-001-adjacent fix: dynamic_select is True/False here,
+        # never None -- no fixed-point tap was sent, so there is no ADB
+        # returncode to report. Referencing an unassigned fixed-tap
+        # result here was a real, previously-undetected UnboundLocalError
+        # (only ever exercised once a real "mission_slot_unselected"
+        # template started returning a confident False on a live
+        # capture -- see docs/HANDOFF_CODE.md).
         selected_ok = dynamic_select
+        select_detail = "template-based tap: no confident match, or the located tap itself failed"
     if not selected_ok:
         return None, BountyCycleResult(
             BountyOutcome.CAPTURE_UNAVAILABLE, (),
-            f"Slot {slot_index}: select tap failed (rc={select.returncode}).",
+            f"Slot {slot_index}: select tap failed ({select_detail}).",
         )
 
     if should_stop():
@@ -264,12 +273,14 @@ def _accept_or_refresh_slot(
         if dynamic_refresh is None:
             open_popup = runner.run(serial, build_tap_args(config.screen_size, config.refresh_button_point))
             refresh_ok = open_popup.ok
+            refresh_detail = f"rc={open_popup.returncode}"
         else:
             refresh_ok = dynamic_refresh
+            refresh_detail = "template-based tap: no confident match, or the located tap itself failed"
         if not refresh_ok:
             return None, BountyCycleResult(
                 BountyOutcome.CAPTURE_UNAVAILABLE, (),
-                f"Slot {slot_index}: refresh-open tap failed (rc={open_popup.returncode}).",
+                f"Slot {slot_index}: refresh-open tap failed ({refresh_detail}).",
             )
 
         if should_stop():
@@ -307,12 +318,14 @@ def _accept_or_refresh_slot(
         if dynamic_confirm is None:
             confirm = runner.run(serial, build_tap_args(config.screen_size, config.refresh_confirm_point))
             confirm_ok = confirm.ok
+            confirm_detail = f"rc={confirm.returncode}"
         else:
             confirm_ok = dynamic_confirm
+            confirm_detail = "template-based tap: no confident match, or the located tap itself failed"
         if not confirm_ok:
             return None, BountyCycleResult(
                 BountyOutcome.CAPTURE_UNAVAILABLE, (),
-                f"Slot {slot_index}: refresh-confirm tap failed (rc={confirm.returncode}).",
+                f"Slot {slot_index}: refresh-confirm tap failed ({confirm_detail}).",
             )
 
         if should_stop():

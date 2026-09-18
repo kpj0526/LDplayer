@@ -5,7 +5,7 @@ from ldmanager.bounty_config import BountyMissionConfig
 from ldmanager.bounty_mission import BountyOutcome, run_one_cycle
 from ldmanager.coordinates import RelativeCoordinate, RelativeRegion, ScreenSize, build_tap_args
 from ldmanager.models import AccountId
-from ldmanager.recognition import PlaceholderRecognizer
+from ldmanager.recognition import PlaceholderRecognizer, RecognitionResult, RecognitionStatus
 from ldmanager.screenshot import DEFAULT_CAPTURE_ARGS
 from tests.fakes import FakeAdbRunner, LabelMappingRecognizer
 
@@ -301,3 +301,102 @@ def test_capture_unavailable_mid_slot_is_reported_without_crashing():
     assert result.outcome is BountyOutcome.CAPTURE_UNAVAILABLE
     # Only the slot-1 select tap happened before capture failure aborted.
     assert len(runner.calls) == 1
+
+
+# --- real customer crash: dynamic-tap "no confident match" must never ------
+# --- raise UnboundLocalError, only ever a structured, contained result -----
+
+
+class _ConfidentNoMatchRecognizer:
+    """Like LabelMappingRecognizer, but reports a genuinely CONFIDENT
+    non-match (RecognitionStatus.NO_MATCH) for anything not in
+    ``matching_labels``, rather than UNKNOWN. Needed to reach
+    NON_TARGET_CONFIRMED deterministically: with a real (non-empty)
+    template_map, _mission_is_acceptable treats an UNCERTAIN (UNKNOWN/
+    LOW_CONFIDENCE) phrase/quantity as RECOGNITION_FAILED, which would
+    short-circuit before ever reaching the refresh-open/confirm steps
+    these regression tests target."""
+
+    def __init__(self, matching_labels=frozenset()):
+        self.matching_labels = frozenset(matching_labels)
+        self.calls: list = []
+
+    def recognize(self, image_bytes, roi, expected_label, threshold):
+        self.calls.append(expected_label)
+        if expected_label in self.matching_labels:
+            return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test: matched", (0.5, 0.5))
+        return RecognitionResult(RecognitionStatus.NO_MATCH, None, 0.05, "test: confidently absent")
+
+
+def test_slot_select_dynamic_template_no_match_is_a_structured_error_not_a_crash():
+    """Real customer crash (2026-09): a real 'mission_slot_unselected'
+    template configured but not confidently matching the current frame
+    raised UnboundLocalError('select') instead of a structured, contained
+    result -- _tap_template returned False (not None), so the fixed-
+    point fallback branch that used to assign 'select' never ran, but
+    the failure-detail f-string still referenced select.returncode."""
+
+    runner = _runner_with_valid_captures()
+    recognizer = _ConfidentNoMatchRecognizer()  # confidently matches nothing
+    cfg = _config(template_map={"mission_slot_unselected": "mission_slot_unselected.png"})
+
+    result = _run(runner, recognizer, cfg)  # must not raise
+
+    assert result.outcome is BountyOutcome.CAPTURE_UNAVAILABLE
+    assert "select tap failed" in result.detail
+    assert "template-based tap" in result.detail
+
+
+def test_refresh_open_dynamic_template_no_match_is_a_structured_error_not_a_crash():
+    """Same bug class, second occurrence: a real 'button_refresh_4400'
+    (etc.) template configured but not confidently matching previously
+    raised UnboundLocalError('open_popup')."""
+
+    runner = _runner_with_valid_captures()
+    # Selects successfully (mission_slot_unselected matches) but is
+    # confidently non-target (so the refresh loop is reached) -- never
+    # matches the phrase/quantity, nor any refresh-cost variant.
+    recognizer = _ConfidentNoMatchRecognizer(matching_labels={"mission_slot_unselected"})
+    cfg = _config(
+        template_map={
+            "mission_slot_unselected": "mission_slot_unselected.png",
+            "button_refresh_4400": "button_refresh_4400.png",
+        },
+        max_refresh_attempts=1,
+    )
+
+    result = _run(runner, recognizer, cfg)  # must not raise
+
+    assert result.outcome is BountyOutcome.CAPTURE_UNAVAILABLE
+    assert "refresh-open tap failed" in result.detail
+    assert "template-based tap" in result.detail
+
+
+def test_refresh_confirm_dynamic_template_no_match_is_a_structured_error_not_a_crash():
+    """Same bug class, third occurrence: a real 'button_refresh_confirm'
+    template configured but not confidently matching previously raised
+    UnboundLocalError('confirm'). Select and refresh-open both succeed
+    via a CONFIDENT dynamic match (a non-empty template_map makes any
+    *unconfigured* asset a hard False, never a silent fixed-point
+    fallback -- see _tap_template/_tap_any_template), and the popup IS
+    verified (anchor/title both match) -- isolating the failure to the
+    confirm tap alone."""
+
+    runner = _runner_with_valid_captures()
+    recognizer = _ConfidentNoMatchRecognizer(
+        matching_labels={"mission_slot_unselected", "button_refresh_4400", _POPUP_ANCHOR, _POPUP_TITLE}
+    )
+    cfg = _config(
+        template_map={
+            "mission_slot_unselected": "mission_slot_unselected.png",
+            "button_refresh_4400": "button_refresh_4400.png",
+            "button_refresh_confirm": "button_refresh_confirm.png",
+        },
+        max_refresh_attempts=1, max_popup_verify_attempts=1,
+    )
+
+    result = _run(runner, recognizer, cfg)  # must not raise
+
+    assert result.outcome is BountyOutcome.CAPTURE_UNAVAILABLE
+    assert "refresh-confirm tap failed" in result.detail
+    assert "template-based tap" in result.detail
