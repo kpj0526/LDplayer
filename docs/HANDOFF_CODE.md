@@ -3439,9 +3439,11 @@ Run 3x in a row: `390 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- Implementation + tests + this handoff section, then a short
-  follow-up "docs: record REWARD-SCREEN-CALIBRATION-001 commit hash in
-  handoff" commit recording the exact hash.
+- `622d7ad` — `REWARD-SCREEN-CALIBRATION-001: real calibration for the
+  reward-claim screen` (implementation + tests + this HANDOFF section,
+  in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `622d7ad`.
 
 ### Limitations
 
