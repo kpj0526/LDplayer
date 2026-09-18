@@ -4218,7 +4218,7 @@ Run 3x in a row: `422 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- `PLACEHOLDER_COMMIT_HASH` -- `EARLY-COMPLETE-JUMP-001/COMPLETE-
+- `44f696c` -- `EARLY-COMPLETE-JUMP-001/COMPLETE-
   RETRY-001: act on a complete slot immediately, and retry a missed
   complete tap` (implementation + tests + this HANDOFF section, in one
   commit)
