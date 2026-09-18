@@ -4396,7 +4396,7 @@ Run 3x in a row: `430 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- `PLACEHOLDER_COMMIT_HASH` -- `REFRESH-TRIGGER-CORRECTION-001:
+- `279fe1b` -- `REFRESH-TRIGGER-CORRECTION-001:
   refresh_button_point was tapping the wrong (but visually near-
   identical) box` (implementation + tests + this HANDOFF section, in
   one commit)
