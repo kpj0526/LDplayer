@@ -4496,7 +4496,7 @@ Run 3x in a row: `432 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- `PLACEHOLDER_COMMIT_HASH` -- `RETRY-PACING-001: retry_delay_seconds
+- `65a6545` -- `RETRY-PACING-001: retry_delay_seconds
   was configured but never actually applied` (implementation + tests +
   this HANDOFF section, in one commit)
 - Followed by a short "docs: record RETRY-PACING-001 commit hash in
