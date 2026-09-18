@@ -98,3 +98,32 @@ row of a list."
 |---|---|---|---|
 | `reward_odds_label.png` | `reward_screen.png` | x:595-685, y:198-235 | `reward_screen_label` ("확률") — confirmed (real `OpenCVTemplateRecognizer`, `tests/test_reward_screen_real_assets.py`) to match only `reward_screen.png`, never any of the other 4 real captures |
 | `reward_claim_button.png` | `reward_screen.png` | x:551-732, y:487-536 | `button_claim_reward` — the real "보상 받기" button, replacing an old, never-validated placeholder of the same config key; same real cross-check as above |
+
+### 2 more real captures (safety verification, no new derived crops)
+
+Supplied by the customer while diagnosing a live "Complete tap failed"
+result, to check whether the existing `button_complete.png` template
+(an older, pre-`GAME-CAL-001` asset, never previously cross-checked
+against these specific screens) was producing a false positive on a
+genuinely-incomplete mission:
+
+| File | Real screen | `button_complete.png` match? |
+|---|---|---|
+| `in_progress_51_of_200.png` | 모든 몬스터 처치 (51/200), currency action cost 4400 — a target-200 mission, distinct from the target-165/180/450 examples already on file | confidence 0.774, below the 0.8 threshold — correctly NOT matched |
+| `close_result_screen.png` | A different mission's (야왕궁 토벌작전) reward-preview/result popup, single reward icon, "닫기" (Close) button | confidence 0.774, below the 0.8 threshold — correctly NOT matched |
+
+Conclusion: `button_complete.png` was **not** the cause of the
+"Complete tap failed" result. Direct measurement across all 7 real
+captures now on file shows it correctly matches only screens with a
+genuinely visible "완료" button (`completed_target.png`,
+`mission_list_row1_completed.png`, and `reward_screen.png` — the last
+because a real "완료" button from the *underlying* screen is still
+partially visible around the reward popup) and correctly stays below
+threshold on every genuinely-incomplete screen, including these two
+new ones. The real cause was traced to the already-documented
+`select_complete_point` "always row 1" limitation (see
+`REWARD-SCREEN-CALIBRATION-001` above and the `COMPLETE-DETAIL-001`
+section of `docs/HANDOFF_CODE.md`): eligibility can be confirmed
+correctly while row 1 specifically isn't the mission that became
+eligible, in which case the complete-tap step correctly refuses to tap
+(no confident match) rather than tapping the wrong thing.

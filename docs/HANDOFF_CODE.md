@@ -3474,3 +3474,107 @@ Run 3x in a row: `390 passed` every time, 0 failures. (Prior baseline
   now proceeds past the reward-claim step instead of stalling on
   `reward_verify_failed`, and confirm the next real blocker (if any) is
   in the result/close/mission-list steps, which remain uncalibrated.
+
+## COMPLETE-DETAIL-001: actionable detail for complete/claim/close, + a false-positive safety check
+
+**Trigger**: after `REWARD-SCREEN-CALIBRATION-001` shipped, the user's
+live run progressed further and then stalled with a bare
+`"Complete tap failed."` -- no rc/stderr, no reason. Given the
+possibility that this indicated an unsafe false-positive completion
+trigger, this was investigated as a safety question first, before
+being treated as a plain observability gap.
+
+### Status: implemented, tested, regression-verified. Includes a
+verified safety finding (no false positive) plus a message-consistency
+fix.
+
+### Safety investigation (no code change resulted from this alone)
+
+Checked whether the existing `button_complete.png` template (an older,
+pre-`GAME-CAL-001` asset never previously cross-checked against these
+specific real screens) was producing a false positive on a genuinely
+incomplete mission. The customer supplied two more real captures: a
+target-200 in-progress mission (`51/200`, cost-4400 currency action --
+a new target quantity, distinct from the 165/180/450 examples already
+on file) and a different mission's reward-preview/close screen. Direct
+measurement (`tests/fixtures/game_cal_001/PROVENANCE.md`) shows
+`button_complete.png` scores 0.774 on both -- safely below the 0.8
+threshold, correctly not matched. Across all 7 real captures now on
+file, it matches only screens with a genuinely visible "완료" button.
+**Conclusion: no false positive; the completion gate is not tapping
+blindly.**
+
+### Actual root cause
+
+The already-documented `select_complete_point` limitation ("always
+taps row 1", `SLOT-SELECT-CALIBRATION-001`) manifesting live: kill-
+progress eligibility can be confirmed correctly (a real completed
+mission genuinely visible somewhere), but if that mission isn't at row
+1, the fixed `select_complete_point` tap lands on a *different*,
+still-incomplete mission's detail -- which correctly has no
+"button_complete" to find. The old bare `"Complete tap failed."`
+message gave no way to tell this safe-refusal case apart from a real
+problem.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py` -- the Complete/Claim/Close-result
+tap-failure details now distinguish, the same way the earlier
+Select/Refresh-open/Refresh-confirm fixes did (`STDERR-DETAIL-001`):
+`rc=..., stderr=...` when a real fixed-point ADB tap was sent and
+failed, vs. an explicit `"no confident button_complete/button_claim_
+reward/button_close_reward match on the current screen"` when the
+dynamic template search itself found nothing -- for `button_complete`
+specifically, the message also names the likely cause
+(`select_complete_point` may not be showing the eligible mission).
+
+### Regression tests
+
+`tests/test_bounty_mission.py` --
+`test_complete_tap_no_confident_match_gives_an_actionable_reason_not_a_bare_failure`:
+reaches the complete-tap step via a genuine kill-progress-counter
+eligibility match, with `button_complete` configured but not matching
+the frame -- asserts the new, actionable detail text.
+
+### Test results
+
+```
+python -m pytest -q
+391 passed
+```
+
+Run 3x in a row: `391 passed` every time, 0 failures. (Prior baseline
+390 + 1 new test = 391.)
+
+### Commits
+
+- Implementation + tests + this handoff section, then a short
+  follow-up "docs: record COMPLETE-DETAIL-001 commit hash in handoff"
+  commit recording the exact hash.
+
+### Limitations
+
+1. **The underlying `select_complete_point` "always row 1" gap is
+   NOT fixed by this packet** -- only made diagnosable. A live run
+   where the eligible mission genuinely isn't at row 1 will still stop
+   at this step (safely, correctly refusing to tap) rather than
+   completing it. Properly fixing that requires tracking *which*
+   locked slot became eligible and selecting that specific position --
+   a larger change not made here.
+2. No live ADB/LDPlayer/game session was used to verify the message
+   fix itself -- verified with fake doubles. The false-positive safety
+   check, however, used two real customer-supplied captures.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `391 passed`).
+- On a real device: if a live run reaches "Complete tap failed" again,
+  confirm the new detail text explains it and that no unintended tap
+  occurred (a manual visual check that the on-screen mission state is
+  unchanged from before the attempt).
+- Independently review whether `select_complete_point`'s "always row 1"
+  limitation should now be prioritized as its own follow-up packet --
+  this session left it diagnosable but unresolved.

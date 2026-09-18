@@ -327,6 +327,30 @@ def test_select_tap_failure_detail_includes_the_real_adb_stderr():
     assert "error: device offline" in result.detail
 
 
+def test_complete_tap_no_confident_match_gives_an_actionable_reason_not_a_bare_failure():
+    """Real customer report (a KNOWN, documented limitation manifesting
+    live): select_complete_point always taps slot 1's position, so if a
+    DIFFERENT locked slot was the one that actually became eligible, the
+    screen showing after select-complete won't have a real "button_complete"
+    to find -- a safe refusal (no unsafe tap), but the old bare "Complete
+    tap failed." gave no hint why. Must now explain a template search
+    found no confident match, not just fail silently."""
+
+    runner = _runner_with_valid_captures()
+    # Eligible via the kill-progress counter (so the flow reaches the
+    # complete-tap step at all), but "button_complete" itself never
+    # confidently matches on this frame -- the real-world shape of the
+    # "wrong slot selected" scenario.
+    recognizer = LabelMappingRecognizer(matching_labels=frozenset({_PHRASE, _QTY, _KILL_PROGRESS}))
+    cfg = _config(template_map={"button_complete": "button_complete.png"})
+
+    result = _run(runner, recognizer, cfg)
+
+    assert result.outcome is BountyOutcome.CAPTURE_UNAVAILABLE
+    assert "Complete tap failed" in result.detail
+    assert "no confident button_complete match" in result.detail
+
+
 # --- real customer crash: dynamic-tap "no confident match" must never ------
 # --- raise UnboundLocalError, only ever a structured, contained result -----
 

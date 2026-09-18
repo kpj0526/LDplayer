@@ -478,10 +478,19 @@ def run_one_cycle(
     if dynamic_complete is None:
         complete_tap = runner.run(serial, build_tap_args(config.screen_size, config.complete_button_point))
         complete_ok = complete_tap.ok
+        complete_detail = f"rc={complete_tap.returncode}, stderr={_short(complete_tap.stderr)}"
     else:
         complete_ok = dynamic_complete
+        # STDERR-DETAIL-001-adjacent: no confident "button_complete" match
+        # on THIS fresh capture -- this is the expected, safe outcome if
+        # the screen currently showing isn't the one that was actually
+        # eligible (see select_complete_point's known "always row 1"
+        # limitation, docs/HANDOFF_CODE.md) -- never an ADB failure.
+        complete_detail = "no confident button_complete match on the current screen (select_complete_point may not be showing the eligible mission)"
     if not complete_ok:
-        return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), "Complete tap failed.")
+        return BountyCycleResult(
+            BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), f"Complete tap failed ({complete_detail}).",
+        )
 
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before reward verification.")
@@ -509,10 +518,12 @@ def run_one_cycle(
     if dynamic_claim is None:
         claim = runner.run(serial, build_tap_args(config.screen_size, config.claim_point))
         claim_ok = claim.ok
+        claim_detail = f"rc={claim.returncode}, stderr={_short(claim.stderr)}"
     else:
         claim_ok = dynamic_claim
+        claim_detail = "no confident button_claim_reward match on the current screen"
     if not claim_ok:
-        return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), "Claim tap failed.")
+        return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), f"Claim tap failed ({claim_detail}).")
 
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before result verification.")
@@ -540,10 +551,12 @@ def run_one_cycle(
     if dynamic_close is None:
         close = runner.run(serial, build_tap_args(config.screen_size, config.close_result_point))
         close_ok = close.ok
+        close_detail = f"rc={close.returncode}, stderr={_short(close.stderr)}"
     else:
         close_ok = dynamic_close
+        close_detail = "no confident button_close_reward match on the current screen"
     if not close_ok:
-        return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), "Close-result tap failed.")
+        return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), f"Close-result tap failed ({close_detail}).")
 
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before mission-list verification.")
