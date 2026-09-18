@@ -3067,9 +3067,11 @@ Run 3x in a row: `378 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- Implementation + tests + this handoff section, then a short
-  follow-up "docs: record TAP-FALLBACK-CRASH-001 commit hash in
-  handoff" commit recording the exact hash.
+- `ae0de2e` — `TAP-FALLBACK-CRASH-001: fix UnboundLocalError on a real
+  dynamic-tap miss` (implementation + tests + this HANDOFF section, in
+  one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `ae0de2e`.
 
 ### Limitations
 
