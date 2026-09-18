@@ -363,6 +363,37 @@ def _accept_or_refresh_slot(
                 BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (after confirm)."
             )
 
+        # REFRESH-RESULT-DISMISS-001: real customer report -- after
+        # confirming the renewal, the game shows one more brief
+        # acknowledgment popup for the newly-rolled mission (title +
+        # "확률" odds + a single reward icon + "닫기") before returning
+        # to the normal accept-popup state. The refresh loop never knew
+        # about this screen, so it sat there indefinitely -- every
+        # subsequent popup-verify/mission-acceptability check saw this
+        # unexpected screen and correctly reported "not verified"/
+        # "not acceptable", looping forever without ever dismissing it.
+        # Structurally identical to reward_screen (same real "확률"
+        # anchor, confirmed via a real customer capture, 1.0
+        # confidence) and its close button sits at the exact same real,
+        # already-measured position as close_result_point/claim_point
+        # -- both already-calibrated assets are reused here, no new
+        # template or position needed. Single best-effort check+tap
+        # (not a retry loop): if it's not showing, this is a harmless
+        # no-op and the acceptability check below proceeds normally.
+        ack_popup = _recognize(runner, serial, config, recognizer, config.reward_screen_roi, config.reward_screen_label)
+        if ack_popup is not None and ack_popup.matched:
+            dismiss = runner.run(serial, build_tap_args(config.screen_size, config.close_result_point))
+            if not dismiss.ok:
+                return None, BountyCycleResult(
+                    BountyOutcome.CAPTURE_UNAVAILABLE, (),
+                    f"Slot {slot_index}: refresh-result-dismiss tap failed "
+                    f"(rc={dismiss.returncode}, stderr={_short(dismiss.stderr)}).",
+                )
+            if should_stop():
+                return None, BountyCycleResult(
+                    BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (after refresh-result dismiss)."
+                )
+
         acceptable = _mission_is_acceptable(runner, serial, config, recognizer)
         if acceptable is MissionAssessment.CAPTURE_UNAVAILABLE:
             return None, BountyCycleResult(

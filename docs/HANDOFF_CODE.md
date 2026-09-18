@@ -4755,3 +4755,101 @@ Run 3x in a row: `437 passed` every time, 0 failures. (Prior baseline
   run progresses through complete -> claim -> close -> mission-list
   verification, and that any of the five verify steps now has more
   room to succeed before reporting a failure.
+
+## REFRESH-RESULT-DISMISS-001: dismiss the post-refresh acknowledgment popup
+
+**Trigger**: real customer report -- "Slot 3: refresh popup never
+verified" kept recurring across many cycles even after
+`REFRESH-TRIGGER-CORRECTION-001` (correct tap position) and
+`RETRY-BUDGET-001/002` (widened timing budgets) shipped. The customer
+supplied real screenshots of the actual stuck screen after being asked
+to Stop-then-Test-capture at the exact moment of failure.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+After confirming a mission renewal ("지역 퀘스트를 갱신
+하시겠습니까?" -> "확인"), the game shows ONE MORE brief
+acknowledgment popup for the newly-rolled mission -- title + "확률"
+(odds) + a single reward icon + "닫기" -- before returning to the
+normal accept-popup state. `_accept_or_refresh_slot`'s refresh loop
+had no concept of this screen at all: after tapping
+`refresh_confirm_point`, it went straight to re-checking mission
+acceptability, which correctly reported "not acceptable" against this
+unexpected screen every time -- looping the whole refresh sequence
+again, hitting the same unhandled acknowledgment popup again, forever.
+This is why the failure kept recurring specifically on slots that
+needed a refresh (never on slots already acceptable on the first
+check) and why widening the retry budget didn't help -- it wasn't a
+timing problem, it was a genuinely un-handled screen.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py`'s refresh loop: immediately after
+the confirm tap succeeds, a single best-effort check (not a bounded
+retry loop) -- if `reward_screen_label` ("확률", already calibrated in
+`REWARD-SCREEN-CALIBRATION-001`) matches, tap `close_result_point`
+(already calibrated in `RESULT-CLOSE-CALIBRATION-001`) to dismiss it.
+Both are reused as-is -- real evidence showed this acknowledgment
+popup is structurally identical to the reward/result screens (same
+"확률" anchor, 1.0 confidence match) and its "닫기" button sits at the
+exact same real position already measured for `close_result_point`/
+`claim_point`. If the popup isn't actually showing, the check is a
+harmless no-op and the normal acceptability check proceeds unchanged.
+
+### Regression tests
+
+- `tests/test_refresh_result_dismiss_real_assets.py` (new, 3 tests):
+  both real captures are genuine 1280x720 PNGs; `reward_screen_label`
+  matches both at high confidence; `close_result_point` confirmed to
+  land inside the real "닫기" button's measured bbox.
+- `tests/test_bounty_mission.py` --
+  `test_refresh_result_ack_popup_is_dismissed_before_rechecking_acceptability`
+  (the ack popup always shows after each confirm; mission only becomes
+  acceptable after one full refresh+confirm+dismiss round-trip, and
+  the dismiss tap is proven to happen between confirm and acceptance),
+  `test_refresh_result_ack_popup_absent_is_a_harmless_noop` (bounded
+  so the cycle can never reach the real, separate close-result step;
+  `close_result_point` proven never tapped when the ack popup never
+  shows).
+
+### Test results
+
+```
+python -m pytest -q
+442 passed
+```
+
+Run 3x in a row: `442 passed` every time, 0 failures. (Prior baseline
+437 + 3 new real-asset + 2 new bounty_mission tests = 442.)
+
+### Commits
+
+- `PLACEHOLDER_COMMIT_HASH` -- `REFRESH-RESULT-DISMISS-001: dismiss
+  the post-refresh acknowledgment popup` (implementation + tests +
+  this HANDOFF section, in one commit)
+- Followed by a short "docs: record REFRESH-RESULT-DISMISS-001 commit
+  hash in handoff" commit recording the real hash.
+
+### Limitations
+
+1. Whether this acknowledgment popup appears on EVERY refresh
+   round-trip, or only sometimes (e.g. only for certain rolled mission
+   types), wasn't independently confirmed -- the fix is safe either
+   way (best-effort, harmless no-op if absent), but if it turns out to
+   need a different dismiss condition in some case, that needs new
+   real evidence.
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the real supplied captures, offline.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `442 passed`) and
+  `tests/test_refresh_result_dismiss_real_assets.py` specifically.
+- On a real device: confirm a live run refreshing a non-target slot
+  (dungeon-type included) now proceeds past this acknowledgment popup
+  instead of looping on "refresh popup never verified" indefinitely.

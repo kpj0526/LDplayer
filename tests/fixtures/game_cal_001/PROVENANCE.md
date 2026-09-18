@@ -331,3 +331,43 @@ real captures `bounty_accept_popup_target.png` and
 refresh counts 1 and 7 / prices 6600 and 75500, i.e. unaffected by the
 price's digit count, the same way `accept_mission_point`'s "확인"
 button position was already confirmed unaffected).
+
+### `refresh_result_popup_1/2.png` (REFRESH-RESULT-DISMISS-001)
+
+A real customer live run stalled repeatedly ("Slot 3: refresh popup
+never verified") even after `REFRESH-TRIGGER-CORRECTION-001` and
+`RETRY-BUDGET-001/002` shipped. The customer supplied 4 real
+screenshots of the actual stuck screen (3 identical + 1 with a
+different underlying list state) -- an arch-topped popup titled with
+the newly-rolled mission's type ("자유 토벌작전"), showing "확률"
+(odds), a single reward icon (100,000), and a "닫기" button. Two
+distinct captures kept (`refresh_result_popup_1.png`,
+`refresh_result_popup_2.png`).
+
+**Root cause**: after confirming a mission renewal (`지역 퀘스트를
+갱신 하시겠습니까?` -> `확인`), the game shows this ONE MORE brief
+acknowledgment popup for the newly-rolled mission before returning to
+the normal accept-popup state. The refresh loop never knew about this
+screen, so every subsequent popup-verify/mission-acceptability check
+saw this unexpected screen and correctly reported "not verified"/"not
+acceptable" -- looping forever without ever dismissing it.
+
+**Fix**: reuses two already-calibrated assets, no new template or
+position measured:
+- `reward_screen_label` ("확률", the same real anchor from
+  `REWARD-SCREEN-CALIBRATION-001`) matches this popup at 1.0
+  confidence on both real captures -- structurally identical to the
+  real reward screen.
+- The popup's real "닫기" button bbox (measured: x:552-732, y:486-537)
+  coincides almost exactly with the already-calibrated
+  `close_result_point`/`claim_point` value (0.5012/0.7104 rel ->
+  641.5/511.5 px, comfortably inside the measured bbox) -- the same
+  real button position reused a third time across three structurally
+  related popups (reward screen, result screen, and now this
+  acknowledgment popup).
+
+`_accept_or_refresh_slot`'s refresh loop now does a single best-effort
+check (not a bounded retry loop) right after the confirm tap: if
+`reward_screen_label` matches, tap `close_result_point` to dismiss it
+before re-checking mission acceptability. If the popup isn't showing,
+this is a harmless no-op.

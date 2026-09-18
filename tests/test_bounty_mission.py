@@ -605,6 +605,84 @@ def test_refresh_confirm_is_always_position_based_never_template_matched():
     assert (_SERIAL, expected_args) in runner.calls
 
 
+# --- REFRESH-RESULT-DISMISS-001: dismiss the post-refresh ack popup -------
+
+
+def test_refresh_result_ack_popup_is_dismissed_before_rechecking_acceptability():
+    """Real customer report: after confirming the renewal, the game
+    shows one more brief acknowledgment popup (title + "확률" odds + a
+    single reward icon + "닫기") before returning to the normal
+    accept-popup state -- the refresh loop never knew about it, so it
+    sat there indefinitely. Proven with a recognizer where the
+    acknowledgment popup (_REWARD label, reusing reward_screen_label)
+    always shows after each confirm, and the mission only becomes
+    acceptable after one full refresh+confirm+dismiss round-trip --
+    reaching acceptance at all requires the dismiss tap to have
+    happened."""
+
+    class _AckPopupThenAcceptRecognizer:
+        def __init__(self):
+            self._phrase_checks = 0
+            self.calls: list = []
+
+        def recognize(self, image_bytes, roi, expected_label, threshold):
+            self.calls.append(expected_label)
+            if expected_label in {_POPUP_ANCHOR, _POPUP_TITLE, _REWARD}:
+                return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test", (0.5, 0.5))
+            if expected_label == _PHRASE:
+                self._phrase_checks += 1
+            if expected_label in (_PHRASE, _QTY) and self._phrase_checks >= 2:
+                return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test", (0.5, 0.5))
+            return RecognitionResult(RecognitionStatus.NO_MATCH, None, 0.05, "test")
+
+    runner = _runner_with_valid_captures()
+    recognizer = _AckPopupThenAcceptRecognizer()
+    cfg = _config(max_kill_progress_poll_attempts=1)
+
+    result = _run(runner, recognizer, cfg)  # must not raise, must not hang
+
+    assert result.outcome is BountyOutcome.KILL_PROGRESS_NOT_COMPLETE
+    close_args = (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.close_result_point)))
+    confirm_args = (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.refresh_confirm_point)))
+    assert close_args in runner.calls
+    # The dismiss tap happens after the confirm tap, in the same round-trip.
+    assert runner.calls.index(close_args) > runner.calls.index(confirm_args)
+
+
+def test_refresh_result_ack_popup_absent_is_a_harmless_noop():
+    """When the acknowledgment popup never shows (reward_screen_label
+    never matches), close_result_point must never be tapped during the
+    refresh loop -- this is a best-effort check, not an assumption.
+    Bounded so the cycle can never reach the real, separate close-
+    result step (which legitimately uses this same point) -- any
+    appearance of it here can only be the refresh-loop dismiss check."""
+
+    class _AcceptOnSecondCheckNoAckRecognizer:
+        def __init__(self):
+            self._phrase_checks = 0
+            self.calls: list = []
+
+        def recognize(self, image_bytes, roi, expected_label, threshold):
+            self.calls.append(expected_label)
+            if expected_label in {_POPUP_ANCHOR, _POPUP_TITLE}:
+                return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test", (0.5, 0.5))
+            if expected_label == _PHRASE:
+                self._phrase_checks += 1
+            if expected_label in (_PHRASE, _QTY) and self._phrase_checks >= 2:
+                return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test", (0.5, 0.5))
+            return RecognitionResult(RecognitionStatus.NO_MATCH, None, 0.05, "test")
+
+    runner = _runner_with_valid_captures()
+    recognizer = _AcceptOnSecondCheckNoAckRecognizer()
+    cfg = _config(max_kill_progress_poll_attempts=1)
+
+    result = _run(runner, recognizer, cfg)
+
+    assert result.outcome is BountyOutcome.KILL_PROGRESS_NOT_COMPLETE
+    close_args = (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.close_result_point)))
+    assert close_args not in runner.calls
+
+
 # --- COMPLETE-SLOT-TRACKING-001: complete the slot that's ACTUALLY eligible
 
 
