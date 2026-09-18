@@ -157,3 +157,81 @@ measured position as `claim_point` -- same button frame, different
 game state) and is now used unconditionally (no dynamic template
 search at all for this one step -- see
 `bounty_mission.py`'s `RESULT-CLOSE-CALIBRATION-001` comment).
+
+### Region-quest list + renewal-confirm popup (REFRESH-CALIBRATION-001)
+
+Three more real captures, supplied by the customer after a live report
+of "Slot 3: refresh-open tap failed" on a real, never-target-matching
+dungeon-type mission ("십변도 토벌작전[던전]" / 귀마황 처치 (0/250)):
+
+| File | Real screen | Notes |
+|---|---|---|
+| `region_list_slot3_dungeon.png` | 임무 > 지역 list, slot 3 ("십변도 토벌작전[던전]") selected | Shows the persistent bottom-right currency-cost action box, "0  4400" |
+| `region_list_slot1_named_quest.png` | Same list, slot 1 ("야왕궁 토벌작전") selected instead | Pixel-identical (`cv2.absdiff` mean 0.0) to the other capture at the same currency-cost-box region -- confirms this box is positionally fixed regardless of which slot/mission is currently selected |
+| `region_quest_renew_confirm.png` | "지역 퀘스트를 갱신 하시겠습니까?" renewal-confirmation dialog (갱신 금액 4,400 / 보유 금액 .../ 취소 / 확인) | The REAL refresh-confirmation popup -- entirely different text/layout from the old, never-calibrated placeholder assumption (anchor label "새로고침", title label "확인") |
+
+A 4th capture, `bounty_detail_popup.png` ("자유 토벌작전" mission-detail
+popup with 임무 목표/보상/price/확인, sent by the customer as a "here's
+what this looks like" reference), was also saved for cross-checking
+false positives but is NOT the refresh-confirm popup -- it's a
+separate, unrelated detail view.
+
+**Root cause**: `refresh_button_point`/`refresh_popup_anchor_roi`/
+`refresh_popup_title_roi`/`refresh_confirm_point` were all placeholder
+values, never calibrated. Worse, `button_refresh_4400/6600/9900/
+14900`/`button_refresh_confirm` (mapped in `template_map`) are
+pre-GAME-CAL-001 mock assets (380x116/180x55 -- wrong proportions for
+a 1280x720 capture) that never confidently match a real screen; because
+`template_map` being non-empty overall makes `_tap_any_template()`/
+`_tap_template()` return a hard `False` (not `None`) for an unconfident
+match, this silently blocked the fixed-point fallback from ever
+running -- the same `TAP-FALLBACK-CRASH-001`/`SLOT-SELECT-CALIBRATION-
+001` gotcha, a third time.
+
+**Fix**: `refresh_button_point` was measured as the center of the real
+currency-cost action box -- which turned out to be the EXACT same real
+UI element already calibrated in `GAME-CAL-001` as
+`currency_action_4400.png` (cross-validated via direct template match:
+0.993 confidence at pixel offset (830, 643), matching this packet's
+independent hand-measurement to within 2px). Since that box's role is
+positionally fixed regardless of its currently displayed price, and is
+present at the identical pixel position across three independent real
+captures (2 list views + 1 GAME-CAL-001 detail view), refresh-open now
+always taps it directly -- no template search. Two real crops were
+taken from `region_quest_renew_confirm.png` for structural popup
+verification (see `templates/` table below), and `refresh_confirm_point`
+was measured directly as the popup's real "확인" button center. The old
+`button_refresh_*`/`button_refresh_confirm` template_map entries were
+removed (see `configs/bounty.example.yaml`'s comment) and
+`bounty_mission.py`'s refresh-open/refresh-confirm steps no longer
+attempt template matching at all.
+
+### `region_quest_renew_confirm.png`'s derived crops (REFRESH-CALIBRATION-001)
+
+| File | Cropped from | Pixel region (of the 1280x720 source) | Used as |
+|---|---|---|---|
+| `refresh_popup_title.png` | `region_quest_renew_confirm.png` | x:332-947, y:174-206 | `refresh_popup_title_label` -- the full renewal-question sentence "지역 퀘스트를 갱신 하시겠습니까?"; confirmed (real `OpenCVTemplateRecognizer`, `tests/test_refresh_popup_real_assets.py`) to match only this real popup, never any of the other 9 real captures on file (next-highest confidence: 0.721, still under the 0.8 threshold) |
+| `refresh_popup_renew_label.png` | `region_quest_renew_confirm.png` | x:375-465, y:307-330 | `refresh_popup_anchor_label` -- the "갱신 금액" (renewal amount) label alone (not the value); same real cross-check as above, confirmed absent from every other real capture |
+
+`refresh_confirm_point` (x:660-842, y:498-550 real "확인" button bbox,
+center measured directly) and `refresh_button_point` (x:830-1020,
+y:643-698 real currency-action-box bbox, same as `currency_action_4400`)
+were both measured by mean-brightness row/column scans of the real
+captures, the same methodology used throughout this fixture set --
+never eyeballed.
+
+### What remains NEEDS_REAL_TEST (REFRESH-CALIBRATION-001)
+
+- The exact game action that opens `region_quest_renew_confirm.png` is
+  inferred from real evidence (the currency-action box is positionally
+  fixed and present on every real capture checked), not directly
+  observed as a single continuous tap-then-popup sequence -- the
+  customer's captures were supplied as separate reference screenshots,
+  not a recorded interaction sequence. If `refresh_button_point` turns
+  out not to open this exact popup on some other screen state, the
+  structural `refresh_popup_title`/`refresh_popup_renew_label` check
+  immediately downstream will safely refuse to confirm (never taps
+  blind), reporting `REFRESH_POPUP_NOT_VERIFIED` -- fails closed either
+  way.
+- No live ADB/LDPlayer/game session was used to verify this fix --
+  verified against the real supplied captures, offline.

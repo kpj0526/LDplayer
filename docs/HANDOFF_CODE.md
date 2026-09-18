@@ -3896,3 +3896,142 @@ Run 3x in a row: `401 passed` every time, 0 failures. (Prior baseline
   start: confirm the flow reaches "완료" faster (visibly fewer
   select-and-wait steps) than before, without skipping or misfiring on
   any slot.
+
+## REFRESH-CALIBRATION-001: real calibration for the refresh/reroll flow
+
+**Trigger**: after `EARLY-COMPLETE-CHECK-001` shipped, the user
+reported a live run stuck on a different mission on a different slot:
+"십변도 토벌작전[던전]" / 귀마황 처치 (0/250), a dungeon-type,
+never-target mission, with `Slot 3: refresh-open tap failed`.
+`refresh_button_point`/`refresh_popup_anchor_roi`/
+`refresh_popup_title_roi`/`refresh_confirm_point` had never been
+calibrated against any real capture. The user supplied three real
+1280x720 captures: two of the region-quest list view (different
+slots/missions selected) and one of the actual renewal-confirmation
+popup.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+Same bug class as `TAP-FALLBACK-CRASH-001`/`SLOT-SELECT-CALIBRATION-
+001`, a third time: `button_refresh_4400/6600/9900/14900`/
+`button_refresh_confirm` (mapped in `template_map`) are
+pre-`GAME-CAL-001` placeholder assets (380x116/180x55 -- the wrong
+proportions for a real 1280x720 capture, never real crops). A real
+live run proved they never confidently match, and because
+`template_map` being non-empty overall makes `_tap_any_template()`/
+`_tap_template()` return a hard `False` (not `None`) for an
+unconfident match, this silently blocked the fixed-point fallback from
+ever running.
+
+### Fix
+
+Real evidence resolved this cleanly:
+- `refresh_button_point` is the real, measured center of the
+  currency-cost action box -- which turned out to be the EXACT same
+  real UI element already calibrated in `GAME-CAL-001` as
+  `currency_action_4400.png` (cross-validated via direct template
+  match: 0.993 confidence, at the same pixel offset this packet's
+  independent hand-measurement found). Confirmed present at the
+  identical pixel position across three independent real captures
+  (`cv2.absdiff` mean 0.0 between the two new list-view captures at
+  that region), so it is positionally fixed regardless of which
+  slot/mission is currently selected or its currently displayed price.
+- Two real crops from the actual renewal-confirmation popup
+  (`region_quest_renew_confirm.png`) now structurally verify the
+  popup before ever tapping confirm: `refresh_popup_title_label`
+  ("지역 퀘스트를 갱신 하시겠습니까?") and `refresh_popup_anchor_label`
+  ("갱신 금액") -- both confirmed to match only this real popup and
+  none of the other 9 real captures on file.
+- `refresh_confirm_point` was measured directly as the popup's real
+  "확인" button center.
+
+`src/ldmanager/bounty_mission.py` -- refresh-open and refresh-confirm
+no longer attempt any template search at all (mirroring
+`SLOT-SELECT-CALIBRATION-001`/`RESULT-CLOSE-CALIBRATION-001`'s
+reasoning): refresh-open always taps `refresh_button_point` directly,
+and refresh-confirm always taps `refresh_confirm_point` directly, safe
+because the structural popup-verification check runs in between and
+refuses to confirm blindly if the real popup isn't actually showing
+(`REFRESH_POPUP_NOT_VERIFIED`, never a wrong tap). The now-dead
+`_tap_any_template()` helper (no remaining call sites) was deleted.
+`configs/bounty.example.yaml` no longer maps
+`button_refresh_confirm`/`button_refresh_4400/6600/9900/14900` at all,
+and no longer carries two stray, never-referenced literal-Korean-text
+template_map entries ("지역 퀘스트 갱신"/"확인" -> a different stale
+asset) left over from an earlier, unrelated attempt.
+
+### Regression tests
+
+- `tests/test_refresh_popup_real_assets.py` (new, 7 tests) -- real
+  captures are genuine 1280x720 PNGs; `refresh_popup_title_label`/
+  `refresh_popup_anchor_label` match only the real renewal-confirm
+  popup and never any of the 9 other real captures; `refresh_button_
+  point` lands inside the real `currency_action_4400` template's
+  bounding box on both real list-view captures (0.98+ confidence);
+  the 5 stale refresh-button templates confirmed absent from the
+  shipped config.
+- `tests/test_bounty_config.py` --
+  `test_example_bounty_config_refresh_fields_are_real_calibrated_values`,
+  `test_example_bounty_config_never_maps_the_stale_refresh_button_templates`.
+- `tests/test_bounty_mission.py` -- replaced the two now-obsolete
+  "dynamic template no-match" tests (their premise no longer exists)
+  with `test_refresh_open_is_always_position_based_never_template_
+  matched`, `test_refresh_open_tap_failure_detail_includes_the_real_
+  adb_stderr`, and `test_refresh_confirm_is_always_position_based_
+  never_template_matched`; updated
+  `test_slot_select_is_always_position_based_never_template_matched`'s
+  assertion (it now reaches -- and correctly fails at -- the popup's
+  own structural verification, not a since-removed "refresh-open"
+  template check).
+
+### Test results
+
+```
+python -m pytest -q
+411 passed
+```
+
+Run 3x in a row: `411 passed` every time, 0 failures. (Prior baseline
+401 + 6 new bounty_mission + 2 new bounty_config + ... see file diff;
+net +10 across the two obsolete tests replaced by three, plus 7 new
+real-asset tests and 2 new config-guard tests.)
+
+### Commits
+
+- `PLACEHOLDER_COMMIT_HASH` -- `REFRESH-CALIBRATION-001: real
+  calibration for the refresh/reroll flow` (implementation + tests +
+  this HANDOFF section, in one commit)
+- Followed by a short "docs: record REFRESH-CALIBRATION-001 commit
+  hash in handoff" commit recording the real hash.
+
+### Limitations
+
+1. The exact game action that opens the renewal-confirm popup is
+   inferred from real evidence (the currency-action box is positionally
+   fixed and present on every real capture checked), not directly
+   observed as one continuous tap-then-popup interaction -- the
+   captures were supplied as separate reference screenshots, not a
+   recorded sequence. If `refresh_button_point` turns out not to open
+   this exact popup on some other real screen state, the structural
+   popup-verification check immediately downstream fails closed
+   (`REFRESH_POPUP_NOT_VERIFIED`, never a wrong tap) rather than
+   silently misbehaving.
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the real supplied captures, offline.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `411 passed`) and
+  `tests/test_refresh_popup_real_assets.py` specifically.
+- On a real device: confirm a live run now proceeds past a non-target
+  slot's refresh/reroll step (tapping the real currency-action box,
+  then the real renewal-confirm popup's "확인") instead of failing at
+  "refresh-open tap failed" -- the likely next real blocker, if any, is
+  whether the tapped currency-action box actually opens this exact
+  popup on every mission type (dungeon-type included), per Limitation 1
+  above.

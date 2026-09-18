@@ -406,11 +406,16 @@ def test_slot_select_is_always_position_based_never_template_matched():
 
     result = _run(runner, recognizer, cfg)  # must not raise, must not fail at "select"
 
-    assert result.outcome is BountyOutcome.CAPTURE_UNAVAILABLE
+    assert result.outcome is BountyOutcome.REFRESH_POPUP_NOT_VERIFIED
     assert "select tap failed" not in result.detail
     # Reached (and failed at) the NEXT step instead -- proof slot
-    # selection itself was never the blocker here.
-    assert "refresh-open tap failed" in result.detail
+    # selection itself was never the blocker here. REFRESH-CALIBRATION-001:
+    # refresh-open itself is also always position-based now (never a
+    # template search), so it succeeds unconditionally here too -- the
+    # cycle proceeds all the way to the popup's own structural
+    # verification (anchor/title), which is what finally, correctly,
+    # fails given this confidently-non-matching recognizer.
+    assert "refresh popup never verified structurally" in result.detail
 
 
 def test_slot_select_tap_uses_the_exact_configured_slot_select_point():
@@ -427,59 +432,117 @@ def test_slot_select_tap_uses_the_exact_configured_slot_select_point():
     assert (_SERIAL, expected_args) in runner.calls
 
 
-def test_refresh_open_dynamic_template_no_match_is_a_structured_error_not_a_crash():
-    """Same bug class, second occurrence: a real 'button_refresh_4400'
-    (etc.) template configured but not confidently matching previously
-    raised UnboundLocalError('open_popup')."""
+def test_refresh_open_is_always_position_based_never_template_matched():
+    """REFRESH-CALIBRATION-001: a real customer capture proved
+    button_refresh_4400/6600/9900/14900 (pre-GAME-CAL-001 placeholder
+    assets) never confidently match, and because a non-empty
+    template_map makes _tap_any_template() return a hard False (not
+    None), this silently blocked the fixed-point fallback from ever
+    running -- reported live as "Slot N: refresh-open tap failed" on a
+    real, never-target-matching dungeon-type mission. Fix: refresh-open
+    no longer attempts template matching at all -- it always taps
+    config.refresh_button_point directly. Proven here by configuring a
+    'button_refresh_4400' template that a confidently-non-matching
+    recognizer would have rejected under the old behavior, yet the
+    refresh-open tap still succeeds (using the real, calibrated fixed
+    point) and the cycle proceeds to the popup's own structural
+    verification instead of failing at "refresh-open"."""
 
     runner = _runner_with_valid_captures()
-    # Selects successfully (mission_slot_unselected matches) but is
-    # confidently non-target (so the refresh loop is reached) -- never
-    # matches the phrase/quantity, nor any refresh-cost variant.
     recognizer = _ConfidentNoMatchRecognizer(matching_labels={"mission_slot_unselected"})
     cfg = _config(
         template_map={
             "mission_slot_unselected": "mission_slot_unselected.png",
             "button_refresh_4400": "button_refresh_4400.png",
         },
-        max_refresh_attempts=1,
     )
 
     result = _run(runner, recognizer, cfg)  # must not raise
+
+    assert result.outcome is BountyOutcome.REFRESH_POPUP_NOT_VERIFIED
+    assert "refresh-open tap failed" not in result.detail
+    expected_args = tuple(build_tap_args(cfg.screen_size, cfg.refresh_button_point))
+    assert (_SERIAL, expected_args) in runner.calls
+
+
+def test_refresh_open_tap_failure_detail_includes_the_real_adb_stderr():
+    """Real ADB rc/stderr failure (device offline, etc.) on the
+    refresh-open tap must still surface as a diagnosable detail -- the
+    same STDERR-DETAIL-001 guarantee already given to every other tap
+    in this flow."""
+
+    cfg = _config()
+    open_args = tuple(build_tap_args(cfg.screen_size, cfg.refresh_button_point))
+    select_args = tuple(build_tap_args(cfg.screen_size, cfg.slot_select_points[0]))
+    runner = FakeAdbRunner(
+        capture_results={
+            (_SERIAL, DEFAULT_CAPTURE_ARGS): AdbBinaryResult(
+                serial=_SERIAL, args=DEFAULT_CAPTURE_ARGS, returncode=0,
+                stdout_bytes=_VALID_PNG, stderr="",
+            )
+        },
+        command_results={
+            (_SERIAL, select_args): AdbCommandResult(
+                serial=_SERIAL, args=select_args, returncode=0, stdout="", stderr="",
+            ),
+            (_SERIAL, open_args): AdbCommandResult(
+                serial=_SERIAL, args=open_args, returncode=125,
+                stdout="", stderr="error: device offline",
+            ),
+        },
+    )
+    # Confidently non-target, so the refresh loop is reached.
+    recognizer = LabelMappingRecognizer(matching_labels=frozenset({_POPUP_ANCHOR, _POPUP_TITLE}))
+
+    result = _run(runner, recognizer, cfg)
 
     assert result.outcome is BountyOutcome.CAPTURE_UNAVAILABLE
     assert "refresh-open tap failed" in result.detail
-    assert "template-based tap" in result.detail
+    assert "rc=125" in result.detail
+    assert "error: device offline" in result.detail
 
 
-def test_refresh_confirm_dynamic_template_no_match_is_a_structured_error_not_a_crash():
-    """Same bug class, third occurrence: a real 'button_refresh_confirm'
-    template configured but not confidently matching previously raised
-    UnboundLocalError('confirm'). Select and refresh-open both succeed
-    via a CONFIDENT dynamic match (a non-empty template_map makes any
-    *unconfigured* asset a hard False, never a silent fixed-point
-    fallback -- see _tap_template/_tap_any_template), and the popup IS
-    verified (anchor/title both match) -- isolating the failure to the
-    confirm tap alone."""
+def test_refresh_confirm_is_always_position_based_never_template_matched():
+    """Same fix, applied to the confirm tap: a real
+    'button_refresh_confirm' template configured but not confidently
+    matching no longer blocks anything -- refresh-confirm always taps
+    config.refresh_confirm_point directly once the popup is verified
+    structurally (anchor/title both match), proven with a recognizer
+    that only confirms the target phrase/quantity AFTER one
+    refresh-open+confirm round-trip (never on the very first check),
+    so a confirm tap is required to ever reach acceptance."""
+
+    class _AcceptOnSecondCheckRecognizer:
+        def __init__(self):
+            self._phrase_checks = 0
+            self.calls: list = []
+
+        def recognize(self, image_bytes, roi, expected_label, threshold):
+            self.calls.append(expected_label)
+            if expected_label in {"mission_slot_unselected", "button_accept_mission", _POPUP_ANCHOR, _POPUP_TITLE}:
+                return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test", (0.5, 0.5))
+            if expected_label == _PHRASE:
+                self._phrase_checks += 1
+            if expected_label in (_PHRASE, _QTY) and self._phrase_checks >= 2:
+                return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test", (0.5, 0.5))
+            return RecognitionResult(RecognitionStatus.NO_MATCH, None, 0.05, "test")
 
     runner = _runner_with_valid_captures()
-    recognizer = _ConfidentNoMatchRecognizer(
-        matching_labels={"mission_slot_unselected", "button_refresh_4400", _POPUP_ANCHOR, _POPUP_TITLE}
-    )
+    recognizer = _AcceptOnSecondCheckRecognizer()
     cfg = _config(
         template_map={
             "mission_slot_unselected": "mission_slot_unselected.png",
-            "button_refresh_4400": "button_refresh_4400.png",
             "button_refresh_confirm": "button_refresh_confirm.png",
+            "button_accept_mission": "button_accept_mission.png",
         },
-        max_refresh_attempts=1, max_popup_verify_attempts=1,
+        max_kill_progress_poll_attempts=1,
     )
 
-    result = _run(runner, recognizer, cfg)  # must not raise
+    result = _run(runner, recognizer, cfg)  # must not raise, must not hang
 
-    assert result.outcome is BountyOutcome.CAPTURE_UNAVAILABLE
-    assert "refresh-confirm tap failed" in result.detail
-    assert "template-based tap" in result.detail
+    assert result.outcome is BountyOutcome.KILL_PROGRESS_NOT_COMPLETE
+    expected_args = tuple(build_tap_args(cfg.screen_size, cfg.refresh_confirm_point))
+    assert (_SERIAL, expected_args) in runner.calls
 
 
 # --- COMPLETE-SLOT-TRACKING-001: complete the slot that's ACTUALLY eligible

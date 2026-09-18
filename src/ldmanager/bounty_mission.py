@@ -161,33 +161,6 @@ def _tap_template(
     return result.ok
 
 
-def _tap_any_template(
-    runner: AdbRunner, serial: str, config: BountyMissionConfig, recognizer: Recognizer, labels: tuple[str, ...],
-) -> Optional[bool]:
-    """One-frame OR search across equivalent button variants.
-
-    The refresh price is not parsed or compared.  Each supplied label is a
-    whole-button image variant; the highest confident match supplies the
-    center point for one serial-scoped ADB tap.
-    """
-    configured = tuple(label for label in labels if label in config.template_map)
-    if not configured:
-        return False if config.template_map else None
-    capture = capture_screenshot(runner, serial, config.capture_args)
-    if not capture.ok:
-        return False
-    matches = [
-        recognizer.recognize(capture.image_bytes, _FULL_SCREEN, label, config.threshold)
-        for label in configured
-    ]
-    valid = [match for match in matches if match.matched and match.match_center is not None]
-    if not valid:
-        return False
-    best = max(valid, key=lambda match: match.confidence)
-    x, y = best.match_center
-    return runner.run(serial, build_tap_args(config.screen_size, RelativeCoordinate(x=x, y=y))).ok
-
-
 def _mission_is_acceptable(runner, serial, config, recognizer) -> MissionAssessment:
     """Is the currently-selected mission the configured target objective?
 
@@ -293,21 +266,24 @@ def _accept_or_refresh_slot(
                 BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (refresh attempt {attempt})."
             )
 
-        dynamic_refresh = _tap_any_template(
-            runner, serial, config, recognizer,
-            ("button_refresh_4400", "button_refresh_6600", "button_refresh_9900", "button_refresh_14900"),
-        )
-        if dynamic_refresh is None:
-            open_popup = runner.run(serial, build_tap_args(config.screen_size, config.refresh_button_point))
-            refresh_ok = open_popup.ok
-            refresh_detail = f"rc={open_popup.returncode}, stderr={_short(open_popup.stderr)}"
-        else:
-            refresh_ok = dynamic_refresh
-            refresh_detail = "template-based tap: no confident match, or the located tap itself failed"
-        if not refresh_ok:
+        # REFRESH-CALIBRATION-001: always position-based, never a
+        # _tap_any_template() image search. A real customer capture
+        # proved button_refresh_4400/6600/9900/14900 (pre-GAME-CAL-001
+        # placeholder assets, never real crops) never confidently match
+        # -- and because template_map being non-empty overall makes
+        # _tap_any_template() return a hard False (not None), this
+        # silently blocked the fixed-point fallback from ever running
+        # (the same TAP-FALLBACK-CRASH-001/SLOT-SELECT-CALIBRATION-001
+        # gotcha). The real currency-cost action box is positionally
+        # fixed regardless of its currently displayed price, so this
+        # step no longer attempts template matching at all -- see
+        # docs/HANDOFF_CODE.md's REFRESH-CALIBRATION-001 section.
+        open_popup = runner.run(serial, build_tap_args(config.screen_size, config.refresh_button_point))
+        if not open_popup.ok:
             return None, BountyCycleResult(
                 BountyOutcome.CAPTURE_UNAVAILABLE, (),
-                f"Slot {slot_index}: refresh-open tap failed ({refresh_detail}).",
+                f"Slot {slot_index}: refresh-open tap failed "
+                f"(rc={open_popup.returncode}, stderr={_short(open_popup.stderr)}).",
             )
 
         if should_stop():
@@ -341,18 +317,16 @@ def _accept_or_refresh_slot(
                 BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (before confirm)."
             )
 
-        dynamic_confirm = _tap_template(runner, serial, config, recognizer, "button_refresh_confirm")
-        if dynamic_confirm is None:
-            confirm = runner.run(serial, build_tap_args(config.screen_size, config.refresh_confirm_point))
-            confirm_ok = confirm.ok
-            confirm_detail = f"rc={confirm.returncode}, stderr={_short(confirm.stderr)}"
-        else:
-            confirm_ok = dynamic_confirm
-            confirm_detail = "template-based tap: no confident match, or the located tap itself failed"
-        if not confirm_ok:
+        # REFRESH-CALIBRATION-001: same reasoning as the refresh-open tap
+        # above -- always the real, measured refresh_confirm_point, safe
+        # because the structural popup_verified check just above already
+        # confirmed the real renewal-confirm dialog is actually showing.
+        confirm = runner.run(serial, build_tap_args(config.screen_size, config.refresh_confirm_point))
+        if not confirm.ok:
             return None, BountyCycleResult(
                 BountyOutcome.CAPTURE_UNAVAILABLE, (),
-                f"Slot {slot_index}: refresh-confirm tap failed ({confirm_detail}).",
+                f"Slot {slot_index}: refresh-confirm tap failed "
+                f"(rc={confirm.returncode}, stderr={_short(confirm.stderr)}).",
             )
 
         if should_stop():
