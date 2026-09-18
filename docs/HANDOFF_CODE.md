@@ -4724,7 +4724,7 @@ Run 3x in a row: `437 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- `PLACEHOLDER_COMMIT_HASH` -- `RETRY-BUDGET-002/PHASE-VISIBILITY-001:
+- `28d5e24` -- `RETRY-BUDGET-002/PHASE-VISIBILITY-001:
   widen the remaining verify budgets, and stop the phase display going
   stale` (implementation + tests + this HANDOFF section, in one
   commit)
