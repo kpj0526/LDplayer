@@ -308,3 +308,83 @@ def test_a_result_without_detail_is_a_safe_noop_never_raises():
     status = worker.status()
     assert status.errored is True
     assert status.last_error == "adb_error: account worker stopped"
+
+
+# --- ERROR-VISIBILITY-001: flagged-but-not-fatal outcomes -----------------
+
+
+def test_flagged_non_fatal_outcome_is_visible_but_worker_keeps_going():
+    """Real customer report: "refresh_popup_not_verified" kept
+    recurring but "doesn't get caught in the error log" -- it was
+    never in the fatal-outcome set, so it only ever reached the plain,
+    scrolling "cycle result:" log line, never the GUI's red last_error/
+    errored display. Now it's flagged (visible) WITHOUT stopping the
+    worker -- bounty_mission.py's bounded-retry design expects the
+    worker to keep calling run_one_cycle again."""
+
+    call_count = {"n": 0}
+
+    def cycle(should_stop):
+        call_count["n"] += 1
+        return _DummyOutcomeWithDetail(
+            "refresh_popup_not_verified", "Slot 3: refresh popup never verified structurally."
+        )
+
+    worker = _make_worker(AccountId.LD1, cycle)
+    worker.start()
+    time.sleep(0.05)
+    worker.stop(join_timeout=1.0)
+
+    status = worker.status()
+    assert call_count["n"] > 1, "worker must keep retrying, not stop, on this outcome"
+    assert status.running is False  # stopped via worker.stop(), not via the outcome itself
+    assert status.errored is True
+    assert "refresh_popup_not_verified" in status.last_error
+    assert "Slot 3: refresh popup never verified structurally." in status.last_error
+    assert any(line.startswith("WARN:") for line in status.recent_log)
+    assert not any(line.startswith("ERROR:") for line in status.recent_log)
+
+
+def test_flagged_non_fatal_outcome_clears_after_a_later_successful_cycle():
+    """A transient refresh_popup_not_verified must not leave the GUI
+    permanently red once the flow recovers on a later cycle."""
+
+    call_count = {"n": 0}
+
+    def cycle(should_stop):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return _DummyOutcomeWithDetail("slot_accept_failed", "Slot 2: no acceptable target.")
+        return _DummyOutcome("kill_progress_not_complete")
+
+    worker = _make_worker(AccountId.LD2, cycle)
+    worker.start()
+    time.sleep(0.05)
+    worker.stop(join_timeout=1.0)
+
+    status = worker.status()
+    assert call_count["n"] > 1
+    assert status.errored is False
+    assert status.last_error is None
+
+
+def test_all_six_flagged_outcomes_are_visible_without_stopping():
+    for outcome in (
+        "refresh_popup_not_verified", "slot_accept_failed", "reward_verify_failed",
+        "result_verify_failed", "mission_list_verify_failed", "re_accept_failed",
+    ):
+        call_count = {"n": 0}
+
+        def cycle(should_stop, outcome=outcome):
+            call_count["n"] += 1
+            return _DummyOutcome(outcome)
+
+        worker = _make_worker(AccountId.LD3, cycle)
+        worker.start()
+        time.sleep(0.05)
+        worker.stop(join_timeout=1.0)
+
+        status = worker.status()
+        assert call_count["n"] > 1, f"{outcome}: worker must keep retrying"
+        assert status.errored is True, f"{outcome}: must be flagged visible"
+        assert outcome in status.last_error, f"{outcome}: must appear in last_error"

@@ -252,9 +252,19 @@ mission_list_label: "mission_objective_label"
 
 # Bounded retry/timeout policy -- every loop stops after this many
 # attempts rather than looping forever.
+# RETRY-BUDGET-001: a real live run reported "refresh popup never
+# verified" recurring intermittently even after RETRY-PACING-001
+# started actually pacing retries -- i.e. sometimes worked, sometimes
+# didn't, the signature of a timing margin that's merely thin rather
+# than absent (or wrong). max_popup_verify_attempts and
+# retry_delay_seconds were both raised to widen the total wait budget
+# for the popup to finish rendering (2-3s worst case before -> up to
+# 6s now) before concluding it never showed. If "never verified"
+# still recurs after this, it likely needs real evidence (a screen
+# recording of the exact miss) rather than a further budget increase.
 max_capture_attempts: 3
 max_refresh_attempts: 5
-max_popup_verify_attempts: 3
+max_popup_verify_attempts: 5
 max_kill_progress_poll_attempts: 10
 # COMPLETE-RETRY-001: if the complete tap doesn't confidently land, how
 # many times to re-select the eligible slot and retry before giving up.
@@ -262,7 +272,7 @@ max_complete_verify_attempts: 3
 max_reward_verify_attempts: 3
 max_result_verify_attempts: 3
 max_mission_list_verify_attempts: 3
-retry_delay_seconds: 1.0
+retry_delay_seconds: 1.5
 
 # --- GAME-CAL-001 (real-capture rework): screen classification --------
 #

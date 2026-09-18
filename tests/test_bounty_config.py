@@ -187,9 +187,23 @@ def test_non_positive_retry_bound_is_rejected(tmp_path):
         load_bounty_config(path)
 
 
+def test_example_bounty_config_retry_budget_was_widened():
+    """RETRY-BUDGET-001: a real live run reported "refresh popup never
+    verified" recurring intermittently even after RETRY-PACING-001 --
+    the timing margin was thin, not absent. Guards against silently
+    drifting back to the original, too-thin budget (3 attempts /
+    1.0s -- 2-3s worst case) rather than the widened one (5 attempts /
+    1.5s -- up to 6s worst case)."""
+
+    config = load_bounty_config(EXAMPLE_BOUNTY_CONFIG)
+    assert config.max_popup_verify_attempts >= 5
+    assert config.retry_delay_seconds >= 1.5
+
+
 def test_negative_retry_delay_is_rejected(tmp_path):
     text = EXAMPLE_BOUNTY_CONFIG.read_text(encoding="utf-8")
-    bad = text.replace("retry_delay_seconds: 1.0", "retry_delay_seconds: -1.0", 1)
+    bad = text.replace("retry_delay_seconds: 1.5", "retry_delay_seconds: -1.0", 1)
+    assert bad != text, "retry_delay_seconds line not found in example config -- fixture drifted"
     path = tmp_path / "bounty.yaml"
     path.write_text(bad, encoding="utf-8")
     with pytest.raises(BountyConfigError):

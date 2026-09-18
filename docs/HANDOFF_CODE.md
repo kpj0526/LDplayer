@@ -4525,3 +4525,142 @@ Run 3x in a row: `432 passed` every time, 0 failures. (Prior baseline
   this specific device/instance's real UI transition time (increase it
   in `configs/bounty.yaml` and retest before assuming another
   calibration bug).
+
+## RETRY-BUDGET-001: widen the popup-verify timing budget
+
+**Trigger**: user reported "refresh popup not verified" recurring
+intermittently even after `RETRY-PACING-001` started actually pacing
+retries -- "아까는 잘되던게 또 안됨" (it worked a moment ago, now it
+doesn't again). Intermittent (not 100% reproducible) failure near an
+already-confirmed-correct tap position is the signature of a timing
+margin that's thin rather than absent or wrong.
+
+### Status: implemented, tested, regression-verified.
+
+### Fix
+
+`configs/bounty.example.yaml`: raised `max_popup_verify_attempts`
+(3 -> 5) and `retry_delay_seconds` (1.0 -> 1.5), widening the total
+worst-case wait budget for the popup to finish rendering from ~2-3s to
+up to ~6s before concluding it never showed.
+
+### Regression tests
+
+- `tests/test_bounty_config.py` --
+  `test_example_bounty_config_retry_budget_was_widened`: guards against
+  silently drifting back to the original, thinner budget.
+  `test_negative_retry_delay_is_rejected` updated to match the new
+  `retry_delay_seconds` value, with an added assertion that fails
+  loudly (rather than silently no-op-ing) if this fixture ever drifts
+  out of sync with the example config again.
+
+### Test results
+
+```
+python -m pytest -q
+436 passed
+```
+
+### Limitations
+
+1. If "never verified" still recurs after this, it likely needs real
+   evidence (a screen recording of the exact miss) rather than a
+   further budget increase -- see `RETRY-PACING-001`'s QA note.
+2. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+## ERROR-VISIBILITY-001: flagged-but-not-fatal outcomes never reached the GUI's error display
+
+**Trigger**: same investigation -- the user said the recurring
+failure "에러로그에는 안잡혀" (doesn't get caught in the error log).
+Traced to `controller.py`'s `AccountWorker._loop`: the fatal-outcome
+set that populates `last_error`/`errored` (the GUI's red-text error
+display) only ever contained
+`{recognition_failed, capture_unavailable, stale_screen,
+unknown_screen, adb_error}`. Six other genuine "something didn't work"
+`BountyOutcome` values --
+`refresh_popup_not_verified`, `slot_accept_failed`,
+`reward_verify_failed`, `result_verify_failed`,
+`mission_list_verify_failed`, `re_accept_failed` -- fell through to the
+plain, scrolling "cycle result:" log line instead, and `last_error`/
+`errored` were never touched for any of them. Since the GUI's
+`status_var` only ever shows "ERROR" while NOT running (line 179 in
+`gui.py`: `"running" if status.running else ("ERROR" if ...)`), and the
+worker never stops for these outcomes, the only visible signal was
+`error_var` (red text) -- which these six outcomes never populated at
+all. A real, recurring failure could sit in the log for many cycles
+with zero red-text indication anything was wrong.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+The fatal-outcome check was written once for the original, narrower
+set of failure modes and never revisited as `bounty_mission.py` grew
+new structured `BountyOutcome` values over the course of this project
+-- a coverage gap, not a logic bug in the check itself.
+
+### Fix
+
+`src/ldmanager/controller.py`: added `_FLAGGED_NON_FATAL_OUTCOMES`, a
+second outcome set. Outcomes in it now populate `last_error`/`errored`
+(visible in the GUI's red text) exactly like the fatal set does, log
+with a `WARN:` prefix (not `ERROR:`, to stay visually distinct from a
+worker-stopping failure), and log at `logging.WARNING` -- but do NOT
+break the loop; `bounty_mission.py`'s bounded-retry design expects
+`run_one_cycle` to be called again after these. `kill_progress_not_
+complete`/`completed_cycle`/`stopped` and any other outcome stay in
+the plain, non-flagged "cycle result:" path (genuinely informational,
+not a failure) -- and that path now also explicitly clears any
+previous `last_error`/`errored`, so a transient flagged outcome
+doesn't leave the GUI stuck red after the flow recovers.
+
+### Regression tests
+
+- `tests/test_controller.py` --
+  `test_flagged_non_fatal_outcome_is_visible_but_worker_keeps_going`
+  (direct proof: `errored`/`last_error` populated, `WARN:` log line
+  present, `ERROR:` absent, and the cycle function was called more
+  than once -- the worker never stopped on this outcome alone),
+  `test_flagged_non_fatal_outcome_clears_after_a_later_successful_cycle`,
+  `test_all_six_flagged_outcomes_are_visible_without_stopping`
+  (parametrized over all six).
+
+### Test results
+
+```
+python -m pytest -q
+436 passed
+```
+
+Run 3x in a row: `436 passed` every time, 0 failures. (Prior baseline
+433 + 3 new controller tests = 436.)
+
+### Commits
+
+- `PLACEHOLDER_COMMIT_HASH` -- `RETRY-BUDGET-001/ERROR-VISIBILITY-001:
+  widen the retry budget and surface flagged-but-not-fatal outcomes in
+  the GUI` (implementation + tests + both HANDOFF sections, in one
+  commit)
+- Followed by a short "docs: record RETRY-BUDGET-001/ERROR-
+  VISIBILITY-001 commit hash in handoff" commit recording the real
+  hash.
+
+### Limitations
+
+1. `last_error`'s red text is only visible while looking at that
+   specific account's panel -- there is still no aggregate/summary
+   indicator across all 9 accounts at a glance.
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the existing fake-worker test harness.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `436 passed`).
+- On a real device: confirm a `refresh_popup_not_verified` (or any of
+  the other five flagged outcomes) now shows red text in the GUI
+  immediately, without needing to read the scrolling log, while the
+  worker keeps running and retrying.

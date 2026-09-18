@@ -42,6 +42,28 @@ CycleFn = Callable[[Callable[[], bool]], object]
 
 _MAX_RECENT_LOG_LINES = 20
 
+# ERROR-VISIBILITY-001: a real customer report -- "refresh_popup_not_
+# verified" kept recurring but "doesn't get caught in the error log."
+# Root cause: this outcome (and five siblings below) was never in the
+# original fatal-outcome set, so it only ever reached the plain,
+# scrolling "cycle result:" log line -- never the GUI's dedicated red
+# last_error/errored display the fatal outcomes populate. These six are
+# genuine "something didn't work as expected" results (not informational
+# like kill_progress_not_complete/completed_cycle/stopped), but the
+# whole point of bounty_mission.py's bounded-retry design is that the
+# worker keeps calling run_one_cycle again afterward (retrying from
+# wherever runtime left off) -- stopping the worker here would fight
+# that design. So these are flagged (last_error/errored set, visible in
+# red) WITHOUT stopping the worker, distinct from the fatal set below.
+_FLAGGED_NON_FATAL_OUTCOMES = frozenset({
+    "refresh_popup_not_verified",
+    "slot_accept_failed",
+    "reward_verify_failed",
+    "result_verify_failed",
+    "mission_list_verify_failed",
+    "re_accept_failed",
+})
+
 
 @dataclass
 class AccountWorkerStatus:
@@ -175,9 +197,25 @@ class AccountWorker:
                     if self._logger is not None:
                         self._logger.error("cycle error outcome=%s detail=%s", outcome_str, detail)
                     break
-                self._append_log(f"cycle result: {outcome_str}" + (f" -- {detail}" if detail else ""))
-                if self._logger is not None:
-                    self._logger.info("cycle result: %s detail=%s", outcome_str, detail)
+                if outcome_str in _FLAGGED_NON_FATAL_OUTCOMES:
+                    # ERROR-VISIBILITY-001: same red last_error/errored
+                    # display as the fatal set above, but the worker
+                    # keeps going -- bounty_mission.py's bounded-retry
+                    # design expects run_one_cycle to be called again.
+                    last_error = f"{outcome_str}: retrying" + (f" -- {detail}" if detail else "")
+                    with self._lock:
+                        self._status.errored = True
+                        self._status.last_error = last_error
+                    self._append_log(f"WARN: {outcome_str}; retrying" + (f" -- {detail}" if detail else ""))
+                    if self._logger is not None:
+                        self._logger.warning("cycle warning outcome=%s detail=%s", outcome_str, detail)
+                else:
+                    with self._lock:
+                        self._status.errored = False
+                        self._status.last_error = None
+                    self._append_log(f"cycle result: {outcome_str}" + (f" -- {detail}" if detail else ""))
+                    if self._logger is not None:
+                        self._logger.info("cycle result: %s detail=%s", outcome_str, detail)
 
                 if self._stop_event.is_set():
                     break
