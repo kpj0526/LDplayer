@@ -404,6 +404,19 @@ def run_one_cycle(
 
     del account_id  # identity carried by the caller; not needed internally
     slot_outcomes: list[SlotOutcome] = []
+    # EARLY-COMPLETE-CHECK-001: if a freshly (re-)accepted slot turns out
+    # to already be complete, remember it here so the dedicated
+    # kill-progress polling loop below can be skipped entirely -- fixes
+    # a real, reported inefficiency: after runtime.reset_after_verified_
+    # return() unlocks all 5 slots for a new round, every slot gets
+    # re-visited to confirm its target phrase (accept_or_refresh_slot
+    # only checks the phrase, never completion) -- an already-complete
+    # slot was previously "accepted" here and then required a WHOLE
+    # SEPARATE pass through every locked slot afterward just to
+    # rediscover what this same view already showed. No extra tap is
+    # needed for this: it reuses the same already-selected slot's
+    # current view.
+    eligible_slot_index: Optional[int] = None
 
     for slot_index in range(1, config.slot_count + 1):
         if runtime is not None and runtime.slots[slot_index - 1] is SlotState.TARGET_LOCKED:
@@ -429,6 +442,22 @@ def run_one_cycle(
         if runtime is not None:
             runtime.slots[slot_index - 1] = SlotState.TARGET_LOCKED
 
+        if eligible_slot_index is None:
+            if should_stop():
+                return BountyCycleResult(
+                    BountyOutcome.STOPPED, tuple(slot_outcomes), f"Stopped after accepting slot {slot_index}."
+                )
+            progress = _recognize(runner, serial, config, recognizer, config.kill_progress_roi, config.kill_progress_complete_label)
+            already_complete = progress is not None and progress.matched
+            if not already_complete:
+                if "button_complete" in config.template_map:
+                    complete_badge = _recognize(runner, serial, config, recognizer, _FULL_SCREEN, "button_complete")
+                else:
+                    complete_badge = _recognize(runner, serial, config, recognizer, config.complete_state_roi, config.complete_state_label)
+                already_complete = complete_badge is not None and complete_badge.matched
+            if already_complete:
+                eligible_slot_index = slot_index
+
     if runtime is not None:
         runtime.phase = "WAITING_KILL_PROGRESS"
 
@@ -447,9 +476,15 @@ def run_one_cycle(
     # (never a different, still-incomplete one -- the real customer bug
     # this replaces: select_complete_point previously always tapped row
     # 1 regardless of which slot actually became eligible).
+    #
+    # EARLY-COMPLETE-CHECK-001: entirely skipped if the accept loop above
+    # already found an eligible slot on the same pass -- no redundant
+    # extra round of select/check taps across every locked slot.
+    eligible = eligible_slot_index is not None
+    progress_detail = ""
     if on_phase:
         on_phase("kill progress: observing")
-    if should_stop():
+    if not eligible and should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before kill-progress check.")
 
     candidate_slots = [
@@ -457,10 +492,9 @@ def run_one_cycle(
         if runtime is None or runtime.slots[i - 1] is SlotState.TARGET_LOCKED
     ]
 
-    eligible = False
-    eligible_slot_index: Optional[int] = None
-    progress_detail = ""
     for _attempt in range(1, config.max_kill_progress_poll_attempts + 1):
+        if eligible:
+            break
         if should_stop():
             return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped during kill-progress check.")
         for slot_index in candidate_slots:

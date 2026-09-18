@@ -3797,3 +3797,102 @@ Run 3x in a row: `400 passed` every time, 0 failures. (Prior baseline
   close step (tapping the real "닫기" button at the measured position)
   and reaches mission-list verification -- the likely next real
   blocker, if any.
+
+## EARLY-COMPLETE-CHECK-001: don't re-walk slots already known complete
+
+**Trigger**: user question after `RESULT-CLOSE-CALIBRATION-001` shipped:
+after closing the result popup once, `runtime.reset_after_verified_
+return()` unlocks all 5 slots for the next round, and every slot gets
+re-visited to re-confirm its target phrase. If one of those freshly
+re-accepted slots was ALREADY complete, the code still ignored that and
+ran a whole separate kill-progress polling pass afterward, re-selecting
+every locked slot again from scratch just to rediscover what the
+accept loop's own already-open view had just shown. Reported as a real
+observed inefficiency, not a crash or a stuck point.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`_accept_or_refresh_slot` only ever checks the target phrase/quantity,
+never completion — by design, since checking completion is irrelevant
+for slots that visibly aren't done yet. But the main accept loop threw
+away the view it had just opened for each slot as soon as the phrase
+check passed, then handed off to a completely separate "kill-progress:
+bounded polling" loop that re-opened (re-tapped) every locked slot all
+over again, from slot 1, to find which one (if any) was complete. When
+the eligible slot happened to be one accepted early in the round, this
+meant a full second sweep across every slot just to re-observe
+something already visible one tap earlier.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py`'s `run_one_cycle`: immediately after
+a slot is accepted and locked in the main loop, and only while no
+eligible slot has been found yet, the SAME already-open view is
+re-used (no extra tap) to check `kill_progress_roi`/label and the
+completion badge (`button_complete` template if mapped, else
+`complete_state_roi`/label) — exactly the same checks the kill-progress
+phase would have made. If it matches, `eligible_slot_index` is recorded
+right there. The downstream kill-progress polling loop now starts from
+`eligible = eligible_slot_index is not None` and breaks immediately if
+already eligible, so when a slot's completion was caught during the
+accept pass, the entire redundant re-select-and-check sweep across
+every locked slot is skipped outright — the flow goes straight to
+re-selecting that one known slot for the complete tap.
+
+### Regression tests
+
+- `tests/test_bounty_mission.py` —
+  `test_early_complete_check_skips_the_redundant_kill_progress_reselect_pass`
+  (new): with slot 1 the eligible one, confirms its detail view is
+  opened only twice before the complete tap — once to accept it, once
+  to re-select it right before completing — never a third, redundant
+  time for a kill-progress-phase re-check.
+- `test_full_cycle_reaches_completed_state_once`: tap-count assertion
+  updated from `5+1+4+5` (`COMPLETE-SLOT-TRACKING-001`-era, one extra
+  kill-progress-phase select for slot 1) down to `5+4+5=14`, since that
+  extra select no longer happens.
+- All prior COMPLETE-SLOT-TRACKING-001/kill-progress regression tests
+  (targeting-the-right-slot, multi-LD-instance isolation, bounded
+  polling on incomplete slots) still pass unchanged — this packet only
+  removes REDUNDANT work, never changes which slot ends up targeted.
+
+### Test results
+
+```
+python -m pytest -q
+401 passed
+```
+
+Run 3x in a row: `401 passed` every time, 0 failures. (Prior baseline
+400 + 1 new test = 401.)
+
+### Commits
+
+- `PLACEHOLDER_COMMIT_HASH` — `EARLY-COMPLETE-CHECK-001: don't re-walk
+  slots already known complete` (implementation + tests + this
+  HANDOFF section, in one commit)
+- Followed by a short "docs: record EARLY-COMPLETE-CHECK-001 commit
+  hash in handoff" commit recording the real hash.
+
+### Limitations
+
+1. This is a pure efficiency fix (fewer redundant taps/checks per
+   round) — it does not change which slot is targeted for completion,
+   does not touch any template/coordinate calibration, and does not
+   address any new failure mode.
+2. No live ADB/LDPlayer/game session was used to verify this fix —
+   verified against the existing fake-runner/recognizer test harness
+   only, same as prior packets' unit-level verification.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `401 passed`).
+- On a real device with multiple slots already complete at round
+  start: confirm the flow reaches "완료" faster (visibly fewer
+  select-and-wait steps) than before, without skipping or misfiring on
+  any slot.

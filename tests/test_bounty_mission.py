@@ -107,12 +107,13 @@ def test_full_cycle_reaches_completed_state_once():
     assert len(result.slots) == 10
     assert all(s.accepted for s in result.slots)
     # No slot needed a refresh (already acceptable): 5 initial accept
-    # selects + 1 kill-progress-check select (COMPLETE-SLOT-TRACKING-001:
-    # slot 1 verifies eligible on the very first check, so the per-slot
-    # polling loop only visits it once, not all 5) + select-complete +
-    # complete + claim + close (4) + 5 re-accept selects (legacy
-    # stateless path, since no runtime is passed here) = 15.
-    assert len(runner.calls) == 5 + 1 + 4 + 5
+    # selects (EARLY-COMPLETE-CHECK-001: slot 1's completion is detected
+    # on that SAME accept-loop pass, reusing the view already open --
+    # no extra kill-progress-phase select tap needed at all) +
+    # select-complete + complete + claim + close (4) + 5 re-accept
+    # selects (legacy stateless path, since no runtime is passed here)
+    # = 14.
+    assert len(runner.calls) == 5 + 4 + 5
 
 
 # --- phrase-only / quantity-only must reject (never one signal alone) ----
@@ -573,6 +574,39 @@ def test_completion_targets_the_slot_that_actually_became_eligible_not_row_1():
     assert runner.calls[complete_index - 1] == (_SERIAL, slot_3_args)
     # Never blindly re-selects row 1 right before completing.
     assert runner.calls[complete_index - 1] != (_SERIAL, slot_1_args)
+
+
+# --- EARLY-COMPLETE-CHECK-001: don't re-walk slots already known complete
+
+
+def test_early_complete_check_skips_the_redundant_kill_progress_reselect_pass():
+    """Real reported inefficiency: after accepting a slot that's already
+    complete, the old code still ran a WHOLE separate kill-progress
+    polling pass that re-selected every locked slot again just to
+    rediscover what the accept loop's own view already showed. With
+    slot 1 the eligible one, its detail is only ever opened twice: once
+    to accept it, once to re-select it right before the complete tap --
+    never a third time in between for a redundant completion re-check."""
+
+    cfg = _config()
+    state: dict = {"current_slot": None}
+    runner = _SlotAwareRunner(_runner_with_valid_captures(), state, cfg.slot_select_points, cfg.screen_size)
+    recognizer = _SlotAwareRecognizer(
+        state, eligible_slot=1,
+        always_matching={_PHRASE, _QTY, _REWARD, _RESULT, _MISSION_LIST},
+    )
+
+    result = _run(runner, recognizer, cfg)
+
+    assert result.outcome is BountyOutcome.COMPLETED_CYCLE
+    # Only look at calls up to the complete tap: everything after that is
+    # the separate post-claim re-accept pass (5 more selects, unrelated to
+    # this check -- covered by test_full_cycle_reaches_completed_state_once).
+    slot_1_args = (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.slot_select_points[0])))
+    complete_button_args = (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.complete_button_point)))
+    complete_index = runner.calls.index(complete_button_args)
+    slot_1_selects_before_complete = [call for call in runner.calls[: complete_index + 1] if call == slot_1_args]
+    assert len(slot_1_selects_before_complete) == 2
 
 
 def test_kill_progress_polling_never_crosses_accounts_with_multiple_ld_instances():
