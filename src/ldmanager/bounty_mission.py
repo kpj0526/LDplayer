@@ -363,23 +363,39 @@ def _accept_or_refresh_slot(
                 BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (after confirm)."
             )
 
-        # REFRESH-RESULT-DISMISS-001: real customer report -- after
-        # confirming the renewal, the game shows one more brief
-        # acknowledgment popup for the newly-rolled mission (title +
-        # "확률" odds + a single reward icon + "닫기") before returning
-        # to the normal accept-popup state. The refresh loop never knew
-        # about this screen, so it sat there indefinitely -- every
-        # subsequent popup-verify/mission-acceptability check saw this
-        # unexpected screen and correctly reported "not verified"/
-        # "not acceptable", looping forever without ever dismissing it.
-        # Structurally identical to reward_screen (same real "확률"
-        # anchor, confirmed via a real customer capture, 1.0
-        # confidence) and its close button sits at the exact same real,
-        # already-measured position as close_result_point/claim_point
-        # -- both already-calibrated assets are reused here, no new
-        # template or position needed. Single best-effort check+tap
-        # (not a retry loop): if it's not showing, this is a harmless
-        # no-op and the acceptability check below proceeds normally.
+        # REFRESH-RESULT-DISMISS-001 / REFRESH-RESULT-DISMISS-002: real
+        # customer report -- after confirming the renewal, the game
+        # shows one more brief acknowledgment popup for the newly-
+        # rolled mission (title + "확률" odds + a single reward icon +
+        # "닫기") before returning to the normal accept-popup state.
+        # The refresh loop never knew about this screen, so it sat
+        # there indefinitely -- every subsequent popup-verify/mission-
+        # acceptability check saw this unexpected screen and correctly
+        # reported "not verified"/"not acceptable", looping forever
+        # without ever dismissing it. Structurally identical to
+        # reward_screen (same real "확률" anchor, confirmed via a real
+        # customer capture, 1.0 confidence) and its close button sits
+        # at the exact same real, already-measured position as
+        # close_result_point/claim_point -- both already-calibrated
+        # assets are reused here, no new template or position needed.
+        #
+        # REFRESH-RESULT-DISMISS-002: the FIRST version of this check
+        # fired immediately after the confirm tap, with no pacing --
+        # the same RETRY-PACING-001 mistake, a second time, in this
+        # exact spot. If the acknowledgment popup takes a moment to
+        # render, a zero-delay check reads the screen before it's
+        # there, never dismisses it, and the popup blocks the very
+        # next check too -- indistinguishable from "the close tap
+        # doesn't work" from the outside. A single retry_delay_seconds
+        # pause before this (still single, still best-effort) check is
+        # enough -- once actually rendered, the real "확률" anchor
+        # matches reliably (confirmed at 1.0 confidence on real
+        # captures), so this isn't a "keep re-checking" problem the
+        # way a slow-to-render popup elsewhere might be; a bounded
+        # multi-attempt loop here would instead add several seconds of
+        # dead time to EVERY refresh round-trip, including the (likely
+        # far more common) case where this popup never shows at all.
+        sleep_fn(config.retry_delay_seconds)
         ack_popup = _recognize(runner, serial, config, recognizer, config.reward_screen_roi, config.reward_screen_label)
         if ack_popup is not None and ack_popup.matched:
             dismiss = runner.run(serial, build_tap_args(config.screen_size, config.close_result_point))

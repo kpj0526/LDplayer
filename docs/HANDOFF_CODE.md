@@ -4853,3 +4853,83 @@ Run 3x in a row: `442 passed` every time, 0 failures. (Prior baseline
 - On a real device: confirm a live run refreshing a non-target slot
   (dungeon-type included) now proceeds past this acknowledgment popup
   instead of looping on "refresh popup never verified" indefinitely.
+
+## REFRESH-RESULT-DISMISS-002: pace the ack-popup check itself
+
+**Trigger**: user reported the refresh flow still not working after
+`REFRESH-RESULT-DISMISS-001` shipped, describing it as "닫기 버튼을
+못 누르는 느낌" (feels like it can't press the close button). Self-
+review of the just-shipped fix (prompted by the user asking what
+changed since it last worked) found the bug before any new evidence
+was needed.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`REFRESH-RESULT-DISMISS-001`'s new check fired immediately after the
+refresh-confirm tap, with **zero pacing** -- the exact same mistake
+`RETRY-PACING-001` fixed everywhere else in this module, reintroduced
+in this one new spot added afterward. If the acknowledgment popup
+takes even a moment to render, a zero-delay check reads the screen
+before the popup exists, `reward_screen_label` correctly doesn't
+match (there's nothing there yet to match), the dismiss tap never
+fires, and the popup -- now actually rendering -- blocks the very next
+check too. From the outside this is indistinguishable from "the close
+tap doesn't work," which is exactly how the user described it.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py`: a single `sleep_fn(config.
+retry_delay_seconds)` call now runs before the ack-popup check.
+Deliberately kept as one pre-delay before one check (not a bounded
+multi-attempt loop like the popup-verify step) -- once actually
+rendered, the real "확률" anchor matches reliably (1.0 confidence on
+real captures), so this was never a "keep re-checking" problem; a
+multi-attempt loop here would instead add several seconds of dead time
+to EVERY refresh round-trip, including the -- likely far more common
+-- case where this popup never shows at all.
+
+### Regression tests
+
+- `tests/test_bounty_mission.py` --
+  `test_refresh_result_ack_popup_check_is_paced_not_instant`: direct
+  proof `sleep_fn` is invoked with `retry_delay_seconds` before the
+  ack-popup check runs, isolated from whether the popup actually
+  appears.
+
+### Test results
+
+```
+python -m pytest -q
+443 passed
+```
+
+Run 3x in a row: `443 passed` every time, 0 failures. (Prior baseline
+442 + 1 new test = 443.)
+
+### Commits
+
+- `PLACEHOLDER_COMMIT_HASH` -- `REFRESH-RESULT-DISMISS-002: pace the
+  ack-popup check itself` (implementation + tests + this HANDOFF
+  section, in one commit)
+- Followed by a short "docs: record REFRESH-RESULT-DISMISS-002 commit
+  hash in handoff" commit recording the real hash.
+
+### Limitations
+
+1. Adds up to one `retry_delay_seconds` (1.5s in the shipped example)
+   of latency to every refresh round-trip, whether or not the ack
+   popup actually appears -- an intentional, bounded trade-off over a
+   multi-attempt loop's larger worst-case delay.
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the existing fake-runner/recognizer test harness.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `443 passed`).
+- On a real device: confirm the acknowledgment popup (when it appears)
+  now actually gets dismissed instead of appearing stuck/unresponsive.

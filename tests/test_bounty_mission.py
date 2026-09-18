@@ -649,6 +649,29 @@ def test_refresh_result_ack_popup_is_dismissed_before_rechecking_acceptability()
     assert runner.calls.index(close_args) > runner.calls.index(confirm_args)
 
 
+def test_refresh_result_ack_popup_check_is_paced_not_instant():
+    """REFRESH-RESULT-DISMISS-002: real customer report -- the ack-
+    popup check originally fired immediately after the confirm tap
+    with zero pacing (the same RETRY-PACING-001 mistake a second
+    time), so a slow-to-render popup was read before it ever appeared
+    and never got dismissed -- indistinguishable from "the close tap
+    doesn't work" from the outside. Direct proof sleep_fn is invoked
+    with retry_delay_seconds before this check runs."""
+
+    sleep_calls: list[float] = []
+    runner = _runner_with_valid_captures()
+    # Confidently non-target so the refresh loop is reached; no ack
+    # popup ever appears (matching_labels excludes _REWARD) -- isolates
+    # this test to the pre-check pacing itself, independent of whether
+    # the popup shows.
+    recognizer = LabelMappingRecognizer(matching_labels=frozenset({_POPUP_ANCHOR, _POPUP_TITLE}))
+    cfg = _config(max_refresh_attempts=1, max_popup_verify_attempts=1, retry_delay_seconds=3.0)
+
+    _run(runner, recognizer, cfg, sleep_fn=sleep_calls.append)
+
+    assert 3.0 in sleep_calls
+
+
 def test_refresh_result_ack_popup_absent_is_a_harmless_noop():
     """When the acknowledgment popup never shows (reward_screen_label
     never matches), close_result_point must never be tapped during the
