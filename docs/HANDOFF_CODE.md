@@ -3282,9 +3282,11 @@ Run 3x in a row: `384 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- Implementation + tests + this handoff section, then a short
-  follow-up "docs: record DIAGNOSTIC-DETAIL-001 commit hash in
-  handoff" commit recording the exact hash.
+- `4224ccc` — `DIAGNOSTIC-DETAIL-001: surface the real failure reason,
+  not just outcome` (implementation + tests + this HANDOFF section, in
+  one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `4224ccc`.
 
 ### Limitations
 
