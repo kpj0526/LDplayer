@@ -5086,7 +5086,7 @@ Run 3x in a row: `446 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- `PLACEHOLDER_COMMIT_HASH` -- `REFRESH-RESULT-DISMISS-003: dismiss
+- `d6c6b19` -- `REFRESH-RESULT-DISMISS-003: dismiss
   the ack popup after accept_mission_point too` (implementation +
   tests + this HANDOFF section, in one commit)
 - Followed by a short "docs: record REFRESH-RESULT-DISMISS-003 commit
