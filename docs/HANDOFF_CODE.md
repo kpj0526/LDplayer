@@ -4304,7 +4304,7 @@ Run 3x in a row: `429 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- `PLACEHOLDER_COMMIT_HASH` -- `NO-CONSOLE-FLICKER-001: suppress the
+- `cb2221f` -- `NO-CONSOLE-FLICKER-001: suppress the
   black console window on every ADB call` (implementation + tests +
   this HANDOFF section, in one commit)
 - Followed by a short "docs: record NO-CONSOLE-FLICKER-001 commit hash
