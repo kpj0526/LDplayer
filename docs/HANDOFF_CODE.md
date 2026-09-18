@@ -3548,9 +3548,11 @@ Run 3x in a row: `391 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- Implementation + tests + this handoff section, then a short
-  follow-up "docs: record COMPLETE-DETAIL-001 commit hash in handoff"
-  commit recording the exact hash.
+- `20fc1b8` — `COMPLETE-DETAIL-001: actionable detail for
+  complete/claim/close + safety check` (implementation + tests + this
+  HANDOFF section, in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `20fc1b8`.
 
 ### Limitations
 
