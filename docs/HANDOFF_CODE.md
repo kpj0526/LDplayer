@@ -3378,3 +3378,97 @@ Run 3x in a row: `385 passed` every time, 0 failures. (Prior baseline
 - On the customer's real device: reproduce the `rc=125` select-tap
   failure and confirm the GUI/log now show the actual `stderr` text
   from `adb shell input tap`, not just the bare return code.
+
+## REWARD-SCREEN-CALIBRATION-001: real calibration for the reward-claim screen
+
+**Trigger**: after `SLOT-SELECT-CALIBRATION-001` + `DIAGNOSTIC-DETAIL-001`
++ `STDERR-DETAIL-001` shipped, the user enabled `LDMANAGER_LIVE_MODE=1`
+and ran a real live cycle: all 5 slots were genuinely accepted
+(`locked: 5/5`), the real complete tap was sent, and the account
+reached the actual "보상 받기" (Get Reward) screen for the first time --
+then stalled on `reward_verify_failed` ("Reward screen never verified
+within 3 attempt(s).").
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`reward_screen_roi`/`reward_screen_label`/`claim_point`/
+`button_claim_reward` had never been calibrated against any real
+capture -- only the initial Mission > Region > detail screen was
+(`GAME-CAL-001`). The customer supplied a real 1280x720 Test-capture of
+the actual reward screen (`tests/fixtures/game_cal_001/source_extra/
+reward_screen.png`), enabling the same real-crop calibration approach
+used throughout this project.
+
+### Fix
+
+Two real crops taken from the supplied capture (measured pixel bands,
+verified by direct visual inspection):
+- `reward_odds_label.png` -- the "확률" (odds/probability) label:
+  generic reward-screen UI chrome, present regardless of mission title,
+  confirmed (real `OpenCVTemplateRecognizer`) to match only this real
+  capture and none of the other 4 real captures on file.
+- `reward_claim_button.png` -- the real "보상 받기" button, replacing
+  the old `button_claim_reward` template_map entry's never-validated
+  placeholder file (same config key, so no call-site changes needed).
+
+`configs/bounty.example.yaml`: `reward_screen_roi`/`reward_screen_label`
+now point at the real odds-label crop/ROI; `claim_point` set to the
+real, measured button center (fixed fallback only -- the dynamic
+`button_claim_reward` template is tried first).
+
+### Regression tests
+
+`tests/test_reward_screen_real_assets.py` (new, 5 tests) -- loads the
+real reward-screen capture + the real recognizer + the real shipped
+config: confirms it's a genuine 1280x720 PNG; confirms
+`reward_screen_label` matches only that capture and never any of the
+other 4 real captures on file (explicit false-positive guard); same
+for the `button_claim_reward` template.
+
+### Test results
+
+```
+python -m pytest -q
+390 passed
+```
+
+Run 3x in a row: `390 passed` every time, 0 failures. (Prior baseline
+385 + 5 new tests = 390.)
+
+### Commits
+
+- Implementation + tests + this handoff section, then a short
+  follow-up "docs: record REWARD-SCREEN-CALIBRATION-001 commit hash in
+  handoff" commit recording the exact hash.
+
+### Limitations
+
+1. Only the reward-claim screen is now real-calibrated. The
+   result-screen/close/mission-list-return steps later in the same
+   flow remain uncalibrated placeholders -- the next real blocker, if
+   any, is most likely there.
+2. `button_claim_reward`'s real-vs-false-capture confidence margin is
+   narrower (~0.77 vs ~1.0) than the other real crops in this project
+   (~0.45-0.52 vs ~1.0) -- both the real "완료" button and the real
+   "보상 받기" button apparently share similar gold-bordered button
+   graphic styling. Still correctly classified at the configured 0.8
+   threshold, but a smaller margin than ideal; worth reconfirming if a
+   real live run ever produces a surprising false match here.
+3. This calibration came from ONE real capture supplied by the
+   customer via a phone-camera video, then a clean in-app Test-capture
+   of the same screen -- the clean capture (not the video) is what was
+   actually used for pixel measurement.
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `390 passed`) and
+  `tests/test_reward_screen_real_assets.py` specifically.
+- On a real device: confirm a full live cycle (with `LDMANAGER_LIVE_MODE=1`)
+  now proceeds past the reward-claim step instead of stalling on
+  `reward_verify_failed`, and confirm the next real blocker (if any) is
+  in the result/close/mission-list steps, which remain uncalibrated.

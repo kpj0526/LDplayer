@@ -78,6 +78,7 @@ report (`UnboundLocalError` on slot selection, see
 | File | Real screen | Notes |
 |---|---|---|
 | `mission_list_row1_completed.png` | Same 임무 modal, 임무 목록 (mission list) panel with 5 rows visible (row 1 selected/highlighted, showing its 완료 detail) | Used to measure real pixel row-band boundaries for `slot_select_points`/`select_complete_point` (see `configs/bounty.example.yaml`'s comments for the exact measured Y-boundaries and centers) |
+| `reward_screen.png` | The actual "보상 받기" (Get Reward) screen -- reached for real after all 5 slots were really accepted and the real complete button was really tapped (REWARD-SCREEN-CALIBRATION-001, see `docs/HANDOFF_CODE.md`) | A real, undoctored Test-capture PNG (1280x720) supplied by the customer after `reward_verify_failed` stalled the cycle -- this screen's `reward_screen_roi`/`reward_screen_label`/`claim_point`/`button_claim_reward` had never been calibrated against any real capture before this. Two real crops were taken from it (see `templates/` table below): the "확률" (odds) label -- generic reward-screen chrome, confirmed absent from every other real capture -- and the "보상 받기" button itself. |
 
 This capture also proved a structural problem with the (never actually
 enabled in the shipped example config) `mission_slot_unselected`/
@@ -90,3 +91,10 @@ the Nth one. `configs/bounty.example.yaml` deliberately leaves both
 labels unmapped so slot selection always uses the real,
 position-calibrated points instead — the correct tool for "tap the Nth
 row of a list."
+
+### `reward_screen.png`'s derived crops (REWARD-SCREEN-CALIBRATION-001)
+
+| File | Cropped from | Pixel region (of the 1280x720 source) | Used as |
+|---|---|---|---|
+| `reward_odds_label.png` | `reward_screen.png` | x:595-685, y:198-235 | `reward_screen_label` ("확률") — confirmed (real `OpenCVTemplateRecognizer`, `tests/test_reward_screen_real_assets.py`) to match only `reward_screen.png`, never any of the other 4 real captures |
+| `reward_claim_button.png` | `reward_screen.png` | x:551-732, y:487-536 | `button_claim_reward` — the real "보상 받기" button, replacing an old, never-validated placeholder of the same config key; same real cross-check as above |
