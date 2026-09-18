@@ -1,5 +1,20 @@
 # LDplayer
 
+## 고객 최초 실행
+
+고객은 코드나 템플릿 좌표를 수정하지 않습니다. `ldmanager.exe` 실행 후
+LDPlayer를 켜고 각 계정에 ADB serial을 저장한 뒤 **Test capture**를 한 번
+누릅니다. 프로그램이 내장 템플릿과 자동 비교해 현재 게임 화면을 확인하면
+그 계정의 Start가 활성화됩니다. 일치하지 않으면 저장된 캡처 파일만 지원팀에
+전달하면 되며, 고객은 Template calibration을 사용할 필요가 없습니다.
+
+### 화면 확인 실패 시
+
+Start를 누르지 말고 GUI가 표시한 Test capture PNG만 전달합니다. 개발자는
+그 PNG로 템플릿을 보완하고 새 배포본을 만듭니다. 고객은 ROI·좌표·임계값을
+수정하지 않습니다. 실제 고객 PC에서는 ADB serial 연결, 화면 확인 성공,
+LD1 단일 흐름, 이후 LD1~LD9 동시 실행을 순서대로 확인합니다.
+
 `ldmanager` — LDPlayer 다중 계정(LD1~LD9) 관리 도구.
 
 > **현재 단계: MVP-001-CV — 실행 가능한 MVP + 무료 지역 현상금

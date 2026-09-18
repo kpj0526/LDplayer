@@ -8,9 +8,12 @@ from pathlib import Path
 import yaml
 
 from ldmanager.config_mapping import (
+    AdbPathSaveError,
     MappingSaveError,
     load_current_adb_mapping,
+    load_current_adb_path,
     save_account_serial,
+    save_adb_path,
 )
 from ldmanager.models import AccountId
 
@@ -181,3 +184,95 @@ def test_existing_invalid_adb_mapping_blocks_save_with_clear_error(tmp_path):
 
     assert result.ok is False
     assert result.error is MappingSaveError.EXISTING_CONFIG_INVALID
+
+
+# --- ADB executable path registration (ADB-PATH-001) -----------------------
+
+
+def test_load_current_adb_path_defaults_none_when_file_missing(tmp_path):
+    assert load_current_adb_path(_config_path(tmp_path)) is None
+
+
+def test_load_current_adb_path_reads_existing_value(tmp_path):
+    path = _config_path(tmp_path)
+    path.write_text("adb_path: C:/LDPlayer/LDPlayer14/adb.exe\n", encoding="utf-8")
+    assert load_current_adb_path(path) == "C:/LDPlayer/LDPlayer14/adb.exe"
+
+
+def test_save_adb_path_rejects_missing_file_fail_closed(tmp_path):
+    path = _config_path(tmp_path)
+    result = save_adb_path("C:/does/not/exist/adb.exe", path)
+
+    assert result.ok is False
+    assert result.error is AdbPathSaveError.NOT_FOUND
+    assert not path.exists()  # nothing written
+    assert load_current_adb_path(path) is None
+
+
+def test_save_adb_path_rejects_blank(tmp_path):
+    path = _config_path(tmp_path)
+    result = save_adb_path("   ", path)
+
+    assert result.ok is False
+    assert result.error is AdbPathSaveError.BLANK
+    assert not path.exists()
+
+
+def test_save_adb_path_persists_a_real_existing_file(tmp_path):
+    real_exe = tmp_path / "adb.exe"
+    real_exe.write_bytes(b"")
+    path = _config_path(tmp_path)
+
+    result = save_adb_path(str(real_exe), path)
+
+    assert result.ok is True
+    assert result.adb_path == str(real_exe)
+    assert load_current_adb_path(path) == str(real_exe)
+
+
+def test_save_adb_path_rejects_a_directory_not_a_file(tmp_path):
+    directory = tmp_path / "not_a_file"
+    directory.mkdir()
+    path = _config_path(tmp_path)
+
+    result = save_adb_path(str(directory), path)
+
+    assert result.ok is False
+    assert result.error is AdbPathSaveError.NOT_FOUND
+
+
+def test_clear_adb_path_always_succeeds_and_never_deletes_the_file(tmp_path):
+    real_exe = tmp_path / "adb.exe"
+    real_exe.write_bytes(b"")
+    path = _config_path(tmp_path)
+    save_adb_path(str(real_exe), path)
+
+    result = save_adb_path(None, path)
+
+    assert result.ok is True
+    assert result.adb_path is None
+    assert load_current_adb_path(path) is None
+    assert real_exe.is_file()  # the actual adb.exe file itself is untouched
+
+
+def test_save_adb_path_preserves_adb_mapping_and_other_sections(tmp_path):
+    real_exe = tmp_path / "adb.exe"
+    real_exe.write_bytes(b"")
+    path = _config_path(tmp_path)
+    save_account_serial(AccountId.LD1, "127.0.0.1:5555", path)
+
+    save_adb_path(str(real_exe), path)
+
+    assert load_current_adb_mapping(path)["LD1"] == "127.0.0.1:5555"
+    assert load_current_adb_path(path) == str(real_exe)
+
+
+def test_save_account_serial_preserves_adb_path(tmp_path):
+    real_exe = tmp_path / "adb.exe"
+    real_exe.write_bytes(b"")
+    path = _config_path(tmp_path)
+    save_adb_path(str(real_exe), path)
+
+    save_account_serial(AccountId.LD2, "127.0.0.1:6000", path)
+
+    assert load_current_adb_path(path) == str(real_exe)

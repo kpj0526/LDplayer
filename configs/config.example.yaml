@@ -31,6 +31,10 @@ adb_mapping:
   LD8: null
   LD9: null
 
+# Optional full path to adb.exe. Leave null to auto-discover ADB from PATH,
+# LDMANAGER_ADB_PATH, or standard LDPlayer install locations.
+adb_path: null
+
 # Per-account (LD1..LD9) task/error log rotation + retention policy.
 # All values below are safe defaults; omit this whole section to use them.
 logging:

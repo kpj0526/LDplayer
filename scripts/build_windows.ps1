@@ -34,9 +34,9 @@ if (-not (Test-Path $Python)) {
     $Python = ".\.venv\Scripts\python.exe"
 }
 
-Write-Host "Installing project + build dependencies (pip, ldmanager, pyinstaller) ..."
+Write-Host "Installing project + recognition + build dependencies ..."
 & $Python -m pip install --quiet --upgrade pip
-& $Python -m pip install --quiet -e ".[build]"
+& $Python -m pip install --quiet -e ".[build,recognition]"
 
 Write-Host "Running PyInstaller ..."
 & $Python -m PyInstaller `
@@ -68,6 +68,11 @@ if (Test-Path "$DistRoot\templates") {
     Remove-Item -Recurse -Force "$DistRoot\templates"
 }
 Copy-Item -Recurse -Force "templates" "$DistRoot\templates"
+Copy-Item -Force "VERSION" "$DistRoot\VERSION"
+Copy-Item -Force "CHANGELOG.md" "$DistRoot\CHANGELOG.md"
+New-Item -ItemType Directory -Force -Path "$DistRoot\docs" | Out-Null
+Copy-Item -Force "docs\RUN_GUIDE.md" "$DistRoot\docs\RUN_GUIDE.md"
+Copy-Item -Force "docs\REAL_CAPTURE_CHECKLIST.md" "$DistRoot\docs\REAL_CAPTURE_CHECKLIST.md"
 
 @'
 ldmanager -- first run
@@ -95,11 +100,11 @@ If you re-run the exe later, your saved configs\config.yaml /
 configs\bounty.yaml are never overwritten -- bootstrap only creates
 them the first time, when they don't exist yet.
 
-This build has not been verified against a real game/LDPlayer screen;
-recognition is a safe placeholder that never claims a match until a
-real recognizer is implemented. See the project's
-docs\REAL_CAPTURE_CHECKLIST.md and docs\MVP_UNVERIFIED.md if included,
-or the project repository, for details.
+This build uses OpenCV template matching. Before pressing Start, use
+Test capture on each account and Template calibration to create the
+PNG crops, then map their filenames in configs\bounty.yaml under
+template_map and measure the ROI/tap settings. Missing templates fail
+closed and do not constitute a successful game setup.
 '@ | Set-Content -Encoding utf8 "$DistRoot\README_FIRST_RUN.txt"
 
 Write-Host ""
