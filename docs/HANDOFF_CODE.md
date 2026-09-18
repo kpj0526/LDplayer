@@ -3768,9 +3768,11 @@ Run 3x in a row: `400 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- Implementation + tests + this handoff section, then a short
-  follow-up "docs: record RESULT-CLOSE-CALIBRATION-001 commit hash in
-  handoff" commit recording the exact hash.
+- `9c69ec5` — `RESULT-CLOSE-CALIBRATION-001: real calibration for the
+  result/close screen` (implementation + tests + this HANDOFF section,
+  in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `9c69ec5`.
 
 ### Limitations
 
