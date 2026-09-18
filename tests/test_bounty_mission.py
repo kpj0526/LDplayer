@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ldmanager.adb import AdbBinaryResult
+from ldmanager.adb import AdbBinaryResult, AdbCommandResult
 from ldmanager.bounty_config import BountyMissionConfig
 from ldmanager.bounty_mission import BountyOutcome, run_one_cycle
 from ldmanager.coordinates import RelativeCoordinate, RelativeRegion, ScreenSize, build_tap_args
@@ -301,6 +301,30 @@ def test_capture_unavailable_mid_slot_is_reported_without_crashing():
     assert result.outcome is BountyOutcome.CAPTURE_UNAVAILABLE
     # Only the slot-1 select tap happened before capture failure aborted.
     assert len(runner.calls) == 1
+
+
+def test_select_tap_failure_detail_includes_the_real_adb_stderr():
+    """Real customer report: a bare 'rc=125' with no further context was
+    impossible to diagnose. The actual adb stderr text must reach the
+    result detail too, not just the numeric return code."""
+
+    cfg = _config()
+    select_args = tuple(build_tap_args(cfg.screen_size, cfg.slot_select_points[0]))
+    runner = FakeAdbRunner(
+        command_results={
+            (_SERIAL, select_args): AdbCommandResult(
+                serial=_SERIAL, args=select_args, returncode=125,
+                stdout="", stderr="error: device offline",
+            )
+        }
+    )
+    recognizer = LabelMappingRecognizer(matching_labels=_ALL_LABELS)
+
+    result = _run(runner, recognizer, cfg)
+
+    assert result.outcome is BountyOutcome.CAPTURE_UNAVAILABLE
+    assert "rc=125" in result.detail
+    assert "error: device offline" in result.detail
 
 
 # --- real customer crash: dynamic-tap "no confident match" must never ------

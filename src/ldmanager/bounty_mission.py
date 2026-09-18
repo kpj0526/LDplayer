@@ -63,6 +63,24 @@ def _default_should_stop() -> bool:
     return False
 
 
+_MAX_STDERR_DETAIL_CHARS = 200
+
+
+def _short(stderr: str) -> str:
+    """Trim a raw ADB stderr string for inclusion in a one-line failure
+    detail (DIAGNOSTIC-DETAIL-001-adjacent). Never raises on empty/None.
+    Not a secret-redaction step itself -- this text still passes
+    through the per-account logger's existing
+    SensitiveDataRedactionFilter (logs.py) once controller.py logs it;
+    an ADB tap's stderr is not expected to ever contain credential-
+    shaped text, but that filter remains the actual safety net."""
+
+    text = (stderr or "").strip().replace("\n", " ")
+    if len(text) > _MAX_STDERR_DETAIL_CHARS:
+        text = text[:_MAX_STDERR_DETAIL_CHARS] + "..."
+    return text or "(empty)"
+
+
 class BountyOutcome(str, Enum):
     COMPLETED_CYCLE = "completed_cycle"  # full: 5 accepted -> claimed -> re-accepted, ready to repeat
     STOPPED = "stopped"
@@ -230,7 +248,8 @@ def _accept_or_refresh_slot(
     if not select_result.ok:
         return None, BountyCycleResult(
             BountyOutcome.CAPTURE_UNAVAILABLE, (),
-            f"Slot {slot_index}: select tap failed (rc={select_result.returncode}).",
+            f"Slot {slot_index}: select tap failed (rc={select_result.returncode}, "
+            f"stderr={_short(select_result.stderr)}).",
         )
 
     if should_stop():
@@ -271,7 +290,7 @@ def _accept_or_refresh_slot(
         if dynamic_refresh is None:
             open_popup = runner.run(serial, build_tap_args(config.screen_size, config.refresh_button_point))
             refresh_ok = open_popup.ok
-            refresh_detail = f"rc={open_popup.returncode}"
+            refresh_detail = f"rc={open_popup.returncode}, stderr={_short(open_popup.stderr)}"
         else:
             refresh_ok = dynamic_refresh
             refresh_detail = "template-based tap: no confident match, or the located tap itself failed"
@@ -316,7 +335,7 @@ def _accept_or_refresh_slot(
         if dynamic_confirm is None:
             confirm = runner.run(serial, build_tap_args(config.screen_size, config.refresh_confirm_point))
             confirm_ok = confirm.ok
-            confirm_detail = f"rc={confirm.returncode}"
+            confirm_detail = f"rc={confirm.returncode}, stderr={_short(confirm.stderr)}"
         else:
             confirm_ok = dynamic_confirm
             confirm_detail = "template-based tap: no confident match, or the located tap itself failed"
@@ -447,7 +466,10 @@ def run_one_cycle(
     # template search.
     select_complete = runner.run(serial, build_tap_args(config.screen_size, config.select_complete_point))
     if not select_complete.ok:
-        return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), "Select-complete tap failed.")
+        return BountyCycleResult(
+            BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes),
+            f"Select-complete tap failed (rc={select_complete.returncode}, stderr={_short(select_complete.stderr)}).",
+        )
 
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before complete button.")

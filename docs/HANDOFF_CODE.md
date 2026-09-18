@@ -3309,3 +3309,70 @@ Run 3x in a row: `384 passed` every time, 0 failures. (Prior baseline
   panel's error text and the per-account log file now both show a
   specific reason (e.g. "Slot 1: select tap failed (rc=...)") rather
   than just a bare outcome name like "capture_unavailable".
+
+## STDERR-DETAIL-001: include the real ADB stderr text, not just rc=N
+
+**Trigger**: `DIAGNOSTIC-DETAIL-001` (`v1.0.3-rc.6`) let the user see the
+first real, specific failure from their live device:
+`"Slot 1: select tap failed (rc=125)."` — but a bare return code alone
+still wasn't enough to know *why* the tap failed.
+
+### Status: implemented, tested, regression-verified. Pure
+observability fix -- no capture/ADB/touch/outcome behavior changed.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py` -- new `_short()` helper (trims/
+one-lines a raw ADB `stderr` string, safe on empty/`None`). The three
+select/refresh-open/refresh-confirm tap-failure details (already fixed
+for the `UnboundLocalError` in `TAP-FALLBACK-CRASH-001`) and the
+select-complete tap-failure detail (added in
+`SLOT-SELECT-CALIBRATION-001`) now all include `stderr=...` alongside
+`rc=...`. This text still passes through the per-account logger's
+existing `SensitiveDataRedactionFilter` once `controller.py` logs it
+(`DIAGNOSTIC-DETAIL-001`) -- unchanged safety posture, an ADB tap's
+stderr is not expected to ever contain credential-shaped text but the
+filter remains the actual safety net regardless.
+
+### Regression tests
+
+`tests/test_bounty_mission.py` --
+`test_select_tap_failure_detail_includes_the_real_adb_stderr`: a canned
+`AdbCommandResult(returncode=125, stderr="error: device offline")` for
+the exact slot-1 select tap argv, asserting both `"rc=125"` and
+`"error: device offline"` appear in the result detail.
+
+### Test results
+
+```
+python -m pytest -q
+385 passed
+```
+
+Run 3x in a row: `385 passed` every time, 0 failures. (Prior baseline
+384 + 1 new test = 385.)
+
+### Commits
+
+- Implementation + tests + this handoff section, then a short
+  follow-up "docs: record STDERR-DETAIL-001 commit hash in handoff"
+  commit recording the exact hash.
+
+### Limitations
+
+1. Pure observability fix. Does not fix or claim to fix the customer's
+   real `rc=125` cause on their live device -- exists so the actual ADB
+   error text is visible for the next diagnosis step.
+2. No live ADB/LDPlayer/game session was used to verify this -- a
+   canned fake `AdbCommandResult` was used, not a real `rc=125` capture
+   from the field.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `385 passed`).
+- On the customer's real device: reproduce the `rc=125` select-tap
+  failure and confirm the GUI/log now show the actual `stderr` text
+  from `adb shell input tap`, not just the bare return code.
