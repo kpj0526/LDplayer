@@ -3354,9 +3354,11 @@ Run 3x in a row: `385 passed` every time, 0 failures. (Prior baseline
 
 ### Commits
 
-- Implementation + tests + this handoff section, then a short
-  follow-up "docs: record STDERR-DETAIL-001 commit hash in handoff"
-  commit recording the exact hash.
+- `9f765de` — `STDERR-DETAIL-001: include the real ADB stderr text, not
+  just rc=N` (implementation + tests + this HANDOFF section, in one
+  commit)
+- This hash-record update is the short follow-up commit immediately
+  after `9f765de`.
 
 ### Limitations
 
