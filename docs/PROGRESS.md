@@ -443,3 +443,9 @@ TP-001의 요구사항·계획·진행 기록 문서 작성은 완료되어 있�
 ## 바로 다음 작업
 
 중단 후 상태 확인 결과를 사용자에게 보고하고, 명시적 구현 승인을 대기한다.
+## 2026-09-20 — v1.0.3-rc.25 customer-test release
+
+- Root cause confirmed from customer evidence: immediately after the refresh-open touch, the game can show the odds acknowledgement overlay instead of the structurally verified refresh-confirm dialog. rc.24 only attempted the acknowledgement dismissal after confirm, therefore it never reached the displayed overlay and correctly but unhelpfully stopped as `refresh_popup_not_verified`.
+- Code commit `944b1bc` adds the pre-confirm recovery gate. It closes the overlay only when detected, then requires fresh proof that the overlay disappeared and the real refresh-confirm dialog is present before confirm may be tapped. A persistent overlay yields bounded, per-account `ack_popup_dismiss_failed`; no confirm is sent.
+- Automated regression suite: `448 passed`. Windows archive built and uploaded as prerelease `v1.0.3-rc.25`.
+- Customer LDPlayer/game validation remains `NEEDS_REAL_TEST`; no final project PASS is claimed.
