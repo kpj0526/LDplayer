@@ -5113,3 +5113,10 @@ Run 3x in a row: `446 passed` every time, 0 failures. (Prior baseline
 - On a real device: confirm the acknowledgment popup no longer blocks
   progress after EITHER accepting an already-good mission OR
   confirming a refresh -- both paths now dismiss it.
+
+## v1.0.3-rc.25 — ACK-POPUP-PRECONFIRM-001
+
+- Customer evidence showed `refresh_popup_not_verified` while the odds acknowledgement overlay was visible immediately after the refresh-open touch. The previous close handler ran only after confirm, so it could never clear this pre-confirm overlay.
+- The refresh flow now probes the real confirm dialog first; on a structural miss it dismisses the overlay and requires fresh proof that the overlay is gone and the confirm dialog is present. A bounded failure is isolated to that account as `ack_popup_dismiss_failed`; confirm is not sent.
+- Added regression tests for close-before-confirm and a persistent overlay (bounded fail-closed/no confirm).
+- Verification: `.venv\\Scripts\\python.exe -m pytest -q` — 448 passed. Real customer LDPlayer/game validation remains required.

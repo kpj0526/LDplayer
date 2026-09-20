@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.3-rc.25
+
+- Fix the pre-confirm acknowledgement/odds overlay shown after a refresh-open tap.
+- Verify that the overlay has cleared and that the refresh-confirm dialog is structurally present before sending confirm.
+- Fail closed per account with `ack_popup_dismiss_failed` if that bounded transition never completes.
+
 ## v1.0.1
 
 - Customer capture preflight gates Start per account and keeps calibration developer-only.

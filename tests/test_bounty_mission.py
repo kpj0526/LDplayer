@@ -608,6 +608,76 @@ def test_refresh_confirm_is_always_position_based_never_template_matched():
     assert (_SERIAL, expected_args) in runner.calls
 
 
+# --- ACK-POPUP-PRECONFIRM-001: odds overlay before refresh confirmation ---
+
+
+def test_refresh_open_ack_popup_is_dismissed_and_structurally_transitioned_before_confirm():
+    """The rc.24 customer trace: refresh-open first shows the odds/close
+    overlay, not the refresh-confirm popup.  The close touch must happen
+    before confirm, and confirm is allowed only after a fresh structural
+    refresh-popup check following that close."""
+
+    class _PreConfirmAckRecognizer:
+        def __init__(self):
+            self._phrase_checks = 0
+            self._reward_checks = 0
+
+        def recognize(self, image_bytes, roi, expected_label, threshold):
+            if expected_label == _REWARD:
+                self._reward_checks += 1
+                if self._reward_checks == 1:  # shown immediately after refresh-open
+                    return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test")
+                return RecognitionResult(RecognitionStatus.NO_MATCH, None, 0.05, "test")
+            if expected_label in {_POPUP_ANCHOR, _POPUP_TITLE}:
+                # Before the odds overlay is closed this is not yet the
+                # refresh-confirm dialog; it becomes one only after the
+                # acknowledgement probe/dismiss sequence starts.
+                if self._reward_checks:
+                    return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test")
+                return RecognitionResult(RecognitionStatus.NO_MATCH, None, 0.05, "test")
+            if expected_label == _PHRASE:
+                self._phrase_checks += 1
+            if expected_label in {_PHRASE, _QTY} and self._phrase_checks >= 2:
+                return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test")
+            return RecognitionResult(RecognitionStatus.NO_MATCH, None, 0.05, "test")
+
+    cfg = _config(max_kill_progress_poll_attempts=1)
+    runner = _runner_with_valid_captures()
+    result = _run(runner, _PreConfirmAckRecognizer(), cfg)
+
+    assert result.outcome is BountyOutcome.KILL_PROGRESS_NOT_COMPLETE
+    close_call = (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.close_result_point)))
+    confirm_call = (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.refresh_confirm_point)))
+    assert close_call in runner.calls
+    assert confirm_call in runner.calls
+    assert runner.calls.index(close_call) < runner.calls.index(confirm_call)
+
+
+def test_refresh_open_ack_popup_that_stays_visible_blocks_confirm_with_account_local_failure():
+    """No blind confirm or next-slot input is sent when the pre-confirm
+    overlay refuses to close; retries are bounded by the popup budget."""
+
+    cfg = _config(max_popup_verify_attempts=2)
+    runner = _runner_with_valid_captures()
+
+    class _StuckPreConfirmAckRecognizer:
+        def recognize(self, image_bytes, roi, expected_label, threshold):
+            if expected_label == _REWARD:
+                return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test")
+            # The real refresh-confirm landmarks must remain absent while
+            # the overlay stays on top of the screen.
+            return RecognitionResult(RecognitionStatus.NO_MATCH, None, 0.05, "test")
+
+    recognizer = _StuckPreConfirmAckRecognizer()
+
+    result = _run(runner, recognizer, cfg)
+
+    assert result.outcome is BountyOutcome.ACK_POPUP_DISMISS_FAILED
+    assert "confirm not sent" in result.detail
+    confirm_call = (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.refresh_confirm_point)))
+    assert confirm_call not in runner.calls
+
+
 # --- REFRESH-RESULT-DISMISS-001: dismiss the post-refresh ack popup -------
 
 

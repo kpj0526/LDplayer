@@ -99,6 +99,7 @@ class BountyOutcome(str, Enum):
     CAPTURE_UNAVAILABLE = "capture_unavailable"
     SLOT_ACCEPT_FAILED = "slot_accept_failed"  # bounded refresh exhausted without a both-conditions match
     REFRESH_POPUP_NOT_VERIFIED = "refresh_popup_not_verified"  # structural check never confirmed -> never confirmed blindly
+    ACK_POPUP_DISMISS_FAILED = "ack_popup_dismiss_failed"  # acknowledgement overlay stayed up; no downstream action is safe
     KILL_PROGRESS_NOT_COMPLETE = "kill_progress_not_complete"  # 0-199/200: informational, not an error
     REWARD_VERIFY_FAILED = "reward_verify_failed"
     RESULT_VERIFY_FAILED = "result_verify_failed"
@@ -205,6 +206,8 @@ def _verify_refresh_popup(runner, serial, config, recognizer) -> Optional[bool]:
 def _dismiss_ack_popup_if_shown(
     *, slot_index: int, serial: str, runner: AdbRunner, recognizer: Recognizer,
     config: BountyMissionConfig, should_stop: ShouldStop, sleep_fn: SleepFn,
+    expected_after_dismiss: Optional[Callable[[], Optional[bool]]] = None,
+    wait_before_check: bool = True,
 ) -> Optional[BountyCycleResult]:
     """REFRESH-RESULT-DISMISS-001/002/003: real customer reports --
     locking in a mission (tapping accept_mission_point, whether the
@@ -231,20 +234,78 @@ def _dismiss_ack_popup_if_shown(
     fine), or a terminal :class:`BountyCycleResult` on a real failure.
     """
 
-    sleep_fn(config.retry_delay_seconds)
+    if should_stop():
+        return BountyCycleResult(
+            BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (before acknowledgment check)."
+        )
+
+    if wait_before_check:
+        sleep_fn(config.retry_delay_seconds)
     ack_popup = _recognize(runner, serial, config, recognizer, config.reward_screen_roi, config.reward_screen_label)
-    if ack_popup is not None and ack_popup.matched:
+    if ack_popup is None:
+        return BountyCycleResult(
+            BountyOutcome.CAPTURE_UNAVAILABLE, (),
+            f"Slot {slot_index}: capture failed while checking acknowledgment popup.",
+        )
+    if ack_popup.matched:
+        if should_stop():
+            return BountyCycleResult(
+                BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (before acknowledgment dismiss)."
+            )
         dismiss = runner.run(serial, build_tap_args(config.screen_size, config.close_result_point))
         if not dismiss.ok:
             return BountyCycleResult(
                 BountyOutcome.CAPTURE_UNAVAILABLE, (),
-                f"Slot {slot_index}: refresh-result-dismiss tap failed "
+                f"Slot {slot_index}: acknowledgment-dismiss tap failed "
                 f"(rc={dismiss.returncode}, stderr={_short(dismiss.stderr)}).",
             )
         if should_stop():
             return BountyCycleResult(
-                BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (after refresh-result dismiss)."
+                BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (after acknowledgment dismiss)."
             )
+        if expected_after_dismiss is None:
+            return None
+
+        # A successful ADB touch is not proof that the game consumed it.
+        # For the refresh-open route, require a fresh capture showing both
+        # the acknowledgment overlay gone and the real confirm dialog.
+        for attempt in range(1, config.max_popup_verify_attempts + 1):
+            sleep_fn(config.retry_delay_seconds)
+            still_visible = _recognize(
+                runner, serial, config, recognizer, config.reward_screen_roi, config.reward_screen_label,
+            )
+            if still_visible is None:
+                return BountyCycleResult(
+                    BountyOutcome.CAPTURE_UNAVAILABLE, (),
+                    f"Slot {slot_index}: capture failed while verifying acknowledgment dismissal.",
+                )
+            next_verified = expected_after_dismiss()
+            if next_verified is None:
+                return BountyCycleResult(
+                    BountyOutcome.CAPTURE_UNAVAILABLE, (),
+                    f"Slot {slot_index}: capture failed while verifying post-acknowledgment dialog.",
+                )
+            if not still_visible.matched and next_verified:
+                return None
+            if should_stop():
+                return BountyCycleResult(
+                    BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (acknowledgment verification)."
+                )
+            if attempt < config.max_popup_verify_attempts:
+                # Retry is deliberately bounded, and only after a fresh
+                # negative postcondition check.
+                dismiss = runner.run(serial, build_tap_args(config.screen_size, config.close_result_point))
+                if not dismiss.ok:
+                    return BountyCycleResult(
+                        BountyOutcome.CAPTURE_UNAVAILABLE, (),
+                        f"Slot {slot_index}: acknowledgment-dismiss retry failed "
+                        f"(rc={dismiss.returncode}, stderr={_short(dismiss.stderr)}).",
+                    )
+        return BountyCycleResult(
+            BountyOutcome.ACK_POPUP_DISMISS_FAILED, (),
+            f"Slot {slot_index}: acknowledgment popup did not transition to the verified refresh dialog "
+            f"within {config.max_popup_verify_attempts} attempt(s); confirm not sent.",
+        )
     return None
 
 
@@ -378,7 +439,28 @@ def _accept_or_refresh_slot(
                 BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (popup open)."
             )
 
-        popup_verified = None
+        # ACK-POPUP-PRECONFIRM-001: the live rc.24 customer trace shows
+        # that refresh-open can land on the same odds/acknowledgment overlay
+        # before the structural refresh-confirm dialog appears.  Previous
+        # releases only dismissed that overlay *after* confirm, which made
+        # every confirm-dialog probe fail and safely (but permanently)
+        # stopped at REFRESH_POPUP_NOT_VERIFIED.  Clear it first and require
+        # a fresh structural transition; never send confirm through an
+        # overlay or an unverified screen.
+        # First read the expected confirm dialog.  This keeps the normal
+        # path free of an unrelated acknowledgement probe; only an actual
+        # structural miss can enter the pre-confirm overlay recovery path.
+        popup_verified = _verify_refresh_popup(runner, serial, config, recognizer)
+        if not popup_verified:
+            ack_failure = _dismiss_ack_popup_if_shown(
+                slot_index=slot_index, serial=serial, runner=runner, recognizer=recognizer,
+                config=config, should_stop=should_stop, sleep_fn=sleep_fn,
+                expected_after_dismiss=lambda: _verify_refresh_popup(runner, serial, config, recognizer),
+                wait_before_check=False,
+            )
+            if ack_failure is not None:
+                return None, ack_failure
+
         for popup_attempt in range(1, config.max_popup_verify_attempts + 1):
             if should_stop():
                 return None, BountyCycleResult(
