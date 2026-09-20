@@ -273,7 +273,7 @@ def _dismiss_ack_popup_if_shown(
         )
 
     if wait_before_check:
-        sleep_fn(config.retry_delay_seconds)
+        sleep_fn(config.ack_popup_delay_seconds)
     ack_popup = _recognize(runner, serial, config, recognizer, config.reward_screen_roi, config.reward_screen_label)
     if ack_popup is None:
         return BountyCycleResult(
@@ -391,7 +391,7 @@ def _accept_or_refresh_slot(
     # refresh), worst case RECOGNITION_FAILED, which is FATAL and
     # stops the whole worker outright. One pause here is cheap
     # insurance against a much more expensive failure mode.
-    sleep_fn(config.retry_delay_seconds)
+    sleep_fn(config.ui_settle_delay_seconds)
     already_ok = _mission_is_acceptable(runner, serial, config, recognizer)
     if already_ok is MissionAssessment.CAPTURE_UNAVAILABLE:
         return None, BountyCycleResult(
@@ -936,7 +936,7 @@ def run_one_cycle(
         # Let the result popup complete its entrance animation before
         # touching its measured button.  This is intentionally before the
         # first close as well as between later attempts.
-        sleep_fn(config.retry_delay_seconds)
+        sleep_fn(config.result_close_delay_seconds if attempt == 1 else config.retry_delay_seconds)
         result_still_shown = _recognize(
             runner, serial, config, recognizer, config.result_screen_roi, config.result_screen_label,
         )

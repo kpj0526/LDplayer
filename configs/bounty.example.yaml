@@ -278,9 +278,12 @@ max_complete_verify_attempts: 5
 max_reward_verify_attempts: 5
 max_result_verify_attempts: 5
 max_mission_list_verify_attempts: 5
-# Customer-speed profile: the safety checks and bounded retry budgets stay
-# intact, but ordinary UI-transition pacing is kept responsive.
-retry_delay_seconds: 0.5
+# Customer-speed profile: ordinary UI settles are short; only a failed
+# structural check uses the longer bounded retry pace.
+ui_settle_delay_seconds: 0.2
+ack_popup_delay_seconds: 0.2
+result_close_delay_seconds: 0.3
+retry_delay_seconds: 0.4
 
 # --- GAME-CAL-001 (real-capture rework): screen classification --------
 #

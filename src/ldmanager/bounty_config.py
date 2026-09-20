@@ -135,6 +135,9 @@ class BountyMissionConfig:
     max_result_verify_attempts: int = 3
     max_mission_list_verify_attempts: int = 3
     retry_delay_seconds: float = 0.0
+    ui_settle_delay_seconds: float = 0.0
+    ack_popup_delay_seconds: float = 0.0
+    result_close_delay_seconds: float = 0.0
     capture_args: tuple[str, ...] = DEFAULT_CAPTURE_ARGS
     # Optional for backwards-compatible construction in focused state-machine
     # tests; production config supplies this from ``template_map``.
@@ -336,6 +339,16 @@ def load_bounty_config(explicit_path: Optional[Path] = None) -> BountyMissionCon
     if not isinstance(retry_delay_seconds, (int, float)) or isinstance(retry_delay_seconds, bool) or retry_delay_seconds < 0:
         raise BountyConfigError(f"'retry_delay_seconds' in {path} must be a non-negative number.")
 
+    def _timing(key: str, default: float) -> float:
+        value = raw.get(key, default)
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+            raise BountyConfigError(f"'{key}' in {path} must be a non-negative number.")
+        return float(value)
+
+    ui_settle_delay_seconds = _timing("ui_settle_delay_seconds", float(retry_delay_seconds))
+    ack_popup_delay_seconds = _timing("ack_popup_delay_seconds", float(retry_delay_seconds))
+    result_close_delay_seconds = _timing("result_close_delay_seconds", float(retry_delay_seconds))
+
     if ("in_progress_roi" in raw) != ("in_progress_label" in raw):
         raise BountyConfigError(
             f"'in_progress_roi' and 'in_progress_label' in {path} must both be set together, or both omitted."
@@ -381,6 +394,9 @@ def load_bounty_config(explicit_path: Optional[Path] = None) -> BountyMissionCon
         max_result_verify_attempts=_positive_int(raw, "max_result_verify_attempts", 3, path),
         max_mission_list_verify_attempts=_positive_int(raw, "max_mission_list_verify_attempts", 3, path),
         retry_delay_seconds=float(retry_delay_seconds),
+        ui_settle_delay_seconds=ui_settle_delay_seconds,
+        ack_popup_delay_seconds=ack_popup_delay_seconds,
+        result_close_delay_seconds=result_close_delay_seconds,
         stable_screen_anchors=_stable_screen_anchors(raw, path),
         min_stable_anchor_matches=_optional_positive_int(raw, "min_stable_anchor_matches", path),
         currency_action_labels=_string_tuple(raw, "currency_action_labels", DEFAULT_CURRENCY_ACTION_LABELS, path),

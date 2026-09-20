@@ -74,6 +74,12 @@ def _config(**overrides) -> BountyMissionConfig:
         capture_args=DEFAULT_CAPTURE_ARGS,
     )
     defaults.update(overrides)
+    # Legacy focused tests that override the shared retry pace retain the
+    # old one-knob timing behavior unless they explicitly exercise one of
+    # the new production speed-profile knobs.
+    for key in ("ui_settle_delay_seconds", "ack_popup_delay_seconds", "result_close_delay_seconds"):
+        if key not in overrides:
+            defaults[key] = defaults["retry_delay_seconds"]
     return BountyMissionConfig(**defaults)
 
 
