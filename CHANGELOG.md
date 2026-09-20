@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.3-rc.29
+
+- Preserve each account's next slot cursor after a verified result close, resuming at the row below the completed slot and wrapping only after row five.
+
 ## v1.0.3-rc.28
 
 - Lower the shipped bounty UI transition pace from 1.5 seconds to 0.5 seconds while preserving bounded retries and structural verification.

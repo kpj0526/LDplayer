@@ -184,6 +184,19 @@ def _tap_visible_currency_action(
     return False
 
 
+def _cyclic_slot_order(slot_count: int, start_slot_index: int) -> tuple[int, ...]:
+    """Return one downward pass beginning at ``start_slot_index``.
+
+    The only wrap is after the bottom row, so a verified close can resume
+    naturally below the completed row rather than visibly jumping to the
+    top on every new cycle.
+    """
+
+    if not 1 <= start_slot_index <= slot_count:
+        start_slot_index = 1
+    return tuple(range(start_slot_index, slot_count + 1)) + tuple(range(1, start_slot_index))
+
+
 def _mission_is_acceptable(runner, serial, config, recognizer) -> MissionAssessment:
     """Is the currently-selected mission the configured target objective?
 
@@ -633,7 +646,10 @@ def run_one_cycle(
     # current view.
     eligible_slot_index: Optional[int] = None
 
-    for slot_index in range(1, config.slot_count + 1):
+    slot_order = _cyclic_slot_order(
+        config.slot_count, runtime.next_slot_index if runtime is not None else 1,
+    )
+    for slot_index in slot_order:
         if runtime is not None and runtime.slots[slot_index - 1] is SlotState.TARGET_LOCKED:
             continue
         if on_phase:
@@ -712,7 +728,7 @@ def run_one_cycle(
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before kill-progress check.")
 
     candidate_slots = [
-        i for i in range(1, config.slot_count + 1)
+        i for i in slot_order
         if runtime is None or runtime.slots[i - 1] is SlotState.TARGET_LOCKED
     ]
 
@@ -961,7 +977,11 @@ def run_one_cycle(
     # Only after verified close + mission-list return is it legal to forget
     # locked slots and start a new five-slot configuration.
     if runtime is not None:
-        runtime.reset_after_verified_return()
+        # Continue downward from the completed row on the next cycle;
+        # wrap only after row 5.
+        runtime.reset_after_verified_return(
+            next_slot_index=(eligible_slot_index % config.slot_count) + 1,
+        )
         return BountyCycleResult(BountyOutcome.COMPLETED_CYCLE, tuple(slot_outcomes), "Verified reward cycle complete; slots reset.")
 
     # --- Legacy stateless re-refresh path. ---

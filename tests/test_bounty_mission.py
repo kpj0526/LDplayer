@@ -2,7 +2,7 @@ from pathlib import Path
 
 from ldmanager.adb import AdbBinaryResult, AdbCommandResult
 from ldmanager.bounty_config import BountyMissionConfig
-from ldmanager.bounty_mission import BountyOutcome, run_one_cycle
+from ldmanager.bounty_mission import BountyOutcome, _cyclic_slot_order, run_one_cycle
 from ldmanager.coordinates import RelativeCoordinate, RelativeRegion, ScreenSize, build_tap_args
 from ldmanager.models import AccountId
 from ldmanager.recognition import PlaceholderRecognizer, RecognitionResult, RecognitionStatus
@@ -93,6 +93,11 @@ def _run(runner, recognizer, config, **kwargs):
         account_id=AccountId.LD1, serial=_SERIAL, runner=runner,
         recognizer=recognizer, config=config, **kwargs,
     )
+
+
+def test_next_cycle_slot_order_continues_downward_then_wraps_after_bottom_row():
+    assert _cyclic_slot_order(5, 4) == (4, 5, 1, 2, 3)
+    assert _cyclic_slot_order(5, 5) == (5, 1, 2, 3, 4)
 
 
 # --- full one-cycle state flow --------------------------------------------
