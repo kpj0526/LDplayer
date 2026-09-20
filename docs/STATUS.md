@@ -112,6 +112,13 @@
 - Safety requirement: no later mission action when the popup remains; bounded account-local failure only.
 - Next: Code repair and tests, QA independent exact-hash plus published-artifact verification, then new customer-test RC.
 
+## TRANSITION-POSTCONDITION-AUDIT-001 customer failure (2026-09-20)
+
+- Current phase: `IMPLEMENTING`
+- Owner: `code`
+- Failure: rc.24's acknowledgement-popup dismissal runs after confirm/accept, but the live overlay occurs immediately after refresh-open; GUI correctly blocks confirmation with `refresh_popup_not_verified`.
+- Required: audited bounded postconditions for all game-state-changing taps; no action may advance merely on a successful ADB return code.
+
 - Current phase: `VERIFYING`
 - Owner: `qa`
 - Target: Code `a4dce6d` / repair `5ea24e3`

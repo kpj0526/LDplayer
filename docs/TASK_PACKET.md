@@ -90,6 +90,16 @@ AC-01~AC-30을 적용한다. 명세·진행 상태는 `docs/ACCEPTANCE_STATUS.md
 
 ## 10. NEXT ACTION
 
+## TRANSITION-POSTCONDITION-AUDIT-001: audit every game-state-changing tap
+
+1. **WHO**: Existing `code` implements/commits; existing `qa` independently verifies. No new agents, roles, or worktrees.
+2. **WHAT**: Repair and audit every state-changing mission tap for the observed class of defect: a tap command returning success is treated as a screen transition, while an intervening acknowledgement popup remains or the expected screen never appears.
+3. **NEW CUSTOMER EVIDENCE**: `v1.0.3-rc.24`, LD1 `127.0.0.1:5555`, original live screen shows the “자유 토벌작전 / 확률 / 닫기” overlay immediately following mission initialization. GUI: `refresh_popup_not_verified`, `Slot 1: refresh popup never verified structurally within 5 attempt(s); confirm not sent.` This proves the currently missing site is **after `refresh_button_point` and before `_verify_refresh_popup`**; existing rc.24 dismissal logic runs only after `refresh_confirm_point` or `accept_mission_point`, so it cannot run before confirmation was sent.
+4. **AUDIT SCOPE**: Inspect every `runner.run(... build_tap_args(...))` in `bounty_mission.py` and direct guarded touch path: slot select, refresh open, refresh confirm, mission accept (both paths), complete select/tap, reward open/claim, result close, and any configurable fixed-point fallback. For each, define: precondition recognition, explicit serial, bounded postcondition recognition, retry delay/budget, individual/global stop boundaries, and account-local failure outcome. Fix any path that proceeds based only on ADB return code or that has no safe postcondition. Do not add unbounded loops or default/guessed targets.
+5. **REQUIRED FIX**: Before refresh-popup structural verification, detect the acknowledgement overlay using the real `reward_odds_label`; if present, close once per bounded attempt using the measured point, freshly capture until the overlay is absent, then verify the actual refresh popup. If absent, do not tap Close. On no transition, return a distinct outcome; do not send refresh-confirm or any later action.
+6. **TESTS**: Build a table-driven transition audit with fake runner/recognizer coverage for every listed tap. Include the supplied pre-confirm overlay path, permanent overlay/no downstream confirm, delayed transition, stop between retries, serial isolation, and regression of all prior result/claim/accept flows. Run full suite; update Code handoff.
+7. **RELEASE**: New customer-test prerelease only after Code commit and QA independent verification. Mark rc.24 superseded for the pre-confirm acknowledgement overlay failure. Real live test remains `NEEDS_REAL_TEST`.
+
 ## ACK-POPUP-POSTCONDITION-001: verify the close popup actually disappeared
 
 1. **WHO**: Existing `code` implements and commits; existing `qa` independently verifies and release-smokes. No new agent, subagent, role, or worktree.

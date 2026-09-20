@@ -390,6 +390,12 @@
 - Diagnosis: rc.24 checks only ADB return status after the Close tap, then advances without proving the popup disappeared.
 - Decision: Code must add a bounded fresh-capture dismissal postcondition and distinct account-local failure before QA/replacement release; no current rc.24 live Start.
 
+## 2026-09-20 | TRANSITION-POSTCONDITION-AUDIT-001 | Manager
+
+- Performed: inspected new customer live evidence for the mission-initialization path.
+- Evidence: LD1 GUI reports `refresh_popup_not_verified` and `confirm not sent`; the `확률 / 닫기` overlay is present. This places the defect after refresh-open but before refresh-confirm, rather than in the later claim/result route.
+- Decision: broaden repair to an audit of every game-state-changing tap; require fresh bounded postconditions and no downstream action when the expected transition has not occurred.
+
 - Performed: fetched and inspected the configured GitHub remote to resolve the user's request for the macro update.
 - Changed: `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
 - Commands/tests: `git fetch --prune origin`; remote tag/ref, commit metadata/stat, and GitHub release-list inspection.

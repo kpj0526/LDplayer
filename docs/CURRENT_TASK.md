@@ -287,6 +287,14 @@
 - Confirmed cause: existing popup helper treats ADB success as UI success without a fresh-screen postcondition.
 - Required repair: bounded fresh-capture postcondition, distinct account-local failure, and no downstream action while the popup persists; Code → QA → replacement customer-test RC.
 
+## Current authoritative task (2026-09-20, evidence update)
+
+- Task ID: `TRANSITION-POSTCONDITION-AUDIT-001`
+- Status: `IMPLEMENTING`.
+- Customer reproduction: rc.24 reaches `refresh_popup_not_verified` before confirmation; the “확률 / 닫기” overlay appears immediately after mission-initialization tap.
+- Confirmed missing path: `refresh_button_point` → acknowledgement popup → `_verify_refresh_popup`; no confirmation was sent.
+- Scope: repair this site and audit every state-changing tap for a fresh bounded UI postcondition before downstream action or a release replacement.
+
 - Task ID: `MVP-001`
 - Title: Connected executable MVP draft for nine-account mission automation
 - Purpose: deliver a runnable, configurable end-to-end draft that can be calibrated and smoke-tested on the user's real environment later.
