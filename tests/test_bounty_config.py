@@ -203,12 +203,12 @@ def test_example_bounty_config_retry_budget_was_widened():
     assert config.max_reward_verify_attempts >= 5
     assert config.max_result_verify_attempts >= 5
     assert config.max_mission_list_verify_attempts >= 5
-    assert config.retry_delay_seconds >= 1.5
+    assert config.retry_delay_seconds >= 0.5
 
 
 def test_negative_retry_delay_is_rejected(tmp_path):
     text = EXAMPLE_BOUNTY_CONFIG.read_text(encoding="utf-8")
-    bad = text.replace("retry_delay_seconds: 1.5", "retry_delay_seconds: -1.0", 1)
+    bad = text.replace("retry_delay_seconds: 0.5", "retry_delay_seconds: -1.0", 1)
     assert bad != text, "retry_delay_seconds line not found in example config -- fixture drifted"
     path = tmp_path / "bounty.yaml"
     path.write_text(bad, encoding="utf-8")

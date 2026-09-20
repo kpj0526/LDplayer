@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.3-rc.28
+
+- Lower the shipped bounty UI transition pace from 1.5 seconds to 0.5 seconds while preserving bounded retries and structural verification.
+
 ## v1.0.3-rc.27
 
 - Fix dungeon/plain-detail refresh: if the popup-only refresh point does not produce the confirmed dialog, tap only a confidently detected visible currency-action button and then re-verify the dialog.
