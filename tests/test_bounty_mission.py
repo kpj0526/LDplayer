@@ -993,6 +993,27 @@ def test_completion_targets_the_slot_that_actually_became_eligible_not_row_1():
     assert runner.calls[complete_index - 1] != (_SERIAL, slot_1_args)
 
 
+def test_completed_slot_is_reconfigured_before_the_next_lower_slot():
+    """RECONFIGURE-COMPLETED-SLOT-001: after a reward close, the row
+    that just completed has a replacement mission.  The next worker pass
+    must return to that row first so it can refresh/lock that replacement
+    before proceeding downward."""
+
+    cfg = _config()
+    state: dict = {"current_slot": None}
+    runtime = AccountMissionRuntime()
+    runner = _SlotAwareRunner(_runner_with_valid_captures(), state, cfg.slot_select_points, cfg.screen_size)
+    recognizer = _SlotAwareRecognizer(
+        state, eligible_slot=3,
+        always_matching={_PHRASE, _QTY, _REWARD, _RESULT, _MISSION_LIST},
+    )
+
+    result = _run(runner, recognizer, cfg, runtime=runtime)
+
+    assert result.outcome is BountyOutcome.COMPLETED_CYCLE
+    assert runtime.next_slot_index == 3
+
+
 # --- PHASE-VISIBILITY-001: runtime.phase must advance past kill-progress --
 
 

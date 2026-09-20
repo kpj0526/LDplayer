@@ -977,10 +977,13 @@ def run_one_cycle(
     # Only after verified close + mission-list return is it legal to forget
     # locked slots and start a new five-slot configuration.
     if runtime is not None:
-        # Continue downward from the completed row on the next cycle;
-        # wrap only after row 5.
+        # RECONFIGURE-COMPLETED-SLOT-001: after claiming a completed
+        # mission, the game immediately gives this SAME row a new mission.
+        # Revisit it first so a non-target replacement is refreshed and
+        # locked before moving downward; skipping straight to the next row
+        # left that replacement unconfigured until a later full wrap.
         runtime.reset_after_verified_return(
-            next_slot_index=(eligible_slot_index % config.slot_count) + 1,
+            next_slot_index=eligible_slot_index,
         )
         return BountyCycleResult(BountyOutcome.COMPLETED_CYCLE, tuple(slot_outcomes), "Verified reward cycle complete; slots reset.")
 

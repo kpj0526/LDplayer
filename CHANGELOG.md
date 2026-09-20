@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.3-rc.31
+
+- After a completed mission's reward/result close, reconfigure the replacement mission in that same row first; refresh non-target replacements before moving to lower rows.
+
 ## v1.0.3-rc.30
 
 - Use a responsive timing profile: 0.2s normal UI settle, 0.3s initial result-close settle, and 0.4s only between bounded retries.
