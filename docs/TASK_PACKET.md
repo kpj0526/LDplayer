@@ -90,6 +90,25 @@ AC-01~AC-30을 적용한다. 명세·진행 상태는 `docs/ACCEPTANCE_STATUS.md
 
 ## 10. NEXT ACTION
 
+## ACK-POPUP-POSTCONDITION-001: verify the close popup actually disappeared
+
+1. **WHO**: Existing `code` implements and commits; existing `qa` independently verifies and release-smokes. No new agent, subagent, role, or worktree.
+2. **WHAT**: Correct the live `v1.0.3-rc.24` failure where the “자유 토벌작전 / 확률 / 닫기” acknowledgement popup remains visible after the close tap, but the worker treats a successful ADB return code as dismissal success and later reports `mission_list_verify_failed`.
+3. **EVIDENCE**: Customer supplied original 1280x720 capture (2026-09-20). Its Close center is approximately `(641, 511)`, matching the current `close_result_point` `(0.5012, 0.7104)` exactly. GUI showed `mission_list_verify_failed`, five bounded verification attempts, and phase `VERIFYING_MISSION_LIST` while the popup remained. Thus this is not a guessed-coordinate calibration issue.
+4. **HOW**: After every acknowledgement-popup close tap, capture fresh frames and require the popup anchor (`reward_odds_label`) to become absent AND the expected next state to be positively recognized before proceeding. Use bounded retries, the configured delay, explicit selected serial only, and no repeated input after individual/global stop. If postcondition never becomes true, return a distinct account-local `ACK_POPUP_DISMISS_FAILED` outcome with evidence/capture detail; make no later slot select, refresh, completion, reward, claim, or cross-account command. Never regard ADB `returncode == 0` alone as proof of a game-screen transition.
+5. **TESTS**: Add real-capture and fake-runner regressions for the supplied exact popup: (a) first close does not transition then second permitted close does; (b) never-transition stays bounded, produces the distinct outcome, and sends no downstream action; (c) popup absent is a no-op; (d) stop before/between retries gives no further input; (e) serial isolation includes every capture/tap. Preserve existing full suite.
+6. **RELEASE**: Code builds a new customer-test RC only after the committed repair and Code self-tests. QA independently tests exact commit and published ZIP. Release notes must state that rc.24 is superseded for this popup case and that live re-test remains `NEEDS_REAL_TEST`.
+7. **NEXT**: Code begins now; QA validates the exact submitted hash and new published asset. No Start on the current rc.24 during repair.
+
+## LIVE-SERIAL-001: configured-serial loss in worker-cycle corrective packet
+
+1. **WHO**: Existing `code` repairs and commits; existing `qa` independently re-verifies. No new agents, roles, or worktrees.
+2. **WHAT**: Correct the customer-environment failure where LD1 displays a valid mapping (`emulator-5554`) but the worker passes an empty ADB serial into screenshot capture after Start.
+3. **EVIDENCE**: Customer screenshot, 2026-09-14: `worker crashed` → `controller.py:127 _loop` → `app.py:80 _cycle` → `bounty_mission.py:373 run_one_cycle` → `_accept_or_refresh_slot` → `_tap_template` → `_recognize` → `screenshot.py:71 capture_screenshot` → `adb.py:149 validate_serial` → `ValueError: Invalid ADB serial: ''`. GUI simultaneously displays LD1 mapping `emulator-5554`.
+4. **HOW**: Trace controller/worker construction and every mission-cycle helper. Preserve the one explicit nonblank selected-account serial through all capture/recognize/tap calls; reject/make account-local error before any capture/touch if absent. Never substitute a default device or another account. Add regression coverage specifically proving a configured LD1 serial reaches every cycle capture/tap helper and that an absent serial produces zero ADB/capture/touch calls and a contained account error. Retain individual/global stop and bounded-action behavior.
+5. **ACCEPTANCE**: Full regression passes; direct injected reproduction passes; Code commits exact hash and `HANDOFF_CODE.md`. QA repeats exact serial-argv/capture/touch isolation and exception-containment checks. Real customer re-test remains `NEEDS_REAL_TEST`; no global/final PASS.
+6. **NEXT**: Code begins now; QA receives only Code's committed exact hash.
+
 ## REL-003: customer-test replacement prerelease
 
 1. **WHO**: Existing `code` packages and publishes; existing `qa` independently smoke-checks the exact packaged result; Manager coordinates. No new agent, subagent, role, or worktree.

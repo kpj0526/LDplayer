@@ -271,6 +271,22 @@
 - QA `3f08fee` independently downloaded, inspected, freshly extracted, and startup-smoke-checked the published ZIP: `MVP_SMOKE_PASS`.
 - Customer next step: configure one explicit nonblank serial, use Test capture/mapping before Start, and stop on mismatch/unknown/error. No final project PASS or real-environment claim.
 
+## Current authoritative task (2026-09-14)
+
+- Task ID: `LIVE-SERIAL-001`
+- Status: `REWORK`.
+- Customer evidence: LD1 GUI mapped to `emulator-5554`, but its started worker failed at ADB serial validation with `Invalid ADB serial: ''` inside `run_one_cycle`.
+- Safety result: failure occurred at validation before the attempted capture/action; no default or cross-account ADB target is evidenced.
+- Next: existing Code repairs serial propagation and regression coverage; existing QA independently verifies exact submission. Customer live retest stays `NEEDS_REAL_TEST`.
+
+## Current authoritative task (2026-09-20)
+
+- Task ID: `ACK-POPUP-POSTCONDITION-001`
+- Status: `IMPLEMENTING`.
+- Live failure: customer running `v1.0.3-rc.24` reports `mission_list_verify_failed` while the exact 1280x720 “확률 / 닫기” popup remains visible.
+- Confirmed cause: existing popup helper treats ADB success as UI success without a fresh-screen postcondition.
+- Required repair: bounded fresh-capture postcondition, distinct account-local failure, and no downstream action while the popup persists; Code → QA → replacement customer-test RC.
+
 - Task ID: `MVP-001`
 - Title: Connected executable MVP draft for nine-account mission automation
 - Purpose: deliver a runnable, configurable end-to-end draft that can be calibrated and smoke-tested on the user's real environment later.

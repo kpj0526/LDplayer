@@ -376,6 +376,20 @@
 - Evidence: Code record `e7e6898`; QA `3f08fee` independently downloaded the public ZIP, confirmed its digest differs from withdrawn rc.1, verified its templates/config/docs, launched a fresh extraction without any control input, and ran the exact-target suite (`358 passed`).
 - Result: `MVP_SMOKE_PASS` for a customer-test prerelease. It is not final delivery; live LDPlayer/ADB/game validation remains customer-environment work.
 
+## 2026-09-14 | LIVE-SERIAL-001 | Manager
+
+- Performed: reviewed customer Start reproduction and traceback.
+- Evidence: LD1 was visibly mapped to `emulator-5554`; the cycle reached `bounty_mission.run_one_cycle` then `capture_screenshot`, where `validate_serial('')` raised `ValueError: Invalid ADB serial: ''`.
+- Result: Major live-environment defect in serial propagation. Validation prevented an unscoped capture/touch, but the account worker crashed.
+- Next: route the committed corrective packet to existing Code, then existing QA independently verifies. Customer must not Start again before the repaired release is QA-smoke-checked.
+
+## 2026-09-20 | ACK-POPUP-POSTCONDITION-001 | Manager
+
+- Performed: reviewed the original 1280x720 customer capture and the live rc.24 GUI outcome.
+- Evidence: exact `닫기` center is approximately `(641,511)`, agreeing with current normalized `close_result_point`; GUI reported `mission_list_verify_failed` after five attempts while the same popup persisted.
+- Diagnosis: rc.24 checks only ADB return status after the Close tap, then advances without proving the popup disappeared.
+- Decision: Code must add a bounded fresh-capture dismissal postcondition and distinct account-local failure before QA/replacement release; no current rc.24 live Start.
+
 - Performed: fetched and inspected the configured GitHub remote to resolve the user's request for the macro update.
 - Changed: `docs/PROGRESS.md`, `docs/CURRENT_TASK.md`, `docs/WORK_LOG.md`.
 - Commands/tests: `git fetch --prune origin`; remote tag/ref, commit metadata/stat, and GitHub release-list inspection.

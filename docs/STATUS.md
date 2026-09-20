@@ -96,6 +96,22 @@
 - Code release record: `e7e6898`; QA report: `3f08fee` (`MVP_SMOKE_PASS`).
 - Scope limit: customer-test prerelease only; live LDPlayer/ADB/game validation and AC-58--AC-60 remain `BLOCKED_REAL_ENVIRONMENT / NOT_TESTED`.
 
+## LIVE-SERIAL-001 customer failure (2026-09-14)
+
+- Current phase: `REWORK`
+- Owner: `code`
+- Failure: started LD1 worker supplied `''` to `validate_serial()` despite GUI mapping `emulator-5554`; customer traceback identifies the cycle/capture path.
+- Safety: validation rejected the empty serial before capture/touch. No default or cross-account command is permitted.
+- Next: Code serial-propagation repair and committed tests; QA independent re-verification.
+
+## ACK-POPUP-POSTCONDITION-001 (2026-09-20)
+
+- Current phase: `IMPLEMENTING`
+- Owner: `code`
+- Failed customer release: `v1.0.3-rc.24`; popup Close center matches the configured point, so the defect is missing UI postcondition verification rather than a coordinate mismatch.
+- Safety requirement: no later mission action when the popup remains; bounded account-local failure only.
+- Next: Code repair and tests, QA independent exact-hash plus published-artifact verification, then new customer-test RC.
+
 - Current phase: `VERIFYING`
 - Owner: `qa`
 - Target: Code `a4dce6d` / repair `5ea24e3`
