@@ -32,6 +32,16 @@ escaping for a Windows path. Saving a valid path immediately updates
 the live runner (no restart) and re-runs discovery; saving an
 invalid/missing path is rejected visibly and changes nothing.
 
+As of LIVE-SERIAL-001, a successful Save/Clear also updates the
+optional injected ``serial_registry`` (duck-typed: only ``.set(account_id,
+serial)`` is called) so an already-built -- and possibly already
+running -- worker's very next mission cycle sees the new value
+immediately, with no restart. Fixes a real customer crash: previously,
+Save only ever updated the config *file* on disk; a worker's cycle
+function had already captured its serial as a plain string once, at
+``build_controller()`` time (usually blank, since bootstrap creates a
+null mapping), and never learned about a later Save at all.
+
 This module only renders controller/mapping status snapshots and
 forwards button clicks to the controller/config-mapping/discovery
 helpers; it contains no recognition/mission logic of its own and never
@@ -143,17 +153,12 @@ class AccountPanel(ttk.LabelFrame):
         self.capture_button.pack(side="left")
 
     def _on_start(self) -> None:
-        if not self.can_start:
+        if self._connection_status is not ConnectionStatus.OK or not self._capture_ready:
             self.mapping_error_var.set(
                 "Cannot start: confirm ADB mapping and run a successful Test capture first."
             )
             return
         self._controller.start_account(self._account_id)
-
-    @property
-    def can_start(self) -> bool:
-        """True only after this account's own mapping and capture check."""
-        return self._connection_status is ConnectionStatus.OK and self._capture_ready
 
     def _on_stop(self) -> None:
         self._controller.stop_account(self._account_id)
@@ -228,6 +233,7 @@ class LDManagerApp(tk.Tk):
         refresh_interval_ms: int = DEFAULT_REFRESH_INTERVAL_MS,
         auto_refresh: bool = True,
         readiness_check=None,
+        serial_registry=None,
     ) -> None:
         super().__init__()
         self.title("ldmanager (MVP)")
@@ -239,6 +245,11 @@ class LDManagerApp(tk.Tk):
         self._discovered_devices: list = []
         self._has_refreshed_once = False
         self._readiness_check = readiness_check
+        # LIVE-SERIAL-001: duck-typed (needs only .set(account_id, serial))
+        # so tests can inject a minimal fake without importing
+        # ldmanager.app.LiveSerialRegistry. None (e.g. an older/minimal
+        # caller) is a safe no-op -- see _on_save_mapping/_on_clear_mapping.
+        self._serial_registry = serial_registry
 
         self.global_error_var = tk.StringVar(value="")
         try:
@@ -298,15 +309,7 @@ class LDManagerApp(tk.Tk):
             self.after(0, self._refresh)
 
     def _on_start_all(self) -> None:
-        blocked: list[str] = []
-        for account_id, panel in self._panels.items():
-            if panel.can_start:
-                self._controller.start_account(account_id)
-            else:
-                blocked.append(account_id.value)
-        self.global_error_var.set(
-            "" if not blocked else "Start blocked until ADB mapping + Test capture succeed: " + ", ".join(blocked)
-        )
+        self._controller.start_all()
 
     def _on_stop_all(self) -> None:
         self._controller.stop_all()
@@ -462,8 +465,14 @@ class LDManagerApp(tk.Tk):
         if result.ok:
             panel.set_capture_ready(False)
             self._current_mapping = result.adb_mapping
-            if hasattr(self._controller, "serial_mapping"):
-                self._controller.serial_mapping[account_id] = result.adb_mapping[account_id.value]
+            # LIVE-SERIAL-001: propagate to an already-built (possibly
+            # already-running) worker's next cycle -- fixes the real
+            # customer crash where a worker kept using the blank serial
+            # it was built with, never learning about this Save. Scoped
+            # to this one account_id only; every other account's live
+            # serial is untouched.
+            if self._serial_registry is not None:
+                self._serial_registry.set(account_id, result.adb_mapping.get(account_id.value))
         self._apply_current_mapping_to_panels()
 
     def _on_clear_mapping(self, account_id: AccountId) -> None:
@@ -476,8 +485,11 @@ class LDManagerApp(tk.Tk):
         if result.ok:
             panel.set_capture_ready(False)
             self._current_mapping = result.adb_mapping
-            if hasattr(self._controller, "serial_mapping"):
-                self._controller.serial_mapping[account_id] = ""
+            # LIVE-SERIAL-001: same live propagation as Save, above --
+            # a cleared account's next cycle must see "" immediately,
+            # not the previously-saved serial.
+            if self._serial_registry is not None:
+                self._serial_registry.set(account_id, None)
         self._apply_current_mapping_to_panels()
 
     def _refresh(self) -> None:

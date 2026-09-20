@@ -79,6 +79,13 @@ class BountyMissionConfig:
     mission_phrase_label: str
     mission_quantity_roi: RelativeRegion
     mission_quantity_label: str
+    # ACCEPT-CONFIRM-001: real, measured center of the "확인" button on
+    # the mission-detail popup that opens after selecting a slot -- must
+    # be tapped whenever the target phrase/quantity is already matched
+    # (with or without a preceding refresh), or that popup is left open
+    # and blocks all further progress. Never a template search (see
+    # bounty_mission.py's ACCEPT-CONFIRM-001 comment for why).
+    accept_mission_point: RelativeCoordinate
 
     # Refresh (reroll) flow.
     refresh_button_point: RelativeCoordinate
@@ -95,6 +102,11 @@ class BountyMissionConfig:
     complete_state_label: str
 
     # Complete -> reward -> claim -> result -> close -> mission list.
+    # COMPLETE-SLOT-TRACKING-001: select_complete_point is no longer
+    # consulted by run_one_cycle's live completion path -- it now
+    # re-selects whichever slot_select_points[i] was actually verified
+    # eligible (never a fixed "always row 1" point). Kept as a required
+    # field for config-schema/backward-compat stability only.
     select_complete_point: RelativeCoordinate
     complete_button_point: RelativeCoordinate
     reward_screen_roi: RelativeRegion
@@ -114,10 +126,18 @@ class BountyMissionConfig:
     max_refresh_attempts: int = 5
     max_popup_verify_attempts: int = 3
     max_kill_progress_poll_attempts: int = 10
+    # COMPLETE-RETRY-001: if the complete tap doesn't confidently land
+    # (e.g. the eligible slot's detail view isn't actually showing on
+    # this fresh capture), re-select that same slot and try again,
+    # bounded, instead of failing on the first miss.
+    max_complete_verify_attempts: int = 3
     max_reward_verify_attempts: int = 3
     max_result_verify_attempts: int = 3
     max_mission_list_verify_attempts: int = 3
     retry_delay_seconds: float = 0.0
+    ui_settle_delay_seconds: float = 0.0
+    ack_popup_delay_seconds: float = 0.0
+    result_close_delay_seconds: float = 0.0
     capture_args: tuple[str, ...] = DEFAULT_CAPTURE_ARGS
     # Optional for backwards-compatible construction in focused state-machine
     # tests; production config supplies this from ``template_map``.
@@ -319,6 +339,16 @@ def load_bounty_config(explicit_path: Optional[Path] = None) -> BountyMissionCon
     if not isinstance(retry_delay_seconds, (int, float)) or isinstance(retry_delay_seconds, bool) or retry_delay_seconds < 0:
         raise BountyConfigError(f"'retry_delay_seconds' in {path} must be a non-negative number.")
 
+    def _timing(key: str, default: float) -> float:
+        value = raw.get(key, default)
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+            raise BountyConfigError(f"'{key}' in {path} must be a non-negative number.")
+        return float(value)
+
+    ui_settle_delay_seconds = _timing("ui_settle_delay_seconds", float(retry_delay_seconds))
+    ack_popup_delay_seconds = _timing("ack_popup_delay_seconds", float(retry_delay_seconds))
+    result_close_delay_seconds = _timing("result_close_delay_seconds", float(retry_delay_seconds))
+
     if ("in_progress_roi" in raw) != ("in_progress_label" in raw):
         raise BountyConfigError(
             f"'in_progress_roi' and 'in_progress_label' in {path} must both be set together, or both omitted."
@@ -330,6 +360,7 @@ def load_bounty_config(explicit_path: Optional[Path] = None) -> BountyMissionCon
         mission_phrase_label=_label(raw, "mission_phrase_label", path),
         mission_quantity_roi=_region(raw, "mission_quantity_roi", path),
         mission_quantity_label=_label(raw, "mission_quantity_label", path),
+        accept_mission_point=_point(raw, "accept_mission_point", path),
         refresh_button_point=_point(raw, "refresh_button_point", path),
         refresh_popup_anchor_roi=_region(raw, "refresh_popup_anchor_roi", path),
         refresh_popup_anchor_label=_label(raw, "refresh_popup_anchor_label", path),
@@ -358,10 +389,14 @@ def load_bounty_config(explicit_path: Optional[Path] = None) -> BountyMissionCon
         max_refresh_attempts=_positive_int(raw, "max_refresh_attempts", 5, path),
         max_popup_verify_attempts=_positive_int(raw, "max_popup_verify_attempts", 3, path),
         max_kill_progress_poll_attempts=_positive_int(raw, "max_kill_progress_poll_attempts", 10, path),
+        max_complete_verify_attempts=_positive_int(raw, "max_complete_verify_attempts", 3, path),
         max_reward_verify_attempts=_positive_int(raw, "max_reward_verify_attempts", 3, path),
         max_result_verify_attempts=_positive_int(raw, "max_result_verify_attempts", 3, path),
         max_mission_list_verify_attempts=_positive_int(raw, "max_mission_list_verify_attempts", 3, path),
         retry_delay_seconds=float(retry_delay_seconds),
+        ui_settle_delay_seconds=ui_settle_delay_seconds,
+        ack_popup_delay_seconds=ack_popup_delay_seconds,
+        result_close_delay_seconds=result_close_delay_seconds,
         stable_screen_anchors=_stable_screen_anchors(raw, path),
         min_stable_anchor_matches=_optional_positive_int(raw, "min_stable_anchor_matches", path),
         currency_action_labels=_string_tuple(raw, "currency_action_labels", DEFAULT_CURRENCY_ACTION_LABELS, path),

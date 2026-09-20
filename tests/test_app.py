@@ -39,6 +39,7 @@ mission_phrase_roi: {x: 0.0, y: 0.0, width: 0.1, height: 0.1}
 mission_phrase_label: "TARGET_PHRASE"
 mission_quantity_roi: {x: 0.2, y: 0.0, width: 0.1, height: 0.1}
 mission_quantity_label: "200"
+accept_mission_point: {x: 0.55, y: 0.72}
 refresh_button_point: {x: 0.9, y: 0.9}
 refresh_popup_anchor_roi: {x: 0.3, y: 0.0, width: 0.1, height: 0.1}
 refresh_popup_anchor_label: "ANCHOR"

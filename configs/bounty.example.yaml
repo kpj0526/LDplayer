@@ -34,12 +34,6 @@ template_map:
   "모든 몬스터 처치": "target_all_monsters_0_of_200.png"
   "200": "target_all_monsters_0_of_200.png"
   target_all_monsters_0_of_200: "target_all_monsters_0_of_200.png"
-  # Used only after acceptance, when the counter is no longer 0/200.
-  # Completion still additionally requires the real Complete button;
-  # this title crop prevents completing a different mission by mistake.
-  target_all_monsters_active: "target_all_monsters_active.png"
-  "지역 퀘스트 갱신": "refresh_confirm_title.png"
-  "확인": "refresh_confirm_title.png"
   # Do not map a generic active mission to 200/200. A future native ADB
   # capture should provide an exact completed-progress crop; until then the
   # independently matched complete button is the completion gate.
@@ -47,17 +41,64 @@ template_map:
   "보상 획득": "reward_result_header.png"
   "결과": "reward_result_header.png"
   "자유 토벌작전": "mission_slots_panel.png"
-  mission_slot_unselected: "mission_slot_unselected.png"
-  mission_slot_selected: "mission_slot_selected.png"
-  button_refresh_confirm: "button_refresh_confirm.png"
-  button_refresh_4400: "button_refresh_4400.png"
-  button_refresh_6600: "button_refresh_6600.png"
-  button_refresh_9900: "button_refresh_9900.png"
-  button_refresh_14900: "button_refresh_14900.png"
-  button_accept_mission: "button_accept_mission.png"
+  # SLOT-SELECT-CALIBRATION-001 (real-capture rework): mission_slot_unselected/
+  # mission_slot_selected are DELIBERATELY NOT mapped here. Real evidence
+  # (tests/fixtures/game_cal_001/source_extra/) showed two structural
+  # problems: (1) the crop bakes in the literal mission title text
+  # ("자유 토벌작전"), the exact anti-pattern GAME-CAL-001 already fixed
+  # elsewhere; (2) even with a perfect crop, a single "find this anywhere
+  # on screen" search can never tell slot 1 apart from slot 3 when both
+  # show identical unselected styling -- template matching is the wrong
+  # tool for "pick the Nth row of a list". Leaving these two labels
+  # unmapped makes _tap_template() return None (not a hard False) for
+  # them, so slot selection always uses the real, position-calibrated
+  # slot_select_points/select_complete_point below instead -- exactly
+  # the mechanism actually suited to this UI. Do not add real crops for
+  # these two labels without first solving problem (2).
+  # REFRESH-CALIBRATION-001 (real-capture rework): button_refresh_confirm/
+  # 4400/6600/9900/14900 are deliberately NOT mapped here. Those 5 files
+  # are pre-GAME-CAL-001 placeholder assets (380x116/180x55, never real
+  # captures) -- a real live run proved they never confidently match,
+  # and because _tap_any_template()/_tap_template() return a hard
+  # False (not None) whenever template_map is non-empty overall, this
+  # silently blocked the fixed-point fallback below from ever running
+  # (the exact same TAP-FALLBACK-CRASH-001/SLOT-SELECT-CALIBRATION-001
+  # gotcha). The real currency-cost action box (whatever its currently
+  # displayed price) is positionally fixed -- see currency_action_4400
+  # below, already real-calibrated in GAME-CAL-001 -- so refresh-open
+  # now always taps the real, measured refresh_button_point instead,
+  # and refresh-confirm always taps refresh_confirm_point once the
+  # popup is verified structurally. See docs/HANDOFF_CODE.md's
+  # REFRESH-CALIBRATION-001 section.
+  #
+  # ACCEPT-CONFIRM-001: button_accept_mission is deliberately NOT
+  # mapped here either -- same stale-asset problem (180x55, scores
+  # only 0.726 against a real capture of the popup it's meant to
+  # match, below the 0.8 threshold). accept_mission_point below is
+  # always used directly instead. See docs/HANDOFF_CODE.md's
+  # ACCEPT-CONFIRM-001 section.
   button_complete: "button_complete.png"
-  button_claim_reward: "button_claim_reward.png"
-  button_close_reward: "button_close_reward.png"
+  # REWARD-SCREEN-CALIBRATION-001 (real-capture rework): replaced with a
+  # real crop from an actual customer "보상 받기" (Get Reward) screen --
+  # see tests/fixtures/game_cal_001/source_extra/reward_screen.png and
+  # its PROVENANCE.md entry. Confirmed (real OpenCVTemplateRecognizer)
+  # to match only that real screen and not the 4 other real captures.
+  button_claim_reward: "reward_claim_button.png"
+  # RESULT-CLOSE-CALIBRATION-001: button_close_reward is deliberately
+  # NOT mapped -- the "닫기"/"보상 받기" buttons share the same frame
+  # graphic and are too visually similar (only ~2 characters differ) to
+  # reliably tell apart by template matching. Close now always uses the
+  # real, measured close_result_point below instead (see
+  # bounty_mission.py's RESULT-CLOSE-CALIBRATION-001 comment).
+  # The "확률" (odds/probability) label -- generic reward-screen UI
+  # chrome, never the mission title -- confirms the reward screen is
+  # actually showing before claim is ever tapped.
+  reward_odds_label: "reward_odds_label.png"
+  # REFRESH-CALIBRATION-001: real crops of the region-quest renewal
+  # confirm dialog's title sentence and "갱신 금액" label -- see
+  # refresh_popup_title_roi/refresh_popup_anchor_roi above.
+  refresh_popup_title: "refresh_popup_title.png"
+  refresh_popup_renew_label: "refresh_popup_renew_label.png"
   # GAME-CAL-001 (real-capture rework): calibrated from 3 real, supplied
   # 1280x720 customer captures of the 임무 (Mission) > 지역 (Region)
   # detail screen -- see tests/fixtures/game_cal_001/ (source PNGs +
@@ -75,12 +116,24 @@ template_map:
 # Tap points to select/check each of the 5 bounty slots. Exactly 5
 # entries expected by the state machine (config itself allows any
 # non-empty list; ldmanager.bounty_mission iterates whatever it's given).
+#
+# SLOT-SELECT-CALIBRATION-001 (real-capture rework): calibrated from a
+# real 1280x720 customer capture of the actual 임무 목록 (mission list)
+# panel -- see tests/fixtures/game_cal_001/source_extra/
+# mission_list_row1_completed.png and its PROVENANCE.md. Row band
+# boundaries were measured directly (mean-brightness scan of the list
+# column, not eyeballed) and centered: row 1 y=186-256 (center 221),
+# row 2 y=268-337 (center 302), row 3 y=350-418 (center 384), row 4
+# y=431-499 (center 465), row 5 y=513-581 (center 547); x centered on
+# the row banner (~150px of 1280). The prior placeholder values (evenly
+# spaced 0.20/0.35/0.50/0.65/0.80) were off by up to 0.11 -- enough to
+# miss the ~0.097-tall row bands entirely on a real capture.
 slot_select_points:
-  - {x: 0.10, y: 0.20}
-  - {x: 0.10, y: 0.35}
-  - {x: 0.10, y: 0.50}
-  - {x: 0.10, y: 0.65}
-  - {x: 0.10, y: 0.80}
+  - {x: 0.1172, y: 0.3069}
+  - {x: 0.1172, y: 0.4194}
+  - {x: 0.1172, y: 0.5333}
+  - {x: 0.1172, y: 0.6458}
+  - {x: 0.1172, y: 0.7597}
 
 # A mission is only accepted when BOTH of these are recognized in the
 # currently-selected slot's opened mission panel -- phrase alone or
@@ -90,17 +143,56 @@ mission_phrase_label: "모든 몬스터 처치"
 mission_quantity_roi: {x: 0.30, y: 0.30, width: 0.20, height: 0.06}
 mission_quantity_label: "200"
 
+# ACCEPT-CONFIRM-001 (real-capture rework): a real customer live run
+# got stuck on the mission-detail popup that opens after selecting a
+# slot whose target phrase/quantity ALREADY matched (no refresh
+# needed) -- the flow never tapped this popup's "확인" button in that
+# case (only the post-refresh path did), leaving it open and blocking
+# every subsequent slot's select tap. Real, measured center of that
+# "확인" button -- see tests/fixtures/game_cal_001/source_extra/
+# bounty_accept_popup_target.png and its PROVENANCE.md entry. Always
+# used directly (no dynamic button_accept_mission template search --
+# that asset is a pre-GAME-CAL-001 placeholder, 180x55, that only
+# scores 0.726 against this real popup, below the 0.8 threshold; see
+# bounty_mission.py's ACCEPT-CONFIRM-001 comment).
+accept_mission_point: {x: 0.5867, y: 0.7292}
+
 # Refresh (reroll) flow for the currently-selected slot.
-refresh_button_point: {x: 0.85, y: 0.90}
+# REFRESH-TRIGGER-CORRECTION-001: refresh_button_point is the real,
+# measured center of the accept POPUP's OWN embedded price/counter box
+# (immediately left of accept_mission_point's "확인" button, same row)
+# -- confirmed via a real customer screen recording: tapping this
+# exact box (not the underlying list's persistent currency-action box
+# -- see the correction note below) opens the real "지역 퀘스트를
+# 갱신 하시겠습니까?" dialog. REFRESH-CALIBRATION-001 originally
+# calibrated this point against the WRONG box -- the persistent
+# currency-action indicator visible on the plain list view -- which
+# looks nearly identical but sits at a different screen position and,
+# because the accept popup is already open by the time this tap fires
+# (select immediately shows it -- see ACCEPT-CONFIRM-001), is not
+# interactive at that moment. Always tapped directly, never a dynamic
+# OR-search across the 4 stale/unreliable button_refresh_4400/6600/
+# 9900/14900 placeholder assets (see template_map's comment above for
+# why they were removed).
+refresh_button_point: {x: 0.4141, y: 0.7292}
 
 # Structural popup verification -- two independent, cost-INDEPENDENT
 # landmarks that must BOTH be recognized before the confirm button is
-# ever tapped.
-refresh_popup_anchor_roi: {x: 0.35, y: 0.40, width: 0.30, height: 0.10}
-refresh_popup_anchor_label: "새로고침"
-refresh_popup_title_roi: {x: 0.35, y: 0.30, width: 0.30, height: 0.08}
-refresh_popup_title_label: "확인"
-refresh_confirm_point: {x: 0.55, y: 0.60}
+# ever tapped. Calibrated from a real customer capture of the actual
+# "지역 퀘스트를 갱신 하시겠습니까?" renewal-confirm dialog -- see
+# tests/fixtures/game_cal_001/source_extra/region_quest_renew_confirm.png
+# and its PROVENANCE.md entry. Confirmed (real OpenCVTemplateRecognizer)
+# to match ONLY that real popup and none of the other 9 real captures on
+# file (next-highest false-positive confidence: 0.721, still well under
+# the 0.8 threshold).
+refresh_popup_anchor_roi: {x: 0.293, y: 0.4264, width: 0.0703, height: 0.0319}
+refresh_popup_anchor_label: "refresh_popup_renew_label"
+refresh_popup_title_roi: {x: 0.2594, y: 0.2417, width: 0.4805, height: 0.0444}
+refresh_popup_title_label: "refresh_popup_title"
+# Real, measured center of the renewal dialog's "확인" button -- always
+# used directly (no dynamic button_refresh_confirm template search; see
+# bounty_mission.py's REFRESH-CALIBRATION-001 comment for why).
+refresh_confirm_point: {x: 0.5867, y: 0.7278}
 
 # Kill-progress / completion eligibility -- two independent signals;
 # either one confirms eligibility to select+complete. 0-199/200 must
@@ -116,27 +208,82 @@ complete_state_roi: {x: 0.4375, y: 0.7083, width: 0.1172, height: 0.0694}
 complete_state_label: "complete_badge"
 
 # Complete -> reward -> claim -> result -> close -> mission list.
-select_complete_point: {x: 0.10, y: 0.20}
+# COMPLETE-SLOT-TRACKING-001: select_complete_point is kept for
+# config-schema/backward-compat stability only -- it is no longer
+# consulted by run_one_cycle's live completion path, which now
+# re-selects whichever slot_select_points[i] was actually verified
+# eligible (never a fixed "always row 1" point -- see
+# docs/HANDOFF_CODE.md's COMPLETE-SLOT-TRACKING-001 section).
+select_complete_point: {x: 0.1172, y: 0.3069}
 complete_button_point: {x: 0.85, y: 0.90}
-reward_screen_roi: {x: 0.30, y: 0.30, width: 0.40, height: 0.15}
-reward_screen_label: "보상 획득"
-claim_point: {x: 0.50, y: 0.70}
-result_screen_roi: {x: 0.30, y: 0.20, width: 0.40, height: 0.15}
-result_screen_label: "결과"
-close_result_point: {x: 0.90, y: 0.10}
-mission_list_roi: {x: 0.05, y: 0.05, width: 0.30, height: 0.08}
-mission_list_label: "현상금 목록"
+# REWARD-SCREEN-CALIBRATION-001 (real-capture rework): calibrated from
+# a real customer capture of the actual "보상 받기" screen (see
+# tests/fixtures/game_cal_001/source_extra/reward_screen.png +
+# PROVENANCE.md). reward_screen_label points at the "확률" (odds) label
+# -- generic UI chrome present regardless of mission title -- confirmed
+# to NOT match any of the mission-detail/list real captures.
+reward_screen_roi: {x: 0.4531, y: 0.2569, width: 0.0938, height: 0.0903}
+reward_screen_label: "reward_odds_label"
+# Real, measured center of the "보상 받기" button -- fixed-fallback only
+# (the dynamic button_claim_reward template above is tried first).
+claim_point: {x: 0.5012, y: 0.7104}
+# RESULT-CLOSE-CALIBRATION-001 (real-capture rework): the post-claim
+# result view shows the SAME "확률" (odds) indicator as the pre-claim
+# reward popup -- confirmed (real OpenCVTemplateRecognizer, a real
+# customer capture of this exact screen) to match both at high
+# confidence (~0.81-1.0) while still never matching any of the plain
+# mission-detail/list real captures (~0.26-0.30) -- reusing it here is
+# safe and reliable, unlike text-matching the "닫기"/"보상 받기"
+# buttons themselves (nearly identical button frame, only ~2 characters
+# differ -- too close to reliably tell apart by template alone).
+result_screen_roi: {x: 0.4531, y: 0.2569, width: 0.0938, height: 0.0903}
+result_screen_label: "reward_odds_label"
+# Real, measured center of the "닫기" button -- same position as
+# claim_point above (same button frame, different game state) --
+# always used directly (no dynamic template search here; see
+# bounty_mission.py's RESULT-CLOSE-CALIBRATION-001 comment for why).
+close_result_point: {x: 0.5012, y: 0.7104}
+# mission_objective_label ("임무 목표") is present on every plain
+# mission-detail/list real capture and confirmed to NOT match the
+# reward/result popups (~0.07) -- the correct, precise confirmation
+# that closing actually returned to a normal (non-popup) view.
+mission_list_roi: {x: 0.2344, y: 0.6389, width: 0.1250, height: 0.0833}
+mission_list_label: "mission_objective_label"
 
 # Bounded retry/timeout policy -- every loop stops after this many
 # attempts rather than looping forever.
+# RETRY-BUDGET-001/RETRY-BUDGET-002: a real live run reported
+# "refresh popup never verified" recurring intermittently even after
+# RETRY-PACING-001 started actually pacing retries -- i.e. sometimes
+# worked, sometimes didn't, the signature of a timing margin that's
+# merely thin rather than absent (or wrong). max_popup_verify_attempts
+# was widened first (RETRY-BUDGET-001); the SAME symptom then recurred
+# on mission_list_verify_failed instead (a real live run's next
+# report) -- confirming the thin-margin problem was never specific to
+# the popup-verify step, it applies equally to every UI-transition-
+# dependent verify loop in this module (they all went completely
+# unpaced until RETRY-PACING-001, so all are equally exposed).
+# RETRY-BUDGET-002 widened the remaining four to match
+# (max_complete/reward/result/mission_list_verify_attempts: 3 -> 5).
+# If "never verified" still recurs on some step after this, it likely
+# needs real evidence (a screen recording of the exact miss) rather
+# than a further budget increase.
 max_capture_attempts: 3
 max_refresh_attempts: 5
-max_popup_verify_attempts: 3
+max_popup_verify_attempts: 5
 max_kill_progress_poll_attempts: 10
-max_reward_verify_attempts: 3
-max_result_verify_attempts: 3
-max_mission_list_verify_attempts: 3
-retry_delay_seconds: 1.0
+# COMPLETE-RETRY-001: if the complete tap doesn't confidently land, how
+# many times to re-select the eligible slot and retry before giving up.
+max_complete_verify_attempts: 5
+max_reward_verify_attempts: 5
+max_result_verify_attempts: 5
+max_mission_list_verify_attempts: 5
+# Customer-speed profile: ordinary UI settles are short; only a failed
+# structural check uses the longer bounded retry pace.
+ui_settle_delay_seconds: 0.2
+ack_popup_delay_seconds: 0.2
+result_close_delay_seconds: 0.3
+retry_delay_seconds: 0.4
 
 # --- GAME-CAL-001 (real-capture rework): screen classification --------
 #

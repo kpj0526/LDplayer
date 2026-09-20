@@ -22,8 +22,9 @@ def test_runtime_slots_are_independent_and_reset_only_when_explicit():
     one.slots[1] = SlotState.NON_TARGET
     assert one.locked_count == 1
     assert two.locked_count == 0
-    one.reset_after_verified_return()
+    one.reset_after_verified_return(next_slot_index=4)
     assert one.slots == [SlotState.UNKNOWN] * 5
+    assert one.next_slot_index == 4
 
 
 def test_click_and_verify_requires_expected_template():

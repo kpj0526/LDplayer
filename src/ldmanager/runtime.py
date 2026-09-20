@@ -30,6 +30,10 @@ class VerificationError(str, Enum):
 @dataclass
 class AccountMissionRuntime:
     slots: list[SlotState] = field(default_factory=lambda: [SlotState.UNKNOWN] * 5)
+    # The next configuration pass resumes from the row after the slot
+    # whose completed reward/result popup was just closed.  This avoids
+    # a disruptive jump to row 1 after every successful close.
+    next_slot_index: int = 1
     phase: str = "IDLE"
     last_template: str = ""
     last_score: float = 0.0
@@ -45,8 +49,9 @@ class AccountMissionRuntime:
     def configured(self) -> bool:
         return self.locked_count == 5
 
-    def reset_after_verified_return(self) -> None:
+    def reset_after_verified_return(self, *, next_slot_index: int = 1) -> None:
         self.slots[:] = [SlotState.UNKNOWN] * 5
+        self.next_slot_index = next_slot_index
         self.phase = "CONFIGURING"
 
 
