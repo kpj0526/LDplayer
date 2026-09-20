@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.3-rc.27
+
+- Fix dungeon/plain-detail refresh: if the popup-only refresh point does not produce the confirmed dialog, tap only a confidently detected visible currency-action button and then re-verify the dialog.
+
 ## v1.0.3-rc.26
 
 - Fix the result-close timing race: wait for the popup to become interactive, then retry the measured close touch only while the result popup remains visible.

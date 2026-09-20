@@ -164,6 +164,26 @@ def _tap_template(
     return result.ok
 
 
+def _tap_visible_currency_action(
+    runner: AdbRunner, serial: str, config: BountyMissionConfig, recognizer: Recognizer,
+) -> bool:
+    """Tap a *currently visible* configured reroll/currency button.
+
+    Some mission types open the accept popup on row selection; others
+    (the real dungeon mission supplied by the customer) remain on the
+    plain detail view, where the only interactive refresh control is the
+    persistent currency-action button at a different position.  This
+    helper never guesses that position: it taps only a confident current
+    whole-button template match, on the same explicit serial.
+    """
+
+    for label in config.currency_action_labels:
+        tapped = _tap_template(runner, serial, config, recognizer, label)
+        if tapped:
+            return True
+    return False
+
+
 def _mission_is_acceptable(runner, serial, config, recognizer) -> MissionAssessment:
     """Is the currently-selected mission the configured target objective?
 
@@ -460,6 +480,28 @@ def _accept_or_refresh_slot(
             )
             if ack_failure is not None:
                 return None, ack_failure
+
+            # REFRESH-PLAIN-DETAIL-001: selecting a dungeon-type mission
+            # can leave the plain detail view open (the live capture shows
+            # its 4400 currency-action button at the bottom), rather than
+            # opening the accept popup whose embedded price box the fixed
+            # point above targets.  Re-read the structural popup after any
+            # acknowledgement handling, then use a confident, currently
+            # visible whole-button match as the *only* alternate trigger.
+            # This keeps popup-type missions on their measured fixed point
+            # and prevents a blind tap on an unknown screen.
+            popup_verified = _verify_refresh_popup(runner, serial, config, recognizer)
+            if not popup_verified and should_stop():
+                return None, BountyCycleResult(
+                    BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (before plain-detail refresh open)."
+                )
+            if not popup_verified and _tap_visible_currency_action(runner, serial, config, recognizer):
+                if should_stop():
+                    return None, BountyCycleResult(
+                        BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (plain-detail refresh open)."
+                    )
+                sleep_fn(config.retry_delay_seconds)
+                popup_verified = _verify_refresh_popup(runner, serial, config, recognizer)
 
         for popup_attempt in range(1, config.max_popup_verify_attempts + 1):
             if should_stop():

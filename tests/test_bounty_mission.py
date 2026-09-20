@@ -565,6 +565,44 @@ def test_refresh_open_tap_failure_detail_includes_the_real_adb_stderr():
     assert "error: device offline" in result.detail
 
 
+def test_plain_detail_refresh_uses_the_visible_currency_action_button_after_popup_trigger_misses():
+    """REFRESH-PLAIN-DETAIL-001: the live dungeon detail view has no
+    accept popup.  Its real bottom currency-action button, not the
+    popup-only fixed point, must be used as the alternate refresh
+    trigger; structural confirmation still gates confirm."""
+
+    cfg = _config(
+        template_map={"currency_action_4400": "currency_action_4400.png"},
+        currency_action_labels=("currency_action_4400",),
+        max_refresh_attempts=1,
+    )
+    runner = _runner_with_valid_captures()
+    action_point = RelativeCoordinate(x=0.84, y=0.93)
+    action_args = tuple(build_tap_args(cfg.screen_size, action_point))
+
+    class _PlainDetailThenRefreshPopupRecognizer:
+        def recognize(self, image_bytes, roi, expected_label, threshold):
+            if expected_label == "currency_action_4400":
+                return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test", (0.84, 0.93))
+            if expected_label in {_POPUP_ANCHOR, _POPUP_TITLE}:
+                # The confirmation dialog appears only after the dynamic
+                # plain-detail action button was tapped.
+                matched = (_SERIAL, action_args) in runner.calls
+                if matched:
+                    return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test")
+            return RecognitionResult(RecognitionStatus.NO_MATCH, None, 0.05, "test")
+
+    confirm_args = tuple(build_tap_args(cfg.screen_size, cfg.refresh_confirm_point))
+    result = _run(
+        runner, _PlainDetailThenRefreshPopupRecognizer(), cfg,
+        should_stop=lambda: (_SERIAL, confirm_args) in runner.calls,
+    )
+
+    assert result.outcome is BountyOutcome.STOPPED
+    assert (_SERIAL, action_args) in runner.calls
+    assert (_SERIAL, confirm_args) in runner.calls
+
+
 def test_refresh_confirm_is_always_position_based_never_template_matched():
     """Same fix, applied to the confirm tap: a real
     'button_refresh_confirm' template configured but not confidently
