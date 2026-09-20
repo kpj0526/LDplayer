@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.3-rc.26
+
+- Fix the result-close timing race: wait for the popup to become interactive, then retry the measured close touch only while the result popup remains visible.
+- Require a fresh mission-list return check after every close attempt; include the close-attempt count in a failure diagnostic.
+
 ## v1.0.3-rc.25
 
 - Fix the pre-confirm acknowledgement/odds overlay shown after a refresh-open tap.

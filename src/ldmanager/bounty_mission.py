@@ -857,22 +857,51 @@ def run_one_cycle(
     # (SLOT-SELECT-CALIBRATION-001): the preceding result_screen_label
     # check already confirmed we're on a real post-complete popup
     # before this fixed-point tap ever fires.
-    close = runner.run(serial, build_tap_args(config.screen_size, config.close_result_point))
-    if not close.ok:
-        return BountyCycleResult(
-            BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes),
-            f"Close-result tap failed (rc={close.returncode}, stderr={_short(close.stderr)}).",
-        )
-
     if runtime is not None:
         runtime.phase = "VERIFYING_MISSION_LIST"
-    if should_stop():
-        return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before mission-list verification.")
-
+    # RESULT-CLOSE-POSTCONDITION-001: the real 1280x720 customer capture
+    # confirms close_result_point is correct (641.5, 511.5 lies inside the
+    # visible close button).  The failure is timing: the old code tapped
+    # immediately after the lightweight "odds" marker first appeared,
+    # then only searched for the list.  A touch delivered while the popup
+    # was still becoming interactive can be ignored by the game although
+    # ADB reports success, leaving the popup visible forever.  Pace the
+    # first touch, and retry it only after fresh evidence that the result
+    # popup is still present.  This is bounded and never taps an unknown
+    # screen.
     list_ok = False
+    close_attempts = 0
     for attempt in range(1, config.max_mission_list_verify_attempts + 1):
         if should_stop():
             return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped during mission-list verification.")
+
+        # Let the result popup complete its entrance animation before
+        # touching its measured button.  This is intentionally before the
+        # first close as well as between later attempts.
+        sleep_fn(config.retry_delay_seconds)
+        result_still_shown = _recognize(
+            runner, serial, config, recognizer, config.result_screen_roi, config.result_screen_label,
+        )
+        if result_still_shown is None:
+            return BountyCycleResult(
+                BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes),
+                "Capture failed while checking whether the result popup is still shown.",
+            )
+        if result_still_shown.matched:
+            if should_stop():
+                return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before closing result.")
+            close = runner.run(serial, build_tap_args(config.screen_size, config.close_result_point))
+            close_attempts += 1
+            if not close.ok:
+                return BountyCycleResult(
+                    BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes),
+                    f"Close-result tap failed (rc={close.returncode}, stderr={_short(close.stderr)}).",
+                )
+            if should_stop():
+                return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped after closing result.")
+
+        # Fresh postcondition capture.  Do not assume a successful ADB
+        # input actually dismissed the game popup.
         listing = _recognize(runner, serial, config, recognizer, config.mission_list_roi, config.mission_list_label)
         if listing is not None and listing.matched:
             list_ok = True
@@ -883,7 +912,8 @@ def run_one_cycle(
     if not list_ok:
         return BountyCycleResult(
             BountyOutcome.MISSION_LIST_VERIFY_FAILED, tuple(slot_outcomes),
-            f"Mission list never verified within {config.max_mission_list_verify_attempts} attempt(s).",
+            f"Mission list never verified within {config.max_mission_list_verify_attempts} attempt(s) "
+            f"after {close_attempts} verified-popup close attempt(s).",
         )
 
     # Only after verified close + mission-list return is it legal to forget

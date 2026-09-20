@@ -1225,3 +1225,40 @@ def test_close_result_tap_uses_the_exact_configured_close_point_never_a_template
     assert result.outcome is BountyOutcome.COMPLETED_CYCLE
     expected_args = tuple(build_tap_args(cfg.screen_size, cfg.close_result_point))
     assert (_SERIAL, expected_args) in runner.calls
+
+
+def test_result_close_retries_only_while_popup_is_still_verified_then_requires_list_return():
+    """RESULT-CLOSE-POSTCONDITION-001: the game can ignore the first
+    close touch while its popup entrance animation is still running.
+    A second measured close is permitted only because a fresh result
+    marker remains visible; once the list returns, no third close is
+    sent."""
+
+    cfg = _config(max_mission_list_verify_attempts=3)
+    runner = _runner_with_valid_captures()
+    close_args = (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.close_result_point)))
+
+    class _FirstCloseIgnoredRecognizer:
+        def __init__(self):
+            self.reward_checks = 0
+
+        def recognize(self, image_bytes, roi, expected_label, threshold):
+            if expected_label == _REWARD:
+                # No acknowledgement popup after accept; do expose the
+                # real reward screen later in the completion flow.
+                self.reward_checks += 1
+                matched = self.reward_checks >= 2
+            elif expected_label == _RESULT:
+                matched = True
+            elif expected_label == _MISSION_LIST:
+                matched = sum(call == close_args for call in runner.calls) >= 2
+            else:
+                matched = expected_label in _ALL_LABELS
+            if matched:
+                return RecognitionResult(RecognitionStatus.MATCH, expected_label, 1.0, "test")
+            return RecognitionResult(RecognitionStatus.NO_MATCH, None, 0.05, "test")
+
+    result = _run(runner, _FirstCloseIgnoredRecognizer(), cfg, runtime=AccountMissionRuntime())
+
+    assert result.outcome is BountyOutcome.COMPLETED_CYCLE
+    assert sum(call == close_args for call in runner.calls) == 2
