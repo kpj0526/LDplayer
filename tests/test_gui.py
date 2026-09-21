@@ -130,15 +130,19 @@ def test_panel_start_stop_buttons_call_controller_once_verified_ok(monkeypatch, 
     assert calls == [("start", AccountId.LD1), ("stop", AccountId.LD1)]
 
 
-def test_global_start_all_stop_all_call_controller(monkeypatch, app):
+def test_start_all_starts_only_verified_accounts(monkeypatch, app):
     calls = []
-    monkeypatch.setattr(app._controller, "start_all", lambda: calls.append("start_all"))
+    monkeypatch.setattr(app._controller, "start_account", lambda aid: calls.append(aid))
     monkeypatch.setattr(app._controller, "stop_all", lambda: calls.append("stop_all"))
+    for panel in app._panels.values():
+        panel.set_capture_ready(False)
+    app._panels[AccountId.LD1].set_mapping_status("serial1", ConnectionStatus.OK, "ok")
+    app._panels[AccountId.LD1].set_capture_ready(True)
 
     app._on_start_all()
     app._on_stop_all()
 
-    assert calls == ["start_all", "stop_all"]
+    assert calls == [AccountId.LD1, "stop_all"]
 
 
 def test_refresh_updates_panel_from_status_snapshot(app):
@@ -415,3 +419,68 @@ def test_gui_without_a_serial_registry_never_raises_on_save_or_clear(app):
         panel.clear_button.invoke()  # must not raise
     finally:
         app._serial_registry = original_registry
+
+
+def test_unsaved_serial_text_is_never_used_for_capture(app, monkeypatch):
+    panel = app._panels[AccountId.LD8]
+    panel.set_mapping_status("saved-serial", ConnectionStatus.OK, "ok")
+    panel.serial_var.set("different-unsaved-serial")
+    calls = []
+    monkeypatch.setattr(panel, "_on_capture_test_cb", lambda aid, serial: calls.append(serial))
+    panel._on_capture_clicked()
+    assert calls == ["saved-serial"]
+
+
+@pytest.mark.parametrize("confirm,alignment_fails", [(True, False), (False, False), (True, True)])
+def test_windows_preflight_requires_explicit_pair_confirmation_and_saves_failed_frame(
+    app, monkeypatch, tmp_path, confirm, alignment_fails
+):
+    from types import SimpleNamespace
+    from ldmanager.adb import AdbBinaryResult
+    from ldmanager.capture_backends import HybridCaptureAdbRunner, WindowCaptureError
+    from ldmanager.window_targets import WindowTarget
+    from tests.test_capture_backends import _Inner
+    class Inner(_Inner):
+        def capture_binary(self, serial, args):
+            self.captures.append(serial)
+            return AdbBinaryResult(serial, tuple(args), 0, b"\x89PNG\r\n\x1a\nreference", "")
+    inner = Inner()
+    router = HybridCaptureAdbRunner(inner)
+    target = WindowTarget(123, 99, "LD8")
+    provider = SimpleNamespace(target=target, viewport=None, closed=False)
+    provider.capture_native_png = lambda: b"raw-window"
+    provider.capture_png = lambda: b"normalized"
+    provider.close = lambda: setattr(provider, "closed", True)
+    monkeypatch.setattr("ldmanager.gui.WindowsGraphicsCaptureProvider", lambda selected: provider)
+    def align(a, b):
+        if alignment_fails:
+            raise WindowCaptureError("comparison failed")
+        return SimpleNamespace(score=0.99), b"normalized"
+    monkeypatch.setattr("ldmanager.gui.align_game_viewport", align)
+    monkeypatch.setattr(app, "_readiness_check", lambda data: (True, "ok"))
+    monkeypatch.setattr(app, "_confirm_window_pair", lambda *args: confirm)
+    monkeypatch.setattr(app, "_window_capture_router", router)
+    monkeypatch.chdir(tmp_path)
+    panel = app._panels[AccountId.LD8]
+    panel.set_mapping_status("saved-serial", ConnectionStatus.OK, "ok")
+    panel.set_window_targets([target])
+    panel.window_var.set(target.display)
+    # Old verified provider must not replace the new explicit ADB reference.
+    app._on_capture_test(AccountId.LD8, "saved-serial")
+    expected = confirm and not alignment_fails
+    assert panel._capture_ready is expected
+    assert router.is_verified("saved-serial") is expected
+    assert inner.captures == ["saved-serial"]
+    assert provider.closed is not expected
+    assert list((tmp_path / "diagnostics/captures/LD8").glob("window-raw-*.png"))
+    assert list((tmp_path / "diagnostics/captures/LD8").glob("adb-capture-*.png"))
+    router.close()
+
+
+def test_disconnect_requires_new_preflight_even_after_reconnect(app):
+    panel = app._panels[AccountId.LD8]
+    panel.set_mapping_status("saved", ConnectionStatus.OK, "ok")
+    panel.set_capture_ready(True)
+    panel.set_mapping_status("saved", ConnectionStatus.DEVICE_NOT_FOUND, "offline")
+    panel.set_mapping_status("saved", ConnectionStatus.OK, "ok")
+    assert not panel._capture_ready

@@ -292,7 +292,9 @@ def assess_mission_target(
             return MissionAssessment.NON_TARGET_CONFIRMED
 
     active_target_label = "target_all_monsters_active"
-    if active_target_label in config.template_map:
+    # Prefer the calibrated phrase crop over the video-derived active crop:
+    # the latter's surrounding chrome also matched a real non-target screen.
+    if active_target_label in config.template_map and "mission_target_phrase" not in config.template_map:
         target = _recognize_in_roi(runner, serial, config, recognizer, _FULL_SCREEN, active_target_label)
         if target is None:
             return MissionAssessment.CAPTURE_UNAVAILABLE

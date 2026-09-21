@@ -1,5 +1,13 @@
 # LDplayer
 
+## v1.0.3-rc.34 별도 시험판
+
+Windows 캡처로 ADB 스크린샷을 대체했을 때 커밋 메모리 증가가 줄어드는지 측정합니다.
+기존 rc.33은 그대로 유지하며, 시험판 ZIP은 **별도 폴더**에 압축 해제합니다.
+운용 중 Windows 캡처 실패 시 해당 LD가 중단되며 ADB 캡처로 자동 전환하지 않습니다.
+Test capture에서 정확한 LD 창을 선택하고 ADB/Windows 화면 쌍을 확인해야 Start가 열립니다.
+메모리와 호출량 CSV는 30초마다 자동 저장합니다. [시험판 사용 안내](docs/WINDOWS_CAPTURE_TEST.md).
+
 ## 고객 최초 실행
 
 고객은 코드나 템플릿 좌표를 수정하지 않습니다. `ldmanager.exe` 실행 후

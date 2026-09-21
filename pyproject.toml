@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ldmanager"
-version = "1.0.3rc33"
+version = "1.0.3rc34"
 description = "LDPlayer multi-account manager (MVP-001: configurable, mock-verified MVP)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Proprietary" }
 dependencies = [
     "PyYAML>=6.0",
+    "psutil>=5.9,<8",
 ]
 
 [project.optional-dependencies]

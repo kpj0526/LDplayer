@@ -75,7 +75,8 @@ from typing import Dict, Optional
 from .adb import InputGateAdbRunner, PersistentTapAdbRunner, SubprocessAdbRunner
 from .bootstrap import bootstrap_default_configs
 from .bounty_config import BountyConfigError, load_bounty_config
-from .capture_backends import HybridCaptureAdbRunner
+from .capture_backends import HybridCaptureAdbRunner, WindowCaptureError
+from .memory_monitor import CallMetrics, MemoryMonitor
 from .bounty_mission import BountyCycleResult, BountyOutcome, run_one_cycle
 from .config import ConfigError, load_config, resolve_config_path
 from .controller import AccountController, AccountWorker
@@ -146,15 +147,18 @@ def _make_cycle_fn(account_id, serial_registry: LiveSerialRegistry, runner, reco
                 f"{account_id.value}: no ADB serial configured (or not yet saved) -- "
                 "no capture/ADB/touch attempted.",
             )
-        return run_one_cycle(
-            account_id=account_id,
-            serial=serial,
-            runner=runner,
-            recognizer=recognizer,
-            config=bounty_cfg,
-            should_stop=should_stop,
-            runtime=runtime,
-        )
+        try:
+            result = run_one_cycle(
+                account_id=account_id, serial=serial, runner=runner,
+                recognizer=recognizer, config=bounty_cfg,
+                should_stop=should_stop, runtime=runtime,
+            )
+        except WindowCaptureError as exc:
+            return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, (), str(exc))
+        router = getattr(runner, "capture_router", None)
+        if router is not None and router.fault(serial):
+            return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, (), router.fault(serial))
+        return result
 
     return _cycle
 
@@ -179,13 +183,15 @@ def build_controller() -> AccountController:
     # explicit customer action and the panel is already gated by successful
     # ADB mapping + capture preflight, so live input is enabled by default.
     # LDMANAGER_LIVE_MODE=0 remains an explicit diagnostic-only override.
-    base_runner = SubprocessAdbRunner(adb_path=app_config.adb_path)
+    metrics = CallMetrics()
+    base_runner = SubprocessAdbRunner(adb_path=app_config.adb_path, metrics=metrics)
     persistent_input = PersistentTapAdbRunner(base_runner)
-    capture_router = HybridCaptureAdbRunner(persistent_input)
+    capture_router = HybridCaptureAdbRunner(persistent_input, metrics)
     runner = InputGateAdbRunner(
         capture_router,
         live_enabled=os.environ.get(LIVE_MODE_ENV_VAR, "1") != "0",
     )
+    runner.capture_router = capture_router
     recognizer = OpenCVTemplateRecognizer(
         templates_dir=bounty_cfg.templates_dir,
         template_map=bounty_cfg.template_map,
@@ -215,11 +221,21 @@ def build_controller() -> AccountController:
     # remains the real subprocess-backed runner behind InputGateAdbRunner.
     controller.adb_runner = runner  # type: ignore[attr-defined]
     controller.window_capture_router = capture_router  # type: ignore[attr-defined]
+    controller.memory_monitor = MemoryMonitor(metrics, capture_router.snapshot)
     # LIVE-SERIAL-001: the GUI calls serial_registry.set(...) right after
     # every successful mapping Save/Clear so an already-running (or not
     # yet started) worker's very next cycle sees the new value.
     controller.serial_registry = serial_registry  # type: ignore[attr-defined]
     def readiness_check(image_bytes):
+        if not bounty_cfg.stable_screen_anchors:
+            return False, "Screen anchors are missing; use the test release's supplied bounty config."
+        from .capture_backends import _decode
+        try:
+            image = _decode(image_bytes)
+        except WindowCaptureError as exc:
+            return False, str(exc)
+        if image.shape[:2] != (bounty_cfg.screen_size.height, bounty_cfg.screen_size.width):
+            return False, "Game resolution does not match the supplied config. Expected 1280x720."
         # GAME-CAL-001: previously checked four very specific sub-state-
         # only templates (a refresh-popup title, a reward-result header,
         # a fixed "0/200" quantity crop) -- none of which are present on
@@ -266,8 +282,15 @@ def main() -> int:
         readiness_check=controller.readiness_check,  # type: ignore[attr-defined]
         serial_registry=controller.serial_registry,  # type: ignore[attr-defined]
         window_capture_router=controller.window_capture_router,  # type: ignore[attr-defined]
+        memory_monitor=controller.memory_monitor,
     )
-    app.run()
+    controller.memory_monitor.start()
+    try:
+        app.run()
+    finally:
+        controller.stop_all(join_timeout=4)
+        controller.window_capture_router.close()
+        controller.memory_monitor.close()
     return 0
 
 

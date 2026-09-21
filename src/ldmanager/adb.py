@@ -183,10 +183,15 @@ class SubprocessAdbRunner:
     "current device" fallback.
     """
 
-    def __init__(self, adb_path: str | None = None, timeout: float = 15.0, logger=None) -> None:
+    def __init__(self, adb_path: str | None = None, timeout: float = 15.0, logger=None, metrics=None) -> None:
         self.adb_path = resolve_adb_path(adb_path)
         self.timeout = timeout
         self._logger = logger
+        self.metrics = metrics
+
+    def record_process_start(self):
+        if self.metrics is not None:
+            self.metrics.add("adb_process_starts")
 
     def set_adb_path(self, adb_path: str | None) -> None:
         """Re-resolve and update the ADB executable path at runtime
@@ -200,6 +205,9 @@ class SubprocessAdbRunner:
     def list_devices(self) -> str:
         if self._logger:
             self._logger.info("adb devices via %s", self.adb_path)
+        if self.metrics is not None:
+            self.metrics.add("adb_discovery_calls")
+        self.record_process_start()
         completed = subprocess.run(
             [self.adb_path, "devices"],
             capture_output=True,
@@ -212,6 +220,7 @@ class SubprocessAdbRunner:
 
     def run(self, serial: str, args: Sequence[str]) -> AdbCommandResult:
         full_args = build_adb_command(self.adb_path, serial, args)
+        self.record_process_start()
         if self._logger:
             self._logger.info("adb command serial=%s args=%s", serial, list(args))
         completed = subprocess.run(
@@ -235,6 +244,9 @@ class SubprocessAdbRunner:
 
     def capture_binary(self, serial: str, args: Sequence[str]) -> AdbBinaryResult:
         full_args = build_adb_command(self.adb_path, serial, args)
+        self.record_process_start()
+        if self.metrics is not None:
+            self.metrics.record_capture()
         if self._logger:
             self._logger.info("adb binary command serial=%s args=%s", serial, list(args))
         completed = subprocess.run(
@@ -275,6 +287,7 @@ class PersistentTapAdbRunner:
                 return existing
             if existing is not None:
                 self._sessions.pop(serial, None)
+            self._inner.record_process_start()
             process = subprocess.Popen(
                 [self._inner.adb_path, "-s", serial, "shell"],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -316,7 +329,7 @@ class PersistentTapAdbRunner:
                 self.close_serial(serial)
                 return AdbCommandResult(serial, parts, 1, "", "Persistent ADB shell is not running.")
             try:
-                process.stdin.write(f"input tap {parts[3]} {parts[4]}; echo {marker}\n")
+                process.stdin.write(f"input tap {parts[3]} {parts[4]}; echo {marker}:$?\n")
                 process.stdin.flush()
                 deadline = time.monotonic() + self.timeout
                 while True:
@@ -328,8 +341,9 @@ class PersistentTapAdbRunner:
                         line = lines.get(timeout=remaining)
                     except queue.Empty:
                         continue
-                    if line == marker:
-                        return AdbCommandResult(serial, parts, 0, "", "")
+                    if line.startswith(marker + ":"):
+                        code = int(line[len(marker) + 1:])
+                        return AdbCommandResult(serial, parts, code, "", "" if code == 0 else "Android input tap failed")
             except (BrokenPipeError, OSError) as exc:
                 self.close_serial(serial)
                 return AdbCommandResult(serial, parts, 1, "", f"Persistent ADB shell failed: {exc}")
@@ -339,6 +353,15 @@ class PersistentTapAdbRunner:
             session = self._sessions.pop(serial, None)
         if session is not None and session[0].poll() is None:
             session[0].terminate()
+            try:
+                session[0].wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                session[0].kill()
+                session[0].wait(timeout=2)
+        if session is not None:
+            for stream in (session[0].stdin, getattr(session[0], "stdout", None)):
+                if stream is not None:
+                    stream.close()
 
     def close(self) -> None:
         with self._lock:

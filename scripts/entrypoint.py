@@ -24,4 +24,7 @@ if not getattr(sys, "frozen", False):
 from ldmanager.app import main  # noqa: E402  (import after sys.path setup)
 
 if __name__ == "__main__":
+    if len(sys.argv) == 3 and sys.argv[1] == "--self-test":
+        from ldmanager.self_test import run
+        raise SystemExit(run(sys.argv[2]))
     raise SystemExit(main())

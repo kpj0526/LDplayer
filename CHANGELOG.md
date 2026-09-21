@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.0.3-rc.34 — Windows capture / memory diagnostic TEST
+
+- Separate prerelease; rc.33 release/tag/ZIP are retained unchanged.
+- Windows-only runtime capture. Missing, failed, stale, closed or resized capture pauses that account, latches an error and blocks further input until a new preflight. No automatic ADB screenshot fallback.
+- Explicit HWND/PID window selection, game-viewport alignment against a one-time ADB reference, and side-by-side user confirmation before enabling Start. Start All obeys each account's preflight.
+- Wait for a newly delivered frame on every capture, including a post-input settle barrier. Retain one raw frame and encode PNG only on demand.
+- Record system commit/limit, kernel pools, per-process private bytes, per-account capture state and cumulative ADB/capture/tap counters every 30 seconds, including idle baseline time.
+- Prefer the calibrated mission phrase over the legacy active-target crop, fixing a non-target false match exposed by running the real-image OpenCV regression suite.
+- Isolated, fail-fast Windows packaging; includes a no-ADB packaged dependency/memory self-test.
+- LDPlayer/GPU compatibility and memory improvement still require measurement on the customer PC.
+
 ## v1.0.3-rc.33
 
 - Add a verified Windows Graphics Capture path for each LDPlayer window. A window frame is used only after it independently passes the same mission-screen validation as the ADB frame; any window-capture error safely falls back to that account's ADB capture.
