@@ -34,6 +34,9 @@ template_map:
   "모든 몬스터 처치": "target_all_monsters_0_of_200.png"
   "200": "target_all_monsters_0_of_200.png"
   target_all_monsters_0_of_200: "target_all_monsters_0_of_200.png"
+  # Used only after acceptance, for the same objective with a changing
+  # progress count (N/200). New-mission acceptance remains exact 0/200.
+  target_all_monsters_active: "target_all_monsters_active.png"
   # Do not map a generic active mission to 200/200. A future native ADB
   # capture should provide an exact completed-progress crop; until then the
   # independently matched complete button is the completion gate.

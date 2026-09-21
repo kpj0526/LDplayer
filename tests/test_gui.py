@@ -167,6 +167,27 @@ def test_capture_readiness_is_account_local(app):
     assert "disabled" in second.start_button.state()
 
 
+def test_failed_recapture_revokes_only_that_accounts_start_readiness(app, fake_runner):
+    """A stale successful probe cannot authorize Start after the latest
+    Test capture failed to produce a usable frame."""
+
+    first = app._panels[AccountId.LD1]
+    second = app._panels[AccountId.LD2]
+    first.set_mapping_status("127.0.0.1:5555", ConnectionStatus.OK, "ok")
+    second.set_mapping_status("127.0.0.1:5557", ConnectionStatus.OK, "ok")
+    first.set_capture_ready(True)
+    second.set_capture_ready(True)
+
+    # The shared fake's default empty capture is intentionally invalid PNG
+    # data, so capture_screenshot returns its normal structured failure.
+    app._on_capture_test(AccountId.LD1, "127.0.0.1:5555")
+
+    assert first._capture_ready is False
+    assert "disabled" in first.start_button.state()
+    assert second._capture_ready is True
+    assert "disabled" not in second.start_button.state()
+
+
 def test_serial_save_clears_capture_readiness(app):
     panel = app._panels[AccountId.LD1]
     panel.set_mapping_status("127.0.0.1:5555", ConnectionStatus.OK, "ok")

@@ -23,6 +23,10 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import queue
+import threading
+import time
+import uuid
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -236,23 +240,111 @@ class SubprocessAdbRunner:
         completed = subprocess.run(
             full_args,
             capture_output=True,
-            text=False,  # binary mode: never decode/translate the bytes
+            text=False,
             timeout=self.timeout,
             check=False,
             **_NO_CONSOLE_WINDOW_KWARGS,
         )
         stderr_text = completed.stderr.decode("utf-8", errors="replace") if completed.stderr else ""
-        result = AdbBinaryResult(
-            serial=serial,
-            args=tuple(args),
-            returncode=completed.returncode,
-            stdout_bytes=completed.stdout or b"",
-            stderr=stderr_text,
-        )
+        result = AdbBinaryResult(serial, tuple(args), completed.returncode, completed.stdout or b"", stderr_text)
         if self._logger:
             self._logger.info("adb binary result serial=%s rc=%s bytes=%s", serial, result.returncode, len(result.stdout_bytes))
         return result
 
+
+class PersistentTapAdbRunner:
+    """Keeps one ``adb -s SERIAL shell`` process per account for taps.
+
+    Only the known ``shell input tap X Y`` argv form is sent through a
+    persistent shell.  Discovery, screenshots and unrelated commands retain
+    the proven subprocess implementation.  Each session has a lock and a
+    completion marker, so commands from different LD serials never share
+    stdin/stdout or become interleaved.
+    """
+
+    def __init__(self, inner: SubprocessAdbRunner, timeout: float = 5.0) -> None:
+        self._inner = inner
+        self.timeout = timeout
+        self._sessions: dict[str, tuple[subprocess.Popen, queue.Queue[str], threading.Lock]] = {}
+        self._lock = threading.Lock()
+
+    def _session(self, serial: str):
+        with self._lock:
+            existing = self._sessions.get(serial)
+            if existing is not None and existing[0].poll() is None:
+                return existing
+            if existing is not None:
+                self._sessions.pop(serial, None)
+            process = subprocess.Popen(
+                [self._inner.adb_path, "-s", serial, "shell"],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                text=True, bufsize=1, **_NO_CONSOLE_WINDOW_KWARGS,
+            )
+            lines: queue.Queue[str] = queue.Queue()
+            def reader() -> None:
+                assert process.stdout is not None
+                for line in process.stdout:
+                    lines.put(line.rstrip("\r\n"))
+            threading.Thread(target=reader, name=f"adb-shell-reader-{serial}", daemon=True).start()
+            session = (process, lines, threading.Lock())
+            self._sessions[serial] = session
+            return session
+
+    def list_devices(self) -> str:
+        return self._inner.list_devices()
+
+    def capture_binary(self, serial: str, args: Sequence[str]) -> AdbBinaryResult:
+        return self._inner.capture_binary(serial, args)
+
+    def set_adb_path(self, adb_path: str | None) -> None:
+        self.close()
+        self._inner.set_adb_path(adb_path)
+
+    @property
+    def adb_path(self) -> str:
+        return self._inner.adb_path
+
+    def run(self, serial: str, args: Sequence[str]) -> AdbCommandResult:
+        validate_serial(serial)
+        parts = tuple(args)
+        if len(parts) != 5 or parts[:3] != ("shell", "input", "tap") or not parts[3].isdigit() or not parts[4].isdigit():
+            return self._inner.run(serial, args)
+        process, lines, session_lock = self._session(serial)
+        marker = f"__LDMANAGER_DONE_{uuid.uuid4().hex}__"
+        with session_lock:
+            if process.poll() is not None or process.stdin is None:
+                self.close_serial(serial)
+                return AdbCommandResult(serial, parts, 1, "", "Persistent ADB shell is not running.")
+            try:
+                process.stdin.write(f"input tap {parts[3]} {parts[4]}; echo {marker}\n")
+                process.stdin.flush()
+                deadline = time.monotonic() + self.timeout
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        self.close_serial(serial)
+                        return AdbCommandResult(serial, parts, 1, "", "Persistent ADB shell tap timed out.")
+                    try:
+                        line = lines.get(timeout=remaining)
+                    except queue.Empty:
+                        continue
+                    if line == marker:
+                        return AdbCommandResult(serial, parts, 0, "", "")
+            except (BrokenPipeError, OSError) as exc:
+                self.close_serial(serial)
+                return AdbCommandResult(serial, parts, 1, "", f"Persistent ADB shell failed: {exc}")
+
+    def close_serial(self, serial: str) -> None:
+        with self._lock:
+            session = self._sessions.pop(serial, None)
+        if session is not None and session[0].poll() is None:
+            session[0].terminate()
+
+    def close(self) -> None:
+        with self._lock:
+            serials = tuple(self._sessions)
+        for serial in serials:
+            self.close_serial(serial)
 
 class InputGateAdbRunner:
     """Production runner wrapper: capture/discovery always work; taps require

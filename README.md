@@ -6,7 +6,8 @@
 LDPlayer를 켜고 각 계정에 ADB serial을 저장한 뒤 **Test capture**를 한 번
 누릅니다. 프로그램이 내장 템플릿과 자동 비교해 현재 게임 화면을 확인하면
 그 계정의 Start가 활성화됩니다. 일치하지 않으면 저장된 캡처 파일만 지원팀에
-전달하면 되며, 고객은 Template calibration을 사용할 필요가 없습니다.
+전달하면 되며, 고객은 Template calibration을 사용할 필요가 없습니다. 각 LD의
+`Test capture`가 화면을 자동 검사하고, 통과한 LD만 Start가 활성화됩니다.
 
 ### 화면 확인 실패 시
 

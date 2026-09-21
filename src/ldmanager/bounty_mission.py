@@ -218,7 +218,7 @@ def _mission_is_acceptable(runner, serial, config, recognizer) -> MissionAssessm
     never treated as a screen/layout problem, see
     ``ldmanager.screen_classification``'s module docstring."""
 
-    return assess_mission_target(runner, serial, config, recognizer)
+    return assess_mission_target(runner, serial, config, recognizer, require_initial_zero=True)
 
 
 def _verify_refresh_popup(runner, serial, config, recognizer) -> Optional[bool]:

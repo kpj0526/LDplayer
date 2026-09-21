@@ -60,6 +60,7 @@ from typing import Callable, Optional
 
 from .adb import AdbRunner, resolve_adb_path
 from .calibration import TEMPLATE_SLOTS, crop_template
+from .capture_backends import WindowCaptureError, WindowsGraphicsCaptureProvider
 from .config import ConfigError
 from .config_mapping import (
     load_current_adb_mapping,
@@ -234,6 +235,7 @@ class LDManagerApp(tk.Tk):
         auto_refresh: bool = True,
         readiness_check=None,
         serial_registry=None,
+        window_capture_router=None,
     ) -> None:
         super().__init__()
         self.title("ldmanager (MVP)")
@@ -250,6 +252,9 @@ class LDManagerApp(tk.Tk):
         # ldmanager.app.LiveSerialRegistry. None (e.g. an older/minimal
         # caller) is a safe no-op -- see _on_save_mapping/_on_clear_mapping.
         self._serial_registry = serial_registry
+        # Optional HybridCaptureAdbRunner.  It remains optional so the GUI
+        # is still usable with lightweight test runners and older callers.
+        self._window_capture_router = window_capture_router
 
         self.global_error_var = tk.StringVar(value="")
         try:
@@ -379,20 +384,43 @@ class LDManagerApp(tk.Tk):
             return
         result = capture_screenshot(self._adb_runner, serial)
         if not result.ok:
+            # A prior successful probe must not keep Start enabled after a
+            # newer probe cannot even obtain a trustworthy frame.  This is
+            # account-local: an LD2 capture issue never invalidates LD1.
+            self._panels[account_id].set_capture_ready(False)
             self._panels[account_id].mapping_error_var.set(f"Capture failed: {result.detail}")
             return
         output_dir = Path("diagnostics") / "captures" / account_id.value
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"capture-{int(time.time())}.png"
+        output_path = output_dir / f"adb-capture-{int(time.time())}.png"
         output_path.write_bytes(result.image_bytes)
         if self._readiness_check is None:
             self._panels[account_id].mapping_error_var.set(f"Capture saved: {output_path}")
             return
         ready, detail = self._readiness_check(result.image_bytes)
         self._panels[account_id].set_capture_ready(ready)
-        self._panels[account_id].mapping_error_var.set(
-            f"{detail} Capture: {output_path}"
-        )
+        message = f"{detail} ADB capture: {output_path}"
+        if ready and self._window_capture_router is not None:
+            # Window capture is an opportunistic performance path.  The
+            # standard ADB capture above is the baseline test and always
+            # remains available; a GPU/window compatibility problem must
+            # never turn a verified account into a fabricated success.
+            provider = WindowsGraphicsCaptureProvider(account_id.value)
+            try:
+                window_png = provider.capture_png()
+                window_ready, window_detail = self._readiness_check(window_png)
+                if not window_ready:
+                    provider.close()
+                    message += f" Windows capture not enabled: {window_detail} (ADB fallback stays active.)"
+                else:
+                    window_path = output_dir / f"window-capture-{int(time.time())}.png"
+                    window_path.write_bytes(window_png)
+                    self._window_capture_router.register_verified_window(serial, provider)
+                    message += f" Windows capture verified: {window_path}"
+            except WindowCaptureError as exc:
+                provider.close()
+                message += f" Windows capture unavailable: {exc} (ADB fallback stays active.)"
+        self._panels[account_id].mapping_error_var.set(message)
 
     def _open_calibration(self) -> None:
         """Open a small real-PNG crop tool. Captures are first made with each
@@ -463,6 +491,9 @@ class LDManagerApp(tk.Tk):
         panel = self._panels[account_id]
         panel.show_save_result(result.ok, result.detail)
         if result.ok:
+            old_serial = self._current_mapping.get(account_id.value)
+            if old_serial and old_serial != result.adb_mapping.get(account_id.value) and self._window_capture_router is not None:
+                self._window_capture_router.unregister_window(old_serial)
             panel.set_capture_ready(False)
             self._current_mapping = result.adb_mapping
             # LIVE-SERIAL-001: propagate to an already-built (possibly
@@ -483,6 +514,9 @@ class LDManagerApp(tk.Tk):
         panel = self._panels[account_id]
         panel.show_save_result(result.ok, result.detail)
         if result.ok:
+            old_serial = self._current_mapping.get(account_id.value)
+            if old_serial and self._window_capture_router is not None:
+                self._window_capture_router.unregister_window(old_serial)
             panel.set_capture_ready(False)
             self._current_mapping = result.adb_mapping
             # LIVE-SERIAL-001: same live propagation as Save, above --

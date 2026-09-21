@@ -253,6 +253,7 @@ def _recognize_in_roi(runner, serial, config, recognizer, roi, label):
 
 def assess_mission_target(
     runner: AdbRunner, serial: str, config: BountyMissionConfig, recognizer: Recognizer,
+    *, require_initial_zero: bool = False,
 ) -> MissionAssessment:
     """Is the *currently selected* mission the configured target
     objective (e.g. "모든 몬스터 처치")? Both required conditions
@@ -277,6 +278,22 @@ def assess_mission_target(
     exact_target_label = "target_all_monsters_0_of_200"
     if exact_target_label in config.template_map:
         target = _recognize_in_roi(runner, serial, config, recognizer, _FULL_SCREEN, exact_target_label)
+        if target is None:
+            return MissionAssessment.CAPTURE_UNAVAILABLE
+        if target.matched:
+            return MissionAssessment.TARGET_CONFIRMED
+        if target.status in _UNCERTAIN_STATUSES:
+            return MissionAssessment.RECOGNITION_FAILED
+        # When choosing a newly refreshed mission, only its exact initial
+        # 0/200 line is acceptable.  During later progress/completion
+        # checks, the same target naturally reads N/200, so use the
+        # separate active-target crop rather than misclassifying it.
+        if require_initial_zero:
+            return MissionAssessment.NON_TARGET_CONFIRMED
+
+    active_target_label = "target_all_monsters_active"
+    if active_target_label in config.template_map:
+        target = _recognize_in_roi(runner, serial, config, recognizer, _FULL_SCREEN, active_target_label)
         if target is None:
             return MissionAssessment.CAPTURE_UNAVAILABLE
         if target.matched:

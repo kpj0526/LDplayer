@@ -72,9 +72,10 @@ import threading
 import time
 from typing import Dict, Optional
 
-from .adb import InputGateAdbRunner, SubprocessAdbRunner
+from .adb import InputGateAdbRunner, PersistentTapAdbRunner, SubprocessAdbRunner
 from .bootstrap import bootstrap_default_configs
 from .bounty_config import BountyConfigError, load_bounty_config
+from .capture_backends import HybridCaptureAdbRunner
 from .bounty_mission import BountyCycleResult, BountyOutcome, run_one_cycle
 from .config import ConfigError, load_config, resolve_config_path
 from .controller import AccountController, AccountWorker
@@ -84,10 +85,10 @@ from .recognition import OpenCVTemplateRecognizer
 from .runtime import AccountMissionRuntime
 from .screen_classification import MissionScreenState, classify_screen
 
-#: Real ADB taps are refused by InputGateAdbRunner unless this env var
-#: is exactly "1" -- mirrors the existing LDMANAGER_DEVELOPER_MODE
-#: pattern (gui.py) for the template-calibration UI. Unset/anything
-#: else = safe mode: discovery/capture work, taps do not.
+#: Set this to ``0`` only when diagnosing recognition without sending
+#: inputs. A customer Start action is live by default after its per-LD
+#: capture preflight succeeds; requiring a hidden shell environment flag
+#: made a packaged customer build appear to start while refusing all taps.
 LIVE_MODE_ENV_VAR = "LDMANAGER_LIVE_MODE"
 
 #: Delay between mission cycles for one account's worker, in seconds.
@@ -174,12 +175,16 @@ def build_controller() -> AccountController:
 
     app_config = load_config()
     bounty_cfg = load_bounty_config()
-    # Production always uses a subprocess-backed ADB runner, wrapped in
-    # InputGateAdbRunner (safe by default -- see module docstring).
-    # Discovery/capture always work; a real tap requires LDMANAGER_LIVE_MODE=1.
+    # Production always uses a subprocess-backed ADB runner.  Start is an
+    # explicit customer action and the panel is already gated by successful
+    # ADB mapping + capture preflight, so live input is enabled by default.
+    # LDMANAGER_LIVE_MODE=0 remains an explicit diagnostic-only override.
+    base_runner = SubprocessAdbRunner(adb_path=app_config.adb_path)
+    persistent_input = PersistentTapAdbRunner(base_runner)
+    capture_router = HybridCaptureAdbRunner(persistent_input)
     runner = InputGateAdbRunner(
-        SubprocessAdbRunner(adb_path=app_config.adb_path),
-        live_enabled=os.environ.get(LIVE_MODE_ENV_VAR) == "1",
+        capture_router,
+        live_enabled=os.environ.get(LIVE_MODE_ENV_VAR, "1") != "0",
     )
     recognizer = OpenCVTemplateRecognizer(
         templates_dir=bounty_cfg.templates_dir,
@@ -209,6 +214,7 @@ def build_controller() -> AccountController:
     # Runtime dependency exposed for GUI diagnostics/live-mode control; this
     # remains the real subprocess-backed runner behind InputGateAdbRunner.
     controller.adb_runner = runner  # type: ignore[attr-defined]
+    controller.window_capture_router = capture_router  # type: ignore[attr-defined]
     # LIVE-SERIAL-001: the GUI calls serial_registry.set(...) right after
     # every successful mapping Save/Clear so an already-running (or not
     # yet started) worker's very next cycle sees the new value.
@@ -259,6 +265,7 @@ def main() -> int:
         config_path=resolve_config_path(),
         readiness_check=controller.readiness_check,  # type: ignore[attr-defined]
         serial_registry=controller.serial_registry,  # type: ignore[attr-defined]
+        window_capture_router=controller.window_capture_router,  # type: ignore[attr-defined]
     )
     app.run()
     return 0

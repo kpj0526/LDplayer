@@ -44,6 +44,7 @@ Write-Host "Running PyInstaller ..."
     --clean `
     --name ldmanager `
     --windowed `
+    --collect-all windows_capture `
     --paths src `
     scripts\entrypoint.py
 
@@ -100,11 +101,11 @@ If you re-run the exe later, your saved configs\config.yaml /
 configs\bounty.yaml are never overwritten -- bootstrap only creates
 them the first time, when they don't exist yet.
 
-This build uses OpenCV template matching. Before pressing Start, use
-Test capture on each account and Template calibration to create the
-PNG crops, then map their filenames in configs\bounty.yaml under
-template_map and measure the ROI/tap settings. Missing templates fail
-closed and do not constitute a successful game setup.
+Before pressing Start, use Test capture for that account. It checks the
+mission-list screen automatically and enables Start only for the verified
+LD. The app uses Windows Graphics Capture when that automatic probe
+matches the game screen; otherwise it safely falls back to ADB capture.
+Customers do not use Template calibration or enter click coordinates.
 '@ | Set-Content -Encoding utf8 "$DistRoot\README_FIRST_RUN.txt"
 
 Write-Host ""

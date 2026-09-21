@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.3-rc.33
+
+- Add a verified Windows Graphics Capture path for each LDPlayer window. A window frame is used only after it independently passes the same mission-screen validation as the ADB frame; any window-capture error safely falls back to that account's ADB capture.
+- Keep one persistent, serial-scoped ADB shell per account for `input tap` commands, while discovery and screenshots keep the existing subprocess path.
+- Enable a customer Start by default after its per-account mapping and Test-capture preflight succeed. Set `LDMANAGER_LIVE_MODE=0` only for diagnostic no-input mode.
+- Revoke that account's Start readiness immediately when its latest Test capture fails, preventing a stale successful preflight from authorizing a later run.
+- Require the exact `0/200` target template while accepting a new mission; use the active-target template only after acceptance as its progress changes.
+
 ## v1.0.3-rc.32
 
 - Reduce long-running kill-progress polling: rotate one locked slot per account instead of touring all five rows on every pass.
