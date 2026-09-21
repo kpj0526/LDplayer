@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.3-rc.32
+
+- Reduce long-running kill-progress polling: rotate one locked slot per account instead of touring all five rows on every pass.
+- Reuse one ADB screenshot to check both `200/200` and the Complete button.
+- Poll the next locked slot every second (maximum five-second revisit for one row), reducing waiting-path ADB process creation while keeping completion response responsive.
+
 ## v1.0.3-rc.31
 
 - After a completed mission's reward/result close, reconfigure the replacement mission in that same row first; refresh non-target replacements before moving to lower rows.
