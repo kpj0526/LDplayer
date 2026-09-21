@@ -284,9 +284,9 @@ ui_settle_delay_seconds: 0.2
 ack_popup_delay_seconds: 0.2
 result_close_delay_seconds: 0.3
 retry_delay_seconds: 0.4
-# While waiting for kills, inspect one locked slot per cycle every 2s,
+# While waiting for kills, inspect one locked slot per cycle every 1s,
 # rather than repeatedly touring all five slots every second.
-kill_progress_poll_interval_seconds: 2.0
+kill_progress_poll_interval_seconds: 1.0
 
 # --- GAME-CAL-001 (real-capture rework): screen classification --------
 #
