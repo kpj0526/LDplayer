@@ -1340,7 +1340,7 @@ def test_configured_runtime_polls_one_rotating_slot_with_one_shared_capture():
     completion checks instead of touring all five slots."""
     runner = _runner_with_valid_captures()
     runtime = AccountMissionRuntime(slots=[SlotState.TARGET_LOCKED] * 5)
-    cfg = _config(max_kill_progress_poll_attempts=10, kill_progress_poll_interval_seconds=5.0)
+    cfg = _config(max_kill_progress_poll_attempts=10, kill_progress_poll_interval_seconds=2.0)
 
     first = _run(runner, LabelMappingRecognizer(), cfg, runtime=runtime)
 
@@ -1348,7 +1348,7 @@ def test_configured_runtime_polls_one_rotating_slot_with_one_shared_capture():
     assert len(runner.calls) == 1
     assert len(runner.capture_calls) == 1
     assert runtime.next_progress_slot_index == 2
-    assert first.recommended_delay_seconds == 5.0
+    assert first.recommended_delay_seconds == 2.0
 
     second = _run(runner, LabelMappingRecognizer(), cfg, runtime=runtime)
 
