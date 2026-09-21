@@ -219,8 +219,9 @@ class AccountWorker:
 
                 if self._stop_event.is_set():
                     break
-                if self._idle_delay_seconds:
-                    self._sleep_fn(self._idle_delay_seconds)
+                delay = getattr(result, "recommended_delay_seconds", 0.0) or self._idle_delay_seconds
+                if delay:
+                    self._sleep_fn(delay)
         except Exception as exc:  # worker exception containment
             if self._logger is not None:
                 self._logger.exception("worker crashed")

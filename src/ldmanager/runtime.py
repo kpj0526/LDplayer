@@ -34,6 +34,10 @@ class AccountMissionRuntime:
     # whose completed reward/result popup was just closed.  This avoids
     # a disruptive jump to row 1 after every successful close.
     next_slot_index: int = 1
+    # One completed-target slot is checked per waiting cycle.  Keeping this
+    # cursor per account prevents five LD rows from being selected/captured
+    # on every poll pass, while still rotating through all five fairly.
+    next_progress_slot_index: int = 1
     phase: str = "IDLE"
     last_template: str = ""
     last_score: float = 0.0
@@ -52,6 +56,7 @@ class AccountMissionRuntime:
     def reset_after_verified_return(self, *, next_slot_index: int = 1) -> None:
         self.slots[:] = [SlotState.UNKNOWN] * 5
         self.next_slot_index = next_slot_index
+        self.next_progress_slot_index = next_slot_index
         self.phase = "CONFIGURING"
 
 

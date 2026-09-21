@@ -138,6 +138,9 @@ class BountyMissionConfig:
     ui_settle_delay_seconds: float = 0.0
     ack_popup_delay_seconds: float = 0.0
     result_close_delay_seconds: float = 0.0
+    # Delay requested after one incomplete progress poll.  This is separate
+    # from retry_delay_seconds, which remains for short UI transitions.
+    kill_progress_poll_interval_seconds: float = 5.0
     capture_args: tuple[str, ...] = DEFAULT_CAPTURE_ARGS
     # Optional for backwards-compatible construction in focused state-machine
     # tests; production config supplies this from ``template_map``.
@@ -348,6 +351,7 @@ def load_bounty_config(explicit_path: Optional[Path] = None) -> BountyMissionCon
     ui_settle_delay_seconds = _timing("ui_settle_delay_seconds", float(retry_delay_seconds))
     ack_popup_delay_seconds = _timing("ack_popup_delay_seconds", float(retry_delay_seconds))
     result_close_delay_seconds = _timing("result_close_delay_seconds", float(retry_delay_seconds))
+    kill_progress_poll_interval_seconds = _timing("kill_progress_poll_interval_seconds", 5.0)
 
     if ("in_progress_roi" in raw) != ("in_progress_label" in raw):
         raise BountyConfigError(
@@ -397,6 +401,7 @@ def load_bounty_config(explicit_path: Optional[Path] = None) -> BountyMissionCon
         ui_settle_delay_seconds=ui_settle_delay_seconds,
         ack_popup_delay_seconds=ack_popup_delay_seconds,
         result_close_delay_seconds=result_close_delay_seconds,
+        kill_progress_poll_interval_seconds=kill_progress_poll_interval_seconds,
         stable_screen_anchors=_stable_screen_anchors(raw, path),
         min_stable_anchor_matches=_optional_positive_int(raw, "min_stable_anchor_matches", path),
         currency_action_labels=_string_tuple(raw, "currency_action_labels", DEFAULT_CURRENCY_ACTION_LABELS, path),

@@ -6,7 +6,7 @@ from ldmanager.bounty_mission import BountyOutcome, _cyclic_slot_order, run_one_
 from ldmanager.coordinates import RelativeCoordinate, RelativeRegion, ScreenSize, build_tap_args
 from ldmanager.models import AccountId
 from ldmanager.recognition import PlaceholderRecognizer, RecognitionResult, RecognitionStatus
-from ldmanager.runtime import AccountMissionRuntime
+from ldmanager.runtime import AccountMissionRuntime, SlotState
 from ldmanager.screenshot import DEFAULT_CAPTURE_ARGS
 from tests.fakes import FakeAdbRunner, LabelMappingRecognizer
 
@@ -1332,3 +1332,27 @@ def test_result_close_retries_only_while_popup_is_still_verified_then_requires_l
 
     assert result.outcome is BountyOutcome.COMPLETED_CYCLE
     assert sum(call == close_args for call in runner.calls) == 2
+
+
+def test_configured_runtime_polls_one_rotating_slot_with_one_shared_capture():
+    """Once five targets are locked, the long-running wait path selects
+    one account-local slot and shares one screenshot between both
+    completion checks instead of touring all five slots."""
+    runner = _runner_with_valid_captures()
+    runtime = AccountMissionRuntime(slots=[SlotState.TARGET_LOCKED] * 5)
+    cfg = _config(max_kill_progress_poll_attempts=10, kill_progress_poll_interval_seconds=5.0)
+
+    first = _run(runner, LabelMappingRecognizer(), cfg, runtime=runtime)
+
+    assert first.outcome is BountyOutcome.KILL_PROGRESS_NOT_COMPLETE
+    assert len(runner.calls) == 1
+    assert len(runner.capture_calls) == 1
+    assert runtime.next_progress_slot_index == 2
+    assert first.recommended_delay_seconds == 5.0
+
+    second = _run(runner, LabelMappingRecognizer(), cfg, runtime=runtime)
+
+    assert second.outcome is BountyOutcome.KILL_PROGRESS_NOT_COMPLETE
+    assert len(runner.calls) == 2
+    assert len(runner.capture_calls) == 2
+    assert runtime.next_progress_slot_index == 3

@@ -121,6 +121,10 @@ class BountyCycleResult:
     outcome: BountyOutcome
     slots: tuple[SlotOutcome, ...]
     detail: str
+    # Controller-owned pause after a non-action waiting result.  Keeping it
+    # in the result avoids a blocking sleep inside the state machine and
+    # allows Stop to be observed before another touch is sent.
+    recommended_delay_seconds: float = 0.0
 
     @property
     def ok(self) -> bool:
@@ -731,8 +735,16 @@ def run_one_cycle(
         i for i in slot_order
         if runtime is None or runtime.slots[i - 1] is SlotState.TARGET_LOCKED
     ]
+    # Production runtime: examine one account-local slot per cycle, then
+    # advance the cursor.  Legacy/stateless paths retain the older complete
+    # pass behavior for compatibility with focused test fixtures.
+    one_slot_poll = runtime is not None and runtime.configured
+    if one_slot_poll and candidate_slots:
+        requested = runtime.next_progress_slot_index
+        candidate_slots = [requested if requested in candidate_slots else candidate_slots[0]]
 
-    for _kp_attempt in range(1, config.max_kill_progress_poll_attempts + 1):
+    poll_attempts = 1 if one_slot_poll else config.max_kill_progress_poll_attempts
+    for _kp_attempt in range(1, poll_attempts + 1):
         if eligible:
             break
         if should_stop():
@@ -746,8 +758,19 @@ def run_one_cycle(
                 continue
             if should_stop():
                 return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped during kill-progress check.")
-            progress = _recognize(runner, serial, config, recognizer, config.kill_progress_roi, config.kill_progress_complete_label)
-            if progress is not None and progress.matched:
+            # One ADB screenshot serves BOTH completion checks.  Previously
+            # _recognize captured once for 200/200 and again for the Complete
+            # button, doubling screenshot subprocesses during the dominant
+            # long-running wait path.
+            frame = capture_screenshot(runner, serial, config.capture_args)
+            if not frame.ok:
+                progress_detail = f"slot {slot_index}: capture failed while checking kill progress"
+                continue
+            progress = recognizer.recognize(
+                frame.image_bytes, config.kill_progress_roi,
+                config.kill_progress_complete_label, config.threshold,
+            )
+            if progress.matched:
                 eligible = True
                 eligible_slot_index = slot_index
                 break
@@ -755,10 +778,12 @@ def run_one_cycle(
             # Locate that button by image (not by a fixed coordinate) before
             # allowing the completion transition.
             if "button_complete" in config.template_map:
-                complete_badge = _recognize(runner, serial, config, recognizer, _FULL_SCREEN, "button_complete")
+                complete_badge = recognizer.recognize(frame.image_bytes, _FULL_SCREEN, "button_complete", config.threshold)
             else:
-                complete_badge = _recognize(runner, serial, config, recognizer, config.complete_state_roi, config.complete_state_label)
-            if complete_badge is not None and complete_badge.matched:
+                complete_badge = recognizer.recognize(
+                    frame.image_bytes, config.complete_state_roi, config.complete_state_label, config.threshold,
+                )
+            if complete_badge.matched:
                 eligible = True
                 eligible_slot_index = slot_index
                 break
@@ -769,13 +794,16 @@ def run_one_cycle(
         # gameplay, not from anything this code does -- pace full
         # passes over the candidate slots rather than hammering ADB
         # continuously while waiting for it.
-        if _kp_attempt < config.max_kill_progress_poll_attempts:
+        if _kp_attempt < poll_attempts:
             sleep_fn(config.retry_delay_seconds)
 
     if not eligible or eligible_slot_index is None:
+        if one_slot_poll:
+            runtime.next_progress_slot_index = (candidate_slots[0] % config.slot_count) + 1
         return BountyCycleResult(
             BountyOutcome.KILL_PROGRESS_NOT_COMPLETE, tuple(slot_outcomes),
             f"0-199/200: not eligible yet ({progress_detail}); no complete/reward action taken.",
+            config.kill_progress_poll_interval_seconds if one_slot_poll else 0.0,
         )
 
     # --- Complete -> reward -> claim -> result -> close -> mission list. ---
