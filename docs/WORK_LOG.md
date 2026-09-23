@@ -1,5 +1,12 @@
 # WORK LOG
 
+## 2026-09-23 | KEEP-NEW-TARGET-PHRASE-001 | Manager
+
+- User corrected the diagnosis: it is the newly assigned post-reward `모든 몬스터 처치` mission being refreshed, not another surviving locked slot.
+- Packet issued in `docs/TASK_PACKET.md`; Code `cf3bbdd` changed the acceptance decision and completed-screen guard; 485 automated tests and packaged self-test passed.
+- Published customer-test prerelease `v1.0.3-rc.38`; ZIP SHA-256 `3F6F695C85143CC0A84D938CAA2E5E9FE16B341EA99B1B58B99C658472883CB9` verified locally and on GitHub.
+- Independent QA `NOT_TESTED`; real customer LDPlayer/game result `NEEDS_REAL_TEST`; no final PASS or branch integration.
+
 ## 2026-09-14 | REL-0.1.2-RC-01 | Manager
 
 - Performed: recorded user-operated verification that Browse -> Open -> Save accepts `D:\LDPlayer\LDPlayer14\adb.exe` in the ADB-path candidate GUI; prepared candidate-only publication.

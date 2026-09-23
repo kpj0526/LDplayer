@@ -1,5 +1,9 @@
 # ACCEPTANCE STATUS
 
+## KEEP-NEW-TARGET-PHRASE-001 (2026-09-23)
+
+Implementation: Code `cf3bbdd`, `MVP_IMPLEMENTED`. Automated regression: 485 passed; packaged self-test passed. Independent QA: `NOT_TESTED`. Real replacement-slot/game behavior: `NEEDS_REAL_TEST`. Final project acceptance remains unchanged and is not PASS.
+
 ## UI-ADB-001 extension (2026-09-12)
 
 Total ACs: `65`. The addition is planned only; implementation and QA counts remain unchanged until an exact Code commit and independent QA evidence exist.

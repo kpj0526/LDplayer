@@ -1,5 +1,12 @@
 # PROGRESS
 
+## KEEP-NEW-TARGET-PHRASE-001 customer-test publication (2026-09-23)
+
+- Corrected the replacement-slot acceptance decision, distinct from rc.37's preservation of the other four slots: a positively recognized `모든 몬스터 처치` objective no longer refreshes solely because the exact old `0/200` image misses.
+- Code commit `cf3bbdd`, 485 automated tests passed, Windows packaged self-test passed without ADB/game input.
+- Published `v1.0.3-rc.38` prerelease with matching local/remote ZIP SHA-256 `3F6F695C85143CC0A84D938CAA2E5E9FE16B341EA99B1B58B99C658472883CB9`.
+- Independent QA `NOT_TESTED`; customer replacement-slot/game behavior `NEEDS_REAL_TEST`. No final acceptance claim.
+
 ## GAME-CAL-001 prerelease published (2026-09-14)
 
 - Customer supplied 1280x720 mission-screen evidence after valid mapped accounts failed Test-capture preflight.

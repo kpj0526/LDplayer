@@ -1,5 +1,10 @@
 # DECISIONS
 
+## 2026-09-23 — replacement target recognition
+
+- User clarification overrides the older exact-count acceptance wording for a newly assigned mission: a calibrated positive `모든 몬스터 처치` objective is kept even if the rendered count is not exactly `0/200`. Exact count remains useful positive evidence but a mismatch alone is not a reason to refresh.
+- Do not infer this authorizes premature completion/reward clicks; an explicit completed-state check and the existing guarded claim flow remain required. Real count-specific game behavior is still `NEEDS_REAL_TEST`.
+
 ## 2026-09-12 — Customer-video flow is MVP-required
 
 - Decision: merge the supplied reference-video behavior into the existing MVP rather than defer refresh, acceptance, completion, reward, close, and re-refresh cycle.

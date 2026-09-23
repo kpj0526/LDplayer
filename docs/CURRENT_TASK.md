@@ -1,5 +1,12 @@
 # CURRENT TASK
 
+## Current task: KEEP-NEW-TARGET-PHRASE-001 (2026-09-23)
+
+- Status: Code `cf3bbdd` committed and customer-test prerelease `v1.0.3-rc.38` published. Manager task packet and documentation updated.
+- Exact issue: after reward, the new mission says `모든 몬스터 처치` but was renewed because its count did not match an old exact `0/200` image. This was not the surviving-slot state issue corrected in rc.37.
+- Verification: 485 automated tests and packaged self-test passed. Independent QA `NOT_TESTED`; actual customer LDPlayer/game behavior `NEEDS_REAL_TEST`.
+- Next: customer verifies one mapped LD slot after a reward; QA independently verifies Code `cf3bbdd` before any final PASS or integration.
+
 ## Current task: GAME-CAL-001 (2026-09-14)
 
 - Owner: Manager coordinates; existing Code implements/commits; existing QA independently verifies the exact submitted hash.

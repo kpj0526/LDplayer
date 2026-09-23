@@ -1,5 +1,12 @@
 # STATUS
 
+## KEEP-NEW-TARGET-PHRASE-001 (2026-09-23)
+
+- Status: `PUBLISHED_MVP_PRERELEASE` for customer test, not final PASS.
+- Cause/fix: after reward, a new `모든 몬스터 처치` objective was refreshed because the exact old `0/200` crop missed; the calibrated phrase now confirms that target before a refresh decision. Explicitly completed targets remain on the guarded claim path.
+- Code: `cf3bbdd`, v1.0.3-rc.38. Automated tests: 485 passed. Windows package self-test: exit 0, no game/ADB input. Independent QA: `NOT_TESTED`; actual LDPlayer replacement-slot behavior: `NEEDS_REAL_TEST`.
+- Release: [v1.0.3-rc.38](https://github.com/kpj0526/LDplayer/releases/tag/v1.0.3-rc.38), ZIP SHA-256 `3F6F695C85143CC0A84D938CAA2E5E9FE16B341EA99B1B58B99C658472883CB9`.
+
 ## GAME-CAL-001 (2026-09-14)
 
 - Status: `PUBLISHED_MVP_PRERELEASE`.
