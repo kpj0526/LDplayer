@@ -5132,3 +5132,8 @@ Run 3x in a row: `446 passed` every time, 0 failures. (Prior baseline
 - Customer rc.35 screenshot, normalized from a 635x374 LD window to 1280x720: `mission_target_phrase` 0.856, `button_complete` 0.900, exact `0/200` 0.673, refresh-popup landmarks absent. This explains `refresh_popup_not_verified` without assuming a capture failure.
 - Regression: the stored real completed-target frame is rendered at a 595x334 Windows viewport and renormalized; no refresh/accept tap is emitted. A completed non-target is stopped without refresh/claim input. Full suite: 482 passed.
 - Customer LDPlayer result: `NEEDS_REAL_TEST`; independent QA is pending.
+## PRESERVE-LOCKED-SLOTS-001 (2026-09-23)
+
+- Implementation commit `0a75d17`: after verified reward close and return to the mission list, only the claimed row is marked `UNKNOWN`. Other `TARGET_LOCKED` slots remain accepted; the next cycle starts with the replacement row.
+- Cause: rc.36 reset all five slots, then evaluated existing N/200 targets with the initial `0/200` acceptance rule. That converted surviving targets into refresh candidates.
+- Regression: slot 3 claim preserves locks on slots 1 and 2. In the next cycle, those slots have N/200 progress and are neither selected nor refreshed. Full suite: 482 passed. Real customer LDPlayer result and independent QA remain pending.

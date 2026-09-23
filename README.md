@@ -1,5 +1,11 @@
 # LDplayer
 
+## v1.0.3-rc.37 keep existing target missions after reward claim — customer test
+
+Download: [ldmanager-v1.0.3-rc.37-windows-capture-test.zip](https://github.com/kpj0526/LDplayer/releases/download/v1.0.3-rc.37/ldmanager-v1.0.3-rc.37-windows-capture-test.zip)
+
+This prerelease fixes unnecessary renewal of surviving `모든 몬스터 처치` missions after another slot's reward is claimed. Extract into a new folder and repeat the same serial/window `Test capture` workflow. Real customer verification remains pending.
+
 ## v1.0.3-rc.36 completed mission recognition — customer test
 
 Download: [ldmanager-v1.0.3-rc.36-windows-capture-test.zip](https://github.com/kpj0526/LDplayer/releases/download/v1.0.3-rc.36/ldmanager-v1.0.3-rc.36-windows-capture-test.zip)

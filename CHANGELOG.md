@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.3-rc.37 — preserve surviving target missions after claim
+
+- After a verified reward claim, mark only the claimed slot's replacement as unconfigured. Other accepted target slots retain their lock and are not re-evaluated as new `0/200` missions when their progress is already N/200.
+- Revisit the claimed slot first, then continue down the list; retain the existing guarded refresh and completion checks.
+- Add a regression proving surviving in-progress target slots receive no refresh input on the next cycle. Customer LDPlayer verification remains `NEEDS_REAL_TEST`.
+
 ## v1.0.3-rc.36 — completed target before refresh
 
 - Recognize an already-completed target mission before the initial `0/200` acceptance check can route it into renewal.
