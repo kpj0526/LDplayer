@@ -5120,3 +5120,9 @@ Run 3x in a row: `446 passed` every time, 0 failures. (Prior baseline
 - The refresh flow now probes the real confirm dialog first; on a structural miss it dismisses the overlay and requires fresh proof that the overlay is gone and the confirm dialog is present. A bounded failure is isolated to that account as `ack_popup_dismiss_failed`; confirm is not sent.
 - Added regression tests for close-before-confirm and a persistent overlay (bounded fail-closed/no confirm).
 - Verification: `.venv\\Scripts\\python.exe -m pytest -q` — 448 passed. Real customer LDPlayer/game validation remains required.
+## WINDOW-VIEWPORT-EDGE-001 (2026-09-23)
+
+- Implementation: `275890d` (`Fix Windows game viewport at capture edges`). Both matched rectangle edges are converted to native pixels and bounded to the captured LD window before crop. The same alignment function serves every account; unrelated/blank comparison and explicit window confirmation gates remain unchanged.
+- Regression: synthetic 635x374 Windows frame with 595x334 game area starting at y=40 and touching the bottom edge, also testing the right edge. Full suite: 480 passed. `git diff --check` clean.
+- Windows PyInstaller build: succeeded in a new isolated `dist/test-1.0.3-rc.34-20260923-121421/ldmanager` folder. It is a local validation artifact, not the published rc.34 binary.
+- Real customer LDPlayer result: `NEEDS_REAL_TEST`. Existing QA must independently verify exact Code commit before a release or final PASS.
