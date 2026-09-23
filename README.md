@@ -1,5 +1,11 @@
 # LDplayer
 
+## v1.0.3-rc.36 completed mission recognition — customer test
+
+Download: [ldmanager-v1.0.3-rc.36-windows-capture-test.zip](https://github.com/kpj0526/LDplayer/releases/download/v1.0.3-rc.36/ldmanager-v1.0.3-rc.36-windows-capture-test.zip)
+
+This prerelease fixes `refresh_popup_not_verified` when the selected target mission already shows `완료`. Extract into a new folder, map the matching ADB serial and LD window, run `Test capture`, and confirm the same account before Start. Customer live verification remains pending.
+
 ## v1.0.3-rc.35 Windows capture edge fix — customer test
 
 Download: [ldmanager-v1.0.3-rc.35-windows-capture-test.zip](https://github.com/kpj0526/LDplayer/releases/download/v1.0.3-rc.35/ldmanager-v1.0.3-rc.35-windows-capture-test.zip)

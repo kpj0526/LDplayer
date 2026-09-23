@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.3-rc.36 — completed target before refresh
+
+- Recognize an already-completed target mission before the initial `0/200` acceptance check can route it into renewal.
+- Keep the existing target and completed-state guards before reward input. A completed non-target mission stops without refresh or claim input.
+- Add a real-capture regression using the 595x334 Windows game viewport. Customer LDPlayer verification remains `NEEDS_REAL_TEST`.
+
 ## v1.0.3-rc.35 — Windows capture viewport edge correction
 
 - Fix `Game viewport is outside the captured window` when the game image reaches the right or bottom edge of an LDPlayer window capture.

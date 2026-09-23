@@ -5126,3 +5126,9 @@ Run 3x in a row: `446 passed` every time, 0 failures. (Prior baseline
 - Regression: synthetic 635x374 Windows frame with 595x334 game area starting at y=40 and touching the bottom edge, also testing the right edge. Full suite: 480 passed. `git diff --check` clean.
 - Windows PyInstaller build: succeeded in a new isolated `dist/test-1.0.3-rc.34-20260923-121421/ldmanager` folder. It is a local validation artifact, not the published rc.34 binary.
 - Real customer LDPlayer result: `NEEDS_REAL_TEST`. Existing QA must independently verify exact Code commit before a release or final PASS.
+## COMPLETED-BEFORE-REFRESH-001 (2026-09-23)
+
+- Implementation commit: `4ebd582`. The selected completed target is recognized before a non-match on the initial `0/200` acceptance condition can trigger renewal. The existing guarded completion path still rechecks completed state and target before reward input.
+- Customer rc.35 screenshot, normalized from a 635x374 LD window to 1280x720: `mission_target_phrase` 0.856, `button_complete` 0.900, exact `0/200` 0.673, refresh-popup landmarks absent. This explains `refresh_popup_not_verified` without assuming a capture failure.
+- Regression: the stored real completed-target frame is rendered at a 595x334 Windows viewport and renormalized; no refresh/accept tap is emitted. A completed non-target is stopped without refresh/claim input. Full suite: 482 passed.
+- Customer LDPlayer result: `NEEDS_REAL_TEST`; independent QA is pending.
