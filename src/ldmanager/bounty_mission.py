@@ -405,6 +405,36 @@ def _accept_or_refresh_slot(
         return None, BountyCycleResult(
             BountyOutcome.RECOGNITION_FAILED, (), f"Slot {slot_index}: target recognition is uncertain; no refresh sent."
         )
+    if already_ok is MissionAssessment.NON_TARGET_CONFIRMED:
+        # A previously accepted target may already show its Complete button
+        # when the worker starts or revisits a row. Its objective no longer
+        # reads the initial 0/200, so the acceptance-only check above cannot
+        # distinguish it from a fresh non-target. Claim this state through
+        # the existing guarded completion path instead of tapping the
+        # refresh point on a plain completed-mission screen.
+        if "button_complete" in config.template_map:
+            complete = _recognize(runner, serial, config, recognizer, _FULL_SCREEN, "button_complete")
+        else:
+            complete = _recognize(
+                runner, serial, config, recognizer, config.complete_state_roi, config.complete_state_label,
+            )
+        if complete is None:
+            return None, BountyCycleResult(
+                BountyOutcome.CAPTURE_UNAVAILABLE, (), f"Slot {slot_index}: capture failed while checking completion."
+            )
+        if complete.matched:
+            completed_target = assess_mission_target(runner, serial, config, recognizer)
+            if completed_target is MissionAssessment.CAPTURE_UNAVAILABLE:
+                return None, BountyCycleResult(
+                    BountyOutcome.CAPTURE_UNAVAILABLE, (),
+                    f"Slot {slot_index}: capture failed while checking completed mission target.",
+                )
+            if completed_target is MissionAssessment.TARGET_CONFIRMED:
+                return SlotOutcome(slot_index, True, 0, "Completed target; proceed to guarded claim."), None
+            return None, BountyCycleResult(
+                BountyOutcome.RECOGNITION_FAILED, (),
+                f"Slot {slot_index}: completed mission target not verified; no refresh or claim sent.",
+            )
     if already_ok is MissionAssessment.TARGET_CONFIRMED:
         # ACCEPT-CONFIRM-001: a real customer live run got stuck here --
         # this fast path (target already matched, no refresh needed)

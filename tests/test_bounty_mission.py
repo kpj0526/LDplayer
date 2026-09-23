@@ -1,11 +1,13 @@
 from pathlib import Path
 
+import pytest
+
 from ldmanager.adb import AdbBinaryResult, AdbCommandResult
-from ldmanager.bounty_config import BountyMissionConfig
-from ldmanager.bounty_mission import BountyOutcome, _cyclic_slot_order, run_one_cycle
+from ldmanager.bounty_config import BountyMissionConfig, load_bounty_config
+from ldmanager.bounty_mission import BountyOutcome, _accept_or_refresh_slot, _cyclic_slot_order, run_one_cycle
 from ldmanager.coordinates import RelativeCoordinate, RelativeRegion, ScreenSize, build_tap_args
 from ldmanager.models import AccountId
-from ldmanager.recognition import PlaceholderRecognizer, RecognitionResult, RecognitionStatus
+from ldmanager.recognition import OpenCVTemplateRecognizer, PlaceholderRecognizer, RecognitionResult, RecognitionStatus
 from ldmanager.runtime import AccountMissionRuntime, SlotState
 from ldmanager.screenshot import DEFAULT_CAPTURE_ARGS
 from tests.fakes import FakeAdbRunner, LabelMappingRecognizer
@@ -104,6 +106,54 @@ def _run(runner, recognizer, config, **kwargs):
 def test_next_cycle_slot_order_continues_downward_then_wraps_after_bottom_row():
     assert _cyclic_slot_order(5, 4) == (4, 5, 1, 2, 3)
     assert _cyclic_slot_order(5, 5) == (5, 1, 2, 3, 4)
+
+
+def test_completed_target_from_windows_capture_skips_refresh_and_accept_taps():
+    cv2 = pytest.importorskip("cv2")
+    config = load_bounty_config(Path("configs/bounty.example.yaml"))
+    recognizer = OpenCVTemplateRecognizer(config.templates_dir, config.template_map)
+    source = cv2.imread("tests/fixtures/game_cal_001/source_extra/mission_list_row1_completed.png")
+    assert source is not None
+    # rc.35 customer window: the 1280x720 game is rendered at 595x334,
+    # then normalized back before recognition. The initial 0/200 is gone.
+    window_game = cv2.resize(source, (595, 334), interpolation=cv2.INTER_AREA)
+    normalized = cv2.resize(window_game, (1280, 720), interpolation=cv2.INTER_AREA)
+    encoded_ok, encoded = cv2.imencode(".png", normalized)
+    assert encoded_ok
+    runner = FakeAdbRunner(capture_results={
+        (_SERIAL, config.capture_args): AdbBinaryResult(
+            serial=_SERIAL, args=config.capture_args, returncode=0,
+            stdout_bytes=encoded.tobytes(), stderr="",
+        ),
+    })
+
+    slot, abort = _accept_or_refresh_slot(
+        slot_index=1, serial=_SERIAL, runner=runner, recognizer=recognizer,
+        config=config, should_stop=lambda: False, sleep_fn=lambda _: None,
+    )
+
+    assert abort is None
+    assert slot is not None and slot.accepted and slot.refresh_attempts == 0
+    assert runner.calls == [(_SERIAL, tuple(build_tap_args(config.screen_size, config.slot_select_points[0])))]
+
+
+def test_completed_non_target_stops_without_refresh_or_claim_input():
+    config = _config(template_map={
+        "target_all_monsters_0_of_200": "target.png",
+        "mission_target_phrase": "phrase.png",
+        "button_complete": "complete.png",
+    })
+    runner = _runner_with_valid_captures()
+    recognizer = LabelMappingRecognizer(matching_labels=frozenset({"button_complete"}))
+
+    slot, abort = _accept_or_refresh_slot(
+        slot_index=1, serial=_SERIAL, runner=runner, recognizer=recognizer,
+        config=config, should_stop=lambda: False, sleep_fn=lambda _: None,
+    )
+
+    assert slot is None
+    assert abort is not None and abort.outcome is BountyOutcome.RECOGNITION_FAILED
+    assert runner.calls == [(_SERIAL, tuple(build_tap_args(config.screen_size, config.slot_select_points[0])))]
 
 
 # --- full one-cycle state flow --------------------------------------------
