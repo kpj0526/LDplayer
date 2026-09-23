@@ -29,7 +29,7 @@ $BuildVersion = (Get-Content -LiteralPath (Join-Path $RepoRoot 'VERSION') -Raw).
 $BuildId = "$BuildVersion-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 $DistParent = Join-Path $RepoRoot "dist\test-$BuildId"
 $WorkRoot = Join-Path $RepoRoot "build\test-$BuildId"
-# Every build goes to a new directory. Existing rc.33 binaries/ZIPs stay intact.
+# Every build goes to a new directory. Existing release binaries/ZIPs stay intact.
 if (Test-Path -LiteralPath $DistParent) { throw "Build output already exists: $DistParent" }
 
 $Python = ".\.venv\Scripts\python.exe"
@@ -119,7 +119,7 @@ pauses that account until you correct the problem and run Test capture again.
 One ADB screenshot per Test capture is intentional and logged separately.
 Customers do not use Template calibration or enter click coordinates.
 
-Extract into a NEW folder, separate from rc.33. Do not overwrite that release.
+Extract into a NEW folder, separate from rc.34. Do not overwrite that release.
 Memory and cumulative call logs are written every 30 seconds under
 diagnostics\memory\<session>\. See docs\WINDOWS_CAPTURE_TEST.md.
 '@ | Set-Content -Encoding utf8 "$DistRoot\README_FIRST_RUN.txt"

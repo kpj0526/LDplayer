@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.3-rc.35 — Windows capture viewport edge correction
+
+- Fix `Game viewport is outside the captured window` when the game image reaches the right or bottom edge of an LDPlayer window capture.
+- Convert matched rectangle edges to native pixels separately and keep the crop inside the captured frame. This shared alignment path applies to LD1–LD9.
+- Add right-edge and bottom-edge regression coverage. Customer LDPlayer verification and memory improvement remain `NEEDS_REAL_TEST`.
+
 ## v1.0.3-rc.34 — Windows capture / memory diagnostic TEST
 
 - Separate prerelease; rc.33 release/tag/ZIP are retained unchanged.

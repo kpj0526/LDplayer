@@ -1,5 +1,11 @@
 # LDplayer
 
+## v1.0.3-rc.35 Windows capture edge fix — customer test
+
+Download: [ldmanager-v1.0.3-rc.35-windows-capture-test.zip](https://github.com/kpj0526/LDplayer/releases/download/v1.0.3-rc.35/ldmanager-v1.0.3-rc.35-windows-capture-test.zip)
+
+This prerelease corrects the rc.34 `Game viewport is outside the captured window` failure when the game area touches the capture's right or bottom edge. Extract the ZIP into a new folder and repeat the rc.34 `Refresh ADB devices` → `Refresh LD windows` → `Test capture` workflow. Verify that the ADB and Windows images show the same account before enabling Start. Real LDPlayer and memory behavior remain customer-test items.
+
 ## v1.0.3-rc.34 Windows 캡처·커밋 메모리 시험판 인수인계
 
 시험판 ZIP: [ldmanager-v1.0.3-rc.34-windows-capture-test.zip](https://github.com/kpj0526/LDplayer/releases/download/v1.0.3-rc.34/ldmanager-v1.0.3-rc.34-windows-capture-test.zip)
