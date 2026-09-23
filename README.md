@@ -1,5 +1,11 @@
 # LDplayer
 
+## v1.0.3-rc.38 keep a newly assigned target mission — customer test
+
+Download: [ldmanager-v1.0.3-rc.38-windows-capture-test.zip](https://github.com/kpj0526/LDplayer/releases/download/v1.0.3-rc.38/ldmanager-v1.0.3-rc.38-windows-capture-test.zip)
+
+After a reward claim, a new mission whose objective is `모든 몬스터 처치` is kept even if its count does not exactly match the old `0/200` image. Completed target missions still use the guarded claim path. This is a prerelease for customer LDPlayer verification, not a final QA pass.
+
 ## v1.0.3-rc.37 keep existing target missions after reward claim — customer test
 
 Download: [ldmanager-v1.0.3-rc.37-windows-capture-test.zip](https://github.com/kpj0526/LDplayer/releases/download/v1.0.3-rc.37/ldmanager-v1.0.3-rc.37-windows-capture-test.zip)

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ldmanager"
-version = "1.0.3rc37"
+version = "1.0.3rc38"
 description = "LDPlayer multi-account manager (MVP-001: configurable, mock-verified MVP)"
 readme = "README.md"
 requires-python = ">=3.10"

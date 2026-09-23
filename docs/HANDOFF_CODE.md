@@ -1,5 +1,12 @@
 # HANDOFF — Code worktree
 
+## KEEP-NEW-TARGET-PHRASE-001 (v1.0.3-rc.38)
+
+- Cause: the replacement-slot target assessment returned `NON_TARGET_CONFIRMED` immediately when the exact `0/200` template missed, before checking the digit-free `mission_target_phrase`. That made a new `모든 몬스터 처치` mission a refresh candidate solely because its count differed.
+- Change: exact count remains a positive match; when it misses, the calibrated objective phrase is checked before refresh. A completed target with the same phrase is detected by the explicit Complete button before the accept action and proceeds to the existing guarded claim path.
+- Evidence: real-capture target `16/165` is accepted by the initial-slot classifier while a real non-target `0/450` stays non-target; worker-level regression sends select+accept but no refresh for a phrase-matched new mission. Full suite: 485 passed. Windows package self-test: exit 0, no ADB or game input. ZIP SHA-256 `3F6F695C85143CC0A84D938CAA2E5E9FE16B341EA99B1B58B99C658472883CB9`.
+- Remaining: real customer replacement-slot behavior and independent QA are `NEEDS_REAL_TEST`; no final PASS claim.
+
 각 단계는 아래에 절을 추가하는 방식으로 기록합니다(과거 절은 수정하지 않음).
 
 ## TP-001 stage 1: 프로젝트 기본 구조

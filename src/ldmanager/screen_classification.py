@@ -256,10 +256,9 @@ def assess_mission_target(
     *, require_initial_zero: bool = False,
 ) -> MissionAssessment:
     """Is the *currently selected* mission the configured target
-    objective (e.g. "모든 몬스터 처치")? Both required conditions
-    (phrase AND quantity, or the single combined
-    ``mission_target_phrase`` production template) must
-    independently match -- never one signal alone. A confidently
+    objective (e.g. "모든 몬스터 처치")? The calibrated, digit-free
+    ``mission_target_phrase`` production template identifies that
+    objective even when its progress count differs. A confidently
     non-matching title is ``NON_TARGET_CONFIRMED``, not a layout
     problem: a screen showing a different mission's title is just as
     valid a screen as one showing the target title (see
@@ -269,12 +268,9 @@ def assess_mission_target(
     check and :func:`complete_mission_if_verified`'s completion-target
     guard, so both agree on what counts as the target mission."""
 
-    # The customer acceptance rule is the complete, one-line objective --
-    # not a loose combination of a phrase crop and a number crop.  Prefer
-    # the single real template containing exactly
-    # ``모든 몬스터 처치 (0/200)`` whenever it is configured.  A match is
-    # therefore sufficient only because the template itself contains both
-    # required pieces in their original relationship.
+    # The exact initial-count crop is a useful positive signal, but a
+    # changed count is not proof of a different mission. Check the
+    # calibrated digit-free objective crop before deciding to refresh.
     exact_target_label = "target_all_monsters_0_of_200"
     if exact_target_label in config.template_map:
         target = _recognize_in_roi(runner, serial, config, recognizer, _FULL_SCREEN, exact_target_label)
@@ -284,11 +280,9 @@ def assess_mission_target(
             return MissionAssessment.TARGET_CONFIRMED
         if target.status in _UNCERTAIN_STATUSES:
             return MissionAssessment.RECOGNITION_FAILED
-        # When choosing a newly refreshed mission, only its exact initial
-        # 0/200 line is acceptable.  During later progress/completion
-        # checks, the same target naturally reads N/200, so use the
-        # separate active-target crop rather than misclassifying it.
-        if require_initial_zero:
+        # Legacy configurations without the calibrated phrase keep the
+        # strict initial-count check. Production checks the phrase below.
+        if require_initial_zero and "mission_target_phrase" not in config.template_map:
             return MissionAssessment.NON_TARGET_CONFIRMED
 
     active_target_label = "target_all_monsters_active"

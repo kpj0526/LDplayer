@@ -156,6 +156,34 @@ def test_completed_non_target_stops_without_refresh_or_claim_input():
     assert runner.calls == [(_SERIAL, tuple(build_tap_args(config.screen_size, config.slot_select_points[0])))]
 
 
+def test_new_target_phrase_without_exact_0_of_200_is_kept_without_refresh():
+    config = _config(template_map={
+        "target_all_monsters_0_of_200": "target.png",
+        "mission_target_phrase": "phrase.png",
+        "button_complete": "complete.png",
+    })
+    runner = _runner_with_valid_captures()
+    class PhraseOnlyRecognizer(LabelMappingRecognizer):
+        def recognize(self, image_bytes, roi, expected_label, threshold):
+            if expected_label != "mission_target_phrase":
+                return RecognitionResult(RecognitionStatus.NO_MATCH, None, 0.1, "not present")
+            return super().recognize(image_bytes, roi, expected_label, threshold)
+
+    recognizer = PhraseOnlyRecognizer(matching_labels=frozenset({"mission_target_phrase"}))
+
+    slot, abort = _accept_or_refresh_slot(
+        slot_index=1, serial=_SERIAL, runner=runner, recognizer=recognizer,
+        config=config, should_stop=lambda: False, sleep_fn=lambda _: None,
+    )
+
+    assert abort is None
+    assert slot is not None and slot.accepted and slot.refresh_attempts == 0
+    assert runner.calls == [
+        (_SERIAL, tuple(build_tap_args(config.screen_size, config.slot_select_points[0]))),
+        (_SERIAL, tuple(build_tap_args(config.screen_size, config.accept_mission_point))),
+    ]
+
+
 # --- full one-cycle state flow --------------------------------------------
 
 

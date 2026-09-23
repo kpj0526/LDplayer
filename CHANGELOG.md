@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.3-rc.38 — keep newly assigned target objective after reward
+
+- Confirm a replacement mission by the calibrated `모든 몬스터 처치` phrase when the exact `0/200` crop misses; do not refresh a positively identified target solely because its count differs.
+- Check for the explicit Complete button before accepting or refreshing a target detail screen.
+- Add real-capture target/non-target count regressions and a no-refresh replacement-slot regression. Customer LDPlayer verification remains `NEEDS_REAL_TEST`.
+
 ## v1.0.3-rc.37 — preserve surviving target missions after claim
 
 - After a verified reward claim, mark only the claimed slot's replacement as unconfigured. Other accepted target slots retain their lock and are not re-evaluated as new `0/200` missions when their progress is already N/200.

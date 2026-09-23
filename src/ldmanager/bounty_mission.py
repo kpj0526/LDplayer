@@ -11,8 +11,7 @@ still not game automation. Every action follows the same contract:
 States implemented, in order:
 
 1. For each of 5 slots: select the slot, capture+check whether its
-   current mission already satisfies BOTH acceptance conditions
-   (target phrase AND quantity == 200). If not, open the refresh
+   current mission has the calibrated target objective phrase. If not, open the refresh
    confirmation popup, verify it **structurally** (two independent,
    cost-INDEPENDENT landmarks — never the displayed refresh cost, which
    varies), confirm only if verified, inspect the new mission, and
@@ -210,10 +209,9 @@ def _mission_is_acceptable(runner, serial, config, recognizer) -> MissionAssessm
     implementation, shared with
     :func:`ldmanager.screen_classification.complete_mission_if_verified`'s
     own completion-target guard, rather than two copies that could
-    silently drift apart. Behavior is unchanged: both the phrase AND the
-    quantity must independently match (or the single combined
-    ``mission_target_phrase`` production template), never one
-    signal alone; a confidently non-matching mission title (e.g. any
+    silently drift apart. The calibrated production phrase can confirm a
+    target even when its numeric progress differs; a confidently
+    non-matching mission title (e.g. any
     title other than "모든 몬스터 처치") is ``NON_TARGET_CONFIRMED`` --
     never treated as a screen/layout problem, see
     ``ldmanager.screen_classification``'s module docstring."""
@@ -405,13 +403,12 @@ def _accept_or_refresh_slot(
         return None, BountyCycleResult(
             BountyOutcome.RECOGNITION_FAILED, (), f"Slot {slot_index}: target recognition is uncertain; no refresh sent."
         )
-    if already_ok is MissionAssessment.NON_TARGET_CONFIRMED:
-        # A previously accepted target may already show its Complete button
-        # when the worker starts or revisits a row. Its objective no longer
-        # reads the initial 0/200, so the acceptance-only check above cannot
-        # distinguish it from a fresh non-target. Claim this state through
-        # the existing guarded completion path instead of tapping the
-        # refresh point on a plain completed-mission screen.
+    if already_ok is MissionAssessment.NON_TARGET_CONFIRMED or (
+        already_ok is MissionAssessment.TARGET_CONFIRMED and "mission_target_phrase" in config.template_map
+    ):
+        # A completed target can match the digit-free objective template.
+        # Detect its explicit Complete button before either accepting or
+        # refreshing; neither action is valid on a completed detail screen.
         if "button_complete" in config.template_map:
             complete = _recognize(runner, serial, config, recognizer, _FULL_SCREEN, "button_complete")
         else:
@@ -640,7 +637,7 @@ def _accept_or_refresh_slot(
             if ack_failure is not None:
                 return None, ack_failure
             return SlotOutcome(slot_index, True, attempt, "Accepted after refresh."), None
-        detail = f"attempt {attempt}: phrase/quantity not both matched"
+        detail = f"attempt {attempt}: target objective not confirmed"
 
     return SlotOutcome(slot_index, False, attempt, detail), None
 

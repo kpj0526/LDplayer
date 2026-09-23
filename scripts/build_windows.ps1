@@ -119,7 +119,7 @@ pauses that account until you correct the problem and run Test capture again.
 One ADB screenshot per Test capture is intentional and logged separately.
 Customers do not use Template calibration or enter click coordinates.
 
-Extract into a NEW folder, separate from rc.36. Do not overwrite that release.
+Extract into a NEW folder, separate from rc.37. Do not overwrite that release.
 Memory and cumulative call logs are written every 30 seconds under
 diagnostics\memory\<session>\. See docs\WINDOWS_CAPTURE_TEST.md.
 '@ | Set-Content -Encoding utf8 "$DistRoot\README_FIRST_RUN.txt"

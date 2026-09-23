@@ -151,6 +151,23 @@ def test_in_progress_real_capture_is_target_confirmed(config, recognizer):
     assert assess_mission_target(runner, _SERIAL, config, recognizer) is MissionAssessment.TARGET_CONFIRMED
 
 
+def test_target_phrase_with_different_count_is_not_a_refresh_candidate(config, recognizer):
+    """The real 16/165 target frame lacks the exact initial 0/200 crop.
+    The replacement-slot assessment must still preserve its objective.
+    """
+    runner = _runner_for("in_progress_target.png")
+    assert assess_mission_target(
+        runner, _SERIAL, config, recognizer, require_initial_zero=True,
+    ) is MissionAssessment.TARGET_CONFIRMED
+
+
+def test_different_objective_with_different_count_stays_non_target(config, recognizer):
+    runner = _runner_for("non_target.png")
+    assert assess_mission_target(
+        runner, _SERIAL, config, recognizer, require_initial_zero=True,
+    ) is MissionAssessment.NON_TARGET_CONFIRMED
+
+
 def test_non_target_real_capture_is_not_target_confirmed(config, recognizer):
     """Different objective phrase ("냉혈사 처치") -- must never be
     confused with the target."""
