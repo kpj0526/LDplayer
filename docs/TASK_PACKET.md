@@ -227,3 +227,9 @@ code가 1단계 프로젝트 기본 구조를 구현·테스트·커밋·인수�
 3. **Change**: map both matched rectangle edges back to native pixels, bound them to the captured image, and reject invalid/empty rectangles. Retain ADB versus Windows similarity and explicit same-instance confirmation gates.
 4. **Acceptance**: a 635×374 frame with a 595×334 game area beginning at y=40 aligns without an out-of-bounds crop; unrelated/blank frames still fail closed; the full automated suite passes. Real customer LDPlayer test remains `NEEDS_REAL_TEST`.
 5. **Handoff**: Code commits implementation/test and records hash; QA records an independent verdict before publication or final PASS.
+## COMPLETED-BEFORE-REFRESH-001 — customer rc.35 refresh popup failure (2026-09-23)
+
+1. **Owner**: existing Code worktree implements and commits; existing QA worktree independently verifies; Manager coordinates.
+2. **Evidence**: customer rc.35 screenshot shows the first selected target mission with `완료` and no renewal dialog. The shipped real recognizer on this image matches `mission_target_phrase` (0.856), `button_complete` (0.900), and classifies the screen `COMPLETED`; exact initial `0/200` is absent (0.673). Current accept path requires initial `0/200`, treats it as non-target, taps the popup-price point on the plain completed screen, then reports `refresh_popup_not_verified`.
+3. **Change**: after selecting a slot, recognize completed state and configured target objective before the initial-zero refresh decision. A verified completed target advances to the existing guarded completion/reward path with no refresh or accept tap. Completed non-target/unknown state must not receive blind refresh or reward input.
+4. **Acceptance**: real completed-target fixture exercises the accept path and sends no refresh tap; existing completion guard remains required; no input on unknown or wrong target; full suite/build pass. Customer live test and independent QA remain separate evidence.
