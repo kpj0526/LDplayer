@@ -1,16 +1,23 @@
 # templates/
 
-Placeholder directory for future recognizer reference assets (OCR
-training data, template images for template matching, etc.).
+Template-matching reference assets read by
+`ldmanager.recognition.OpenCVTemplateRecognizer` via
+`configs/bounty.example.yaml`'s `template_map` (and your own,
+git-ignored `configs/bounty.yaml`, which should point at the same
+`templates_dir`). `ldmanager.recognition.PlaceholderRecognizer` (the
+safe fallback when OpenCV/numpy aren't installed) still never reads
+this folder — it always reports `UNKNOWN`.
 
-**Nothing in this repository reads from this directory yet.**
-`ldmanager.recognition.PlaceholderRecognizer` is the only recognizer
-implemented in MVP-001, and it never performs real image analysis — it
-always reports `UNKNOWN` with zero confidence, regardless of what (if
-anything) is in this folder. It exists so `mission.example.yaml`'s
-`templates_dir` has somewhere real to point at, and so the shape of a
-future real implementation is visible.
+Most files here remain uncalibrated placeholders/legacy crops — see
+`docs/REAL_CAPTURE_CHECKLIST.md` for what real calibration requires.
+The `mission_header.png`, `mission_objective_label.png`,
+`complete_badge.png`, `currency_action_4400.png`, and
+`mission_target_phrase.png` files are the exception: they are real
+crops of real, customer-supplied 1280x720 captures (GAME-CAL-001's
+"REAL-CAPTURE REWORK"), with documented provenance and a passing real-
+asset regression test — see `tests/fixtures/game_cal_001/PROVENANCE.md`
+and `tests/test_screen_classification_real_assets.py`.
 
-Do not treat the presence of this folder as evidence that recognition
-works. See `docs/REAL_CAPTURE_CHECKLIST.md` for what actually needs to
-happen before any file placed here would do anything.
+Do not treat the mere presence of a file here as evidence recognition
+works against your own game version/resolution — always verify with
+your own real captures before relying on any of these.

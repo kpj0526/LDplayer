@@ -45,8 +45,26 @@ def fake_runner():
     return FakeAdbRunner()
 
 
+class _FakeSerialRegistry:
+    """LIVE-SERIAL-001 test double: records every ``set()`` call
+    (account_id, serial) in order, mirroring
+    ``ldmanager.app.LiveSerialRegistry``'s duck-typed contract (only
+    ``.set`` is ever called by the GUI)."""
+
+    def __init__(self) -> None:
+        self.calls: list = []
+
+    def set(self, account_id, serial) -> None:
+        self.calls.append((account_id, serial))
+
+
 @pytest.fixture(scope="module")
-def app(config_path, fake_runner):
+def fake_serial_registry():
+    return _FakeSerialRegistry()
+
+
+@pytest.fixture(scope="module")
+def app(config_path, fake_runner, fake_serial_registry):
     # Module-scoped: tkinter's Tk() is meant to be used as a per-process
     # singleton-ish root. Constructing/destroying many separate Tk()
     # roots in quick succession within one pytest process is flaky (Tcl/
@@ -55,7 +73,8 @@ def app(config_path, fake_runner):
     # below uses a distinct account (LD1..LD9) so tests stay independent
     # despite sharing one app instance.
     application = LDManagerApp(
-        _build_controller(), adb_runner=fake_runner, config_path=config_path, auto_refresh=False
+        _build_controller(), adb_runner=fake_runner, config_path=config_path, auto_refresh=False,
+        serial_registry=fake_serial_registry,
     )
     yield application
     application.destroy()
@@ -93,7 +112,7 @@ def test_start_is_blocked_before_mapping_verified_ok(monkeypatch, app):
     # guard) still independently refuses to start and surfaces why.
     panel._on_start()
     assert calls == []
-    assert "not confirmed OK" in panel.mapping_error_var.get()
+    assert "confirm ADB mapping" in panel.mapping_error_var.get()
 
 
 def test_panel_start_stop_buttons_call_controller_once_verified_ok(monkeypatch, app):
@@ -103,6 +122,7 @@ def test_panel_start_stop_buttons_call_controller_once_verified_ok(monkeypatch, 
 
     panel = app._panels[AccountId.LD1]
     panel.set_mapping_status("127.0.0.1:5555", ConnectionStatus.OK, "Device present and authorized.")
+    panel.set_capture_ready(True)
 
     panel.start_button.invoke()
     panel.stop_button.invoke()
@@ -110,15 +130,19 @@ def test_panel_start_stop_buttons_call_controller_once_verified_ok(monkeypatch, 
     assert calls == [("start", AccountId.LD1), ("stop", AccountId.LD1)]
 
 
-def test_global_start_all_stop_all_call_controller(monkeypatch, app):
+def test_start_all_starts_only_verified_accounts(monkeypatch, app):
     calls = []
-    monkeypatch.setattr(app._controller, "start_all", lambda: calls.append("start_all"))
+    monkeypatch.setattr(app._controller, "start_account", lambda aid: calls.append(aid))
     monkeypatch.setattr(app._controller, "stop_all", lambda: calls.append("stop_all"))
+    for panel in app._panels.values():
+        panel.set_capture_ready(False)
+    app._panels[AccountId.LD1].set_mapping_status("serial1", ConnectionStatus.OK, "ok")
+    app._panels[AccountId.LD1].set_capture_ready(True)
 
     app._on_start_all()
     app._on_stop_all()
 
-    assert calls == ["start_all", "stop_all"]
+    assert calls == [AccountId.LD1, "stop_all"]
 
 
 def test_refresh_updates_panel_from_status_snapshot(app):
@@ -135,6 +159,46 @@ def test_refresh_updates_panel_from_status_snapshot(app):
     assert "3" in panel.slot_var.get()
     assert panel.error_var.get() == "boom"
     assert "cycle result: ok" in panel.log_var.get()
+
+
+def test_capture_readiness_is_account_local(app):
+    first = app._panels[AccountId.LD1]
+    second = app._panels[AccountId.LD2]
+    first.set_mapping_status("127.0.0.1:5555", ConnectionStatus.OK, "ok")
+    second.set_mapping_status("127.0.0.1:5557", ConnectionStatus.OK, "ok")
+    first.set_capture_ready(True)
+    assert "disabled" not in first.start_button.state()
+    assert "disabled" in second.start_button.state()
+
+
+def test_failed_recapture_revokes_only_that_accounts_start_readiness(app, fake_runner):
+    """A stale successful probe cannot authorize Start after the latest
+    Test capture failed to produce a usable frame."""
+
+    first = app._panels[AccountId.LD1]
+    second = app._panels[AccountId.LD2]
+    first.set_mapping_status("127.0.0.1:5555", ConnectionStatus.OK, "ok")
+    second.set_mapping_status("127.0.0.1:5557", ConnectionStatus.OK, "ok")
+    first.set_capture_ready(True)
+    second.set_capture_ready(True)
+
+    # The shared fake's default empty capture is intentionally invalid PNG
+    # data, so capture_screenshot returns its normal structured failure.
+    app._on_capture_test(AccountId.LD1, "127.0.0.1:5555")
+
+    assert first._capture_ready is False
+    assert "disabled" in first.start_button.state()
+    assert second._capture_ready is True
+    assert "disabled" not in second.start_button.state()
+
+
+def test_serial_save_clears_capture_readiness(app):
+    panel = app._panels[AccountId.LD1]
+    panel.set_mapping_status("127.0.0.1:5555", ConnectionStatus.OK, "ok")
+    panel.set_capture_ready(True)
+    app._on_save_mapping(AccountId.LD1, "127.0.0.1:6000")
+    assert panel._capture_ready is False
+    assert "disabled" in panel.start_button.state()
 
 
 # --- Refresh ADB devices: no tap, no worker started ---------------------
@@ -170,7 +234,8 @@ def test_save_persists_mapping_and_start_stays_blocked_until_next_refresh(app, f
     app._on_refresh_devices()
 
     assert panel._connection_status is ConnectionStatus.OK
-    assert "disabled" not in panel.start_button.state()
+    # A successful Test capture/template preflight is now also required.
+    assert "disabled" in panel.start_button.state()
 
 
 def test_save_rejects_blank_serial_and_shows_error_on_panel(app):
@@ -227,3 +292,195 @@ def test_save_and_clear_never_tap_or_start_a_worker(app, fake_runner):
 
     assert fake_runner.calls == calls_before
     assert {aid: app._controller.worker(aid).is_running for aid in AccountId} == running_before
+
+
+# --- ADB executable path: Browse/Save/Clear (ADB-PATH-001) --------------
+
+
+def test_browse_adb_path_fills_entry_without_touching_adb(monkeypatch, app, fake_runner):
+    calls_before = list(fake_runner.calls)
+    monkeypatch.setattr(
+        "ldmanager.gui.filedialog.askopenfilename", lambda **kwargs: "C:/picked/adb.exe"
+    )
+
+    app._on_browse_adb_path()
+
+    assert app.adb_path_var.get() == "C:/picked/adb.exe"
+    assert fake_runner.calls == calls_before  # Browse alone never taps
+
+
+def test_save_adb_path_rejects_missing_file_and_does_not_persist(app, fake_runner, config_path):
+    from ldmanager.config_mapping import load_current_adb_path
+
+    calls_before = list(fake_runner.calls)
+    configured_before = app._configured_adb_path
+
+    app.adb_path_var.set("C:/does/not/exist/adb.exe")
+    app._on_save_adb_path()
+
+    assert app.adb_path_error_var.get() != ""
+    assert app._configured_adb_path == configured_before
+    assert load_current_adb_path(config_path) == configured_before
+    assert fake_runner.calls == calls_before  # rejected save never taps
+
+
+def test_save_adb_path_persists_reinitializes_runner_and_refreshes(app, fake_runner, config_path, tmp_path_factory):
+    from ldmanager.config_mapping import load_current_adb_path
+
+    real_exe = tmp_path_factory.mktemp("adb_bin") / "adb.exe"
+    real_exe.write_bytes(b"")
+    calls_before = list(fake_runner.calls)
+
+    app.adb_path_var.set(str(real_exe))
+    app._on_save_adb_path()
+
+    assert app.adb_path_error_var.get() == ""
+    assert app._configured_adb_path == str(real_exe)
+    assert load_current_adb_path(config_path) == str(real_exe)  # persists
+    assert fake_runner.adb_path == str(real_exe)  # runner reinitialized, no restart
+    assert "found" in app.adb_path_status_var.get()
+    assert fake_runner.calls == calls_before  # Save/refresh is still read-only, never a tap
+
+
+def test_clear_adb_path_resets_to_auto_detect_and_refreshes(app, fake_runner, config_path):
+    from ldmanager.config_mapping import load_current_adb_path
+
+    calls_before = list(fake_runner.calls)
+
+    app._on_clear_adb_path()
+
+    assert app.adb_path_error_var.get() == ""
+    assert app._configured_adb_path is None
+    assert app.adb_path_var.get() == ""
+    assert load_current_adb_path(config_path) is None
+    assert fake_runner.adb_path is None
+    assert fake_runner.calls == calls_before  # Clear is still read-only, never a tap
+
+
+# --- LIVE-SERIAL-001: Save/Clear propagate live to the serial registry -----
+
+
+def test_save_mapping_updates_the_live_serial_registry(app, fake_serial_registry):
+    """The GUI-facing half of the LIVE-SERIAL-001 fix: a successful Save
+    must reach the live registry immediately, scoped to exactly the
+    account that was saved -- not just the config file on disk."""
+
+    calls_before = len(fake_serial_registry.calls)
+    panel = app._panels[AccountId.LD4]
+    panel.serial_var.set("emulator-5554")
+
+    panel.save_button.invoke()
+
+    assert panel.mapping_error_var.get() == ""
+    new_calls = fake_serial_registry.calls[calls_before:]
+    assert (AccountId.LD4, "emulator-5554") in new_calls
+    # Never touches any other account's live serial.
+    assert all(account_id is AccountId.LD4 for account_id, _serial in new_calls)
+
+
+def test_clear_mapping_updates_the_live_serial_registry_to_blank(app, fake_serial_registry):
+    panel = app._panels[AccountId.LD4]
+    panel.serial_var.set("emulator-5554")
+    panel.save_button.invoke()
+    calls_before = len(fake_serial_registry.calls)
+
+    panel.clear_button.invoke()
+
+    new_calls = fake_serial_registry.calls[calls_before:]
+    assert (AccountId.LD4, None) in new_calls
+
+
+def test_a_rejected_save_never_reaches_the_live_serial_registry(app, fake_serial_registry):
+    panel = app._panels[AccountId.LD4]
+    panel.serial_var.set("")  # blank -- rejected by save_account_serial
+
+    calls_before = list(fake_serial_registry.calls)
+    panel.save_button.invoke()
+
+    assert panel.mapping_error_var.get() != ""
+    assert fake_serial_registry.calls == calls_before  # unchanged: nothing propagated
+
+
+def test_gui_without_a_serial_registry_never_raises_on_save_or_clear(app):
+    """serial_registry is optional (default None) -- an older/minimal
+    caller that never passes one must see Save/Clear behave exactly as
+    before LIVE-SERIAL-001, never an AttributeError. Reuses the shared
+    module-scoped ``app`` fixture (rather than constructing a second
+    ``Tk()`` root, which this file's own fixture docstring notes is
+    flaky) by temporarily clearing/restoring its registry attribute."""
+
+    original_registry = app._serial_registry
+    app._serial_registry = None
+    try:
+        panel = app._panels[AccountId.LD5]
+        panel.serial_var.set("no-registry-serial")
+        panel.save_button.invoke()  # must not raise
+        assert panel.mapping_error_var.get() == ""
+        panel.clear_button.invoke()  # must not raise
+    finally:
+        app._serial_registry = original_registry
+
+
+def test_unsaved_serial_text_is_never_used_for_capture(app, monkeypatch):
+    panel = app._panels[AccountId.LD8]
+    panel.set_mapping_status("saved-serial", ConnectionStatus.OK, "ok")
+    panel.serial_var.set("different-unsaved-serial")
+    calls = []
+    monkeypatch.setattr(panel, "_on_capture_test_cb", lambda aid, serial: calls.append(serial))
+    panel._on_capture_clicked()
+    assert calls == ["saved-serial"]
+
+
+@pytest.mark.parametrize("confirm,alignment_fails", [(True, False), (False, False), (True, True)])
+def test_windows_preflight_requires_explicit_pair_confirmation_and_saves_failed_frame(
+    app, monkeypatch, tmp_path, confirm, alignment_fails
+):
+    from types import SimpleNamespace
+    from ldmanager.adb import AdbBinaryResult
+    from ldmanager.capture_backends import HybridCaptureAdbRunner, WindowCaptureError
+    from ldmanager.window_targets import WindowTarget
+    from tests.test_capture_backends import _Inner
+    class Inner(_Inner):
+        def capture_binary(self, serial, args):
+            self.captures.append(serial)
+            return AdbBinaryResult(serial, tuple(args), 0, b"\x89PNG\r\n\x1a\nreference", "")
+    inner = Inner()
+    router = HybridCaptureAdbRunner(inner)
+    target = WindowTarget(123, 99, "LD8")
+    provider = SimpleNamespace(target=target, viewport=None, closed=False)
+    provider.capture_native_png = lambda: b"raw-window"
+    provider.capture_png = lambda: b"normalized"
+    provider.close = lambda: setattr(provider, "closed", True)
+    monkeypatch.setattr("ldmanager.gui.WindowsGraphicsCaptureProvider", lambda selected: provider)
+    def align(a, b):
+        if alignment_fails:
+            raise WindowCaptureError("comparison failed")
+        return SimpleNamespace(score=0.99), b"normalized"
+    monkeypatch.setattr("ldmanager.gui.align_game_viewport", align)
+    monkeypatch.setattr(app, "_readiness_check", lambda data: (True, "ok"))
+    monkeypatch.setattr(app, "_confirm_window_pair", lambda *args: confirm)
+    monkeypatch.setattr(app, "_window_capture_router", router)
+    monkeypatch.chdir(tmp_path)
+    panel = app._panels[AccountId.LD8]
+    panel.set_mapping_status("saved-serial", ConnectionStatus.OK, "ok")
+    panel.set_window_targets([target])
+    panel.window_var.set(target.display)
+    # Old verified provider must not replace the new explicit ADB reference.
+    app._on_capture_test(AccountId.LD8, "saved-serial")
+    expected = confirm and not alignment_fails
+    assert panel._capture_ready is expected
+    assert router.is_verified("saved-serial") is expected
+    assert inner.captures == ["saved-serial"]
+    assert provider.closed is not expected
+    assert list((tmp_path / "diagnostics/captures/LD8").glob("window-raw-*.png"))
+    assert list((tmp_path / "diagnostics/captures/LD8").glob("adb-capture-*.png"))
+    router.close()
+
+
+def test_disconnect_requires_new_preflight_even_after_reconnect(app):
+    panel = app._panels[AccountId.LD8]
+    panel.set_mapping_status("saved", ConnectionStatus.OK, "ok")
+    panel.set_capture_ready(True)
+    panel.set_mapping_status("saved", ConnectionStatus.DEVICE_NOT_FOUND, "offline")
+    panel.set_mapping_status("saved", ConnectionStatus.OK, "ok")
+    assert not panel._capture_ready

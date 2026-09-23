@@ -1,5 +1,12 @@
 # HANDOFF — Code worktree
 
+## KEEP-NEW-TARGET-PHRASE-001 (v1.0.3-rc.38)
+
+- Cause: the replacement-slot target assessment returned `NON_TARGET_CONFIRMED` immediately when the exact `0/200` template missed, before checking the digit-free `mission_target_phrase`. That made a new `모든 몬스터 처치` mission a refresh candidate solely because its count differed.
+- Change: exact count remains a positive match; when it misses, the calibrated objective phrase is checked before refresh. A completed target with the same phrase is detected by the explicit Complete button before the accept action and proceeds to the existing guarded claim path.
+- Evidence: real-capture target `16/165` is accepted by the initial-slot classifier while a real non-target `0/450` stays non-target; worker-level regression sends select+accept but no refresh for a phrase-matched new mission. Full suite: 485 passed. Windows package self-test: exit 0, no ADB or game input. ZIP SHA-256 `3F6F695C85143CC0A84D938CAA2E5E9FE16B341EA99B1B58B99C658472883CB9`.
+- Remaining: real customer replacement-slot behavior and independent QA are `NEEDS_REAL_TEST`; no final PASS claim.
+
 각 단계는 아래에 절을 추가하는 방식으로 기록합니다(과거 절은 수정하지 않음).
 
 ## TP-001 stage 1: 프로젝트 기본 구조
@@ -1728,3 +1735,3412 @@ suite run, the build, and both live-exe checks.
 - Confirm no ADB tap/worker start occurs merely from launching the exe
   fresh (only Refresh/Save/Start, all user-initiated, should ever touch
   ADB or a worker) — consistent with prior packets' same requirement.
+
+---
+
+## REL-UPDATE-003: import + integrate v1.0.1's Test-capture readiness gate
+
+**Manager Task Packet REL-UPDATE-003.** Import candidate from exact
+remote tag `v1.0.1` (`299e7a91840505cc90dcbb6b6f9e2ad75ed3b1cf`) into
+`kpj0526/Code`, non-destructively, integrating the per-account "Test
+capture/template readiness gate" while preserving all existing
+approved work.
+
+**Status: merged, verified, remediated, and self-tested only. Not
+tagged/pushed/published. Not claiming real LD/game success** — see
+Limitations below for exactly what remains unverified.
+
+### Ancestry inspection (done first, per the packet)
+
+```
+git fetch origin tag v1.0.1
+git rev-parse v1.0.1                              # 299e7a91840505cc90dcbb6b6f9e2ad75ed3b1cf (exact match confirmed)
+git merge-base v1.0.1 HEAD                          # a51ef07 (== our HEAD at the time)
+git merge-base --is-ancestor v1.0.1 HEAD  -> NO
+git merge-base --is-ancestor HEAD v1.0.1  -> YES
+```
+
+Our branch HEAD (`a51ef07`, the REL-0.1.0-PKG-01 hash-record commit)
+was a **strict ancestor** of `v1.0.1` — the tag's 22 additional commits
+(mostly `QA: merge X target`/`QA: record X pass/fail` records from a
+parallel QA-side integration branch, plus two `feat:` commits at the
+tip) build linearly on top of exactly our own history, adding nothing
+that conflicts with it. This meant the merge was **structurally
+guaranteed non-destructive**: nothing on `kpj0526/Code` could be lost,
+reordered, or overwritten by merging a strict descendant. No
+`reset`/force-checkout was used or needed; `git merge --no-ff v1.0.1`
+completed with the `ort` strategy and **zero conflicts**.
+
+### What importing v1.0.1 actually brought in
+
+Per `git diff HEAD v1.0.1 --stat` (inspected file-by-file before
+merging, per the packet's "inspect diff first" instruction): 46 files,
++1912/-63 lines. Highlights:
+
+- **The requested feature** (`gui.py`, `controller.py`): per-account
+  "Test capture" button + readiness gate — see Required Outcomes below.
+- **`src/ldmanager/runtime.py`** (new): `AccountMissionRuntime`
+  (per-account slot/phase state) + `click_and_verify()` (capture → tap
+  → require the expected next template or a changed screen, saving a
+  diagnostic capture and failing closed on a stale/unknown screen).
+- **`src/ldmanager/calibration.py`** (new): a developer-mode-only real
+  PNG crop tool (`crop_template()`) for turning a saved Test-capture
+  PNG into a named template asset.
+- **`src/ldmanager/recognition.py`**: adds `OpenCVTemplateRecognizer` —
+  a *real*, working OpenCV template-matching recognizer (grayscale +
+  edge-matching, ROI-scoped, fail-closed on any missing
+  dependency/template/undersized ROI). `PlaceholderRecognizer` is
+  unchanged and still present.
+- **`templates/*.png`** (new, 20 files): real reference screenshots
+  from the customer's game (button/slot/progress states) — these are
+  real assets, not placeholders, bundled by the merge.
+- **`src/ldmanager/adb.py`**: adds `resolve_adb_path()` (PATH/env-var/
+  common-LDPlayer-install discovery, never guesses a port) and
+  `InputGateAdbRunner` (see Remediation #1 below).
+- **`bounty_mission.py`/`bounty_config.py`**: dynamic template-based
+  tapping (`_tap_template`/`_tap_any_template`) with automatic fallback
+  to the existing fixed-coordinate path when `template_map` is empty —
+  **fully backward compatible**, which is why every pre-existing
+  fake-runner/placeholder-recognizer test kept passing unmodified.
+- `pyproject.toml`: new optional `[recognition]` extra
+  (`opencv-python>=4.8`, `numpy>=1.24`) — not a hard dependency.
+- Parallel QA-side docs/reports (`docs/ACCEPTANCE_STATUS.md`,
+  `docs/PROJECT_SPEC.md`, `docs/TASK_PACKET.md`, `docs/TEST_PLAN.md`,
+  `docs/PROGRESS.md`, `reports/QA_REPORT.md`, `CHANGELOG.md`,
+  `VERSION`) — merged in as-is; these belong to a separate
+  QA/Manager-side documentation convention and were not authored or
+  altered by this Code-worktree session. `docs/HANDOFF_CODE.md` itself
+  was **not** touched by v1.0.1 — every prior section above this one is
+  exactly as this worktree left it.
+
+### Required outcomes: confirmation
+
+| # | Outcome | Where / how verified |
+|---|---|---|
+| 1 | Start disabled unless mapping OK **and** successful Test capture; LD1 readiness never enables LD2 | `AccountPanel._capture_ready` is a per-instance attribute, never shared; `_on_start()` checks `connection_status is OK and self._capture_ready`. `tests/test_gui.py::test_capture_readiness_is_account_local` sets LD1 ready and asserts LD2's Start stays disabled |
+| 2 | Saving/clearing mapping resets only that account's readiness | `LDManagerApp._on_save_mapping`/`_on_clear_mapping` call `panel.set_capture_ready(False)` on **that** `AccountId`'s panel only. `tests/test_gui.py::test_serial_save_clears_capture_readiness` |
+| 3 | Capture mismatch saves a diagnostic capture and blocks Start; calibration UI hidden unless developer mode | `LDManagerApp._on_capture_test()` always writes `diagnostics/captures/<LDx>/capture-<ts>.png` before checking the readiness callback, and calls `set_capture_ready(False)` on a non-match. The "Template calibration" button is constructed only `if os.environ.get("LDMANAGER_DEVELOPER_MODE") == "1"` |
+| 4 | Full automated suite passes; Windows build succeeds | **302 passed**, 0 failed (see below). `scripts\build_windows.ps1` completed successfully, producing a working exe (see Build below) |
+| 5 | HANDOFF updated with task ID/tag/files/tests/artifact/commit/limits/QA focus | This section |
+| 6 | Commit on `kpj0526/Code`; no publish/tag/release; no claim of real LD/game success | Done — see Commits below. Explicitly not claimed anywhere in this section |
+
+### Remediation: 3 defects found during diff inspection, fixed before commit
+
+Found by reading the actual diff/content of every changed file before
+merging (not merely trusting the diffstat) — exactly what "inspect
+ancestry/diff first" is for. Fixed in a **separate commit** on top of
+the merge, so the merge commit remains an unmodified record of the
+tag's actual content.
+
+1. **Safety gap — `InputGateAdbRunner` defined but never wired.**
+   `adb.py` fully implements a live-mode input gate (`run()`/taps
+   refused unless `live_enabled`; `list_devices`/`capture_binary`
+   always pass through) — but `git grep -n "InputGateAdbRunner"` across
+   the whole `v1.0.1` tree found it only in its own definition and one
+   comment; `build_controller()` wired the *raw* `SubprocessAdbRunner`
+   directly. Combined with outcome #1-3 (Start now genuinely gates on a
+   real, working recognizer + real templates), this meant a verified
+   Start could already send real ADB taps with **no separate opt-in** —
+   in tension with the packet's explicit "do not claim real LD/game
+   success." **Fixed**: `build_controller()` now always wraps the real
+   runner in `InputGateAdbRunner`, `live_enabled=False` by default,
+   opt-in only via a new `LDMANAGER_LIVE_MODE=1` environment variable
+   (mirrors the existing `LDMANAGER_DEVELOPER_MODE` pattern already
+   used for the calibration UI). Discovery/Refresh/Test-capture are
+   unaffected either way (never gated). 5 new unit tests
+   (`tests/test_adb.py`) + 3 integration tests (`tests/test_app.py`).
+2. **Dead code — runtime-status sync unreachable.** In
+   `controller.py`'s `AccountWorker._loop`, the block that copies
+   `phase`/`locked_slots`/`slot_states` from the account's
+   `AccountMissionRuntime` into `AccountWorkerStatus` (what feeds the
+   GUI's phase line) sat *after* an unconditional `break` in the
+   error-outcome branch — unreachable on literally every cycle, error
+   or not. **Fixed**: moved into the same locked block as the other
+   per-cycle status fields, so it runs on every cycle as clearly
+   intended. 2 new regression tests (`tests/test_controller.py`),
+   covering both a normal and an error-outcome cycle.
+3. **Test-file corruption.** `tests/test_gui.py`'s
+   `test_refresh_updates_panel_from_status_snapshot` had 3 of its 4
+   assertions missing; they turned up appended to the end of an
+   unrelated test, `test_serial_save_clears_capture_readiness`, where
+   they passed only by accident (shared module-scoped `app` fixture +
+   specific execution order left the referenced widgets in the right
+   state anyway) — neither test actually verified what its name
+   claimed. **Fixed**: each assertion restored to its correct test.
+
+### Actual files changed
+
+**By the merge** (46 files — see diffstat above for the complete,
+verbatim list; not re-listed here to avoid duplication).
+
+**By the remediation commit** (`a241c5f`, on top of the merge):
+```
+ src/ldmanager/app.py         (InputGateAdbRunner wiring + LDMANAGER_LIVE_MODE)
+ src/ldmanager/controller.py  (runtime-status sync moved out of dead code)
+ tests/test_adb.py            (+5: InputGateAdbRunner unit tests)
+ tests/test_app.py            (+3: build_controller() live-mode wiring)
+ tests/test_controller.py     (+2: runtime-status sync regression guards)
+ tests/test_gui.py            (test content corruption fixed, no new tests)
+```
+
+### Test command / result
+
+```
+.venv\Scripts\python.exe -m pytest -v
+```
+
+Result: **302 passed**, 0 failed, 0 skipped (266 before this packet +
+36 net: the merge itself added test_runtime.py [4] and modified
+test_gui.py [net +2, before my content-corruption fix] = 292 total
+right after merging, then this session's remediation added 10 more
+[5 adb + 3 app + 2 controller] = 302). Re-run 4× consecutively
+post-merge and again post-remediation: stable every time.
+
+### Build + launch verification (this session)
+
+```
+scripts\build_windows.ps1
+```
+completed successfully — now installs `.[build,recognition]` (adds
+`opencv-python`/`numpy`), and PyInstaller's `hook-cv2.py`/`hook-numpy.py`
+processed cleanly (bundling the real OpenCV/numpy DLLs this time,
+unlike the REL-0.1.0-PKG-01 build). `dist\ldmanager\` now also carries
+`configs\*.example.yaml`, `templates\*.png` (real reference images),
+`docs\RUN_GUIDE.md`, `docs\REAL_CAPTURE_CHECKLIST.md`, `VERSION`,
+`CHANGELOG.md`, and `README_FIRST_RUN.txt`.
+
+**Fresh-extraction launch test** (same protocol as REL-0.1.0-PKG-01):
+copied `dist\ldmanager\` to a clean temp directory (no pre-existing
+`config.yaml`/`bounty.yaml`), launched `ldmanager.exe` via
+`Start-Process` (tracked by exact PID):
+
+- Still running 5 seconds later, `MainWindowTitle = 'ldmanager (MVP)'`
+  — GUI genuinely opened, including with the much larger
+  OpenCV-bundled build.
+- `configs\config.yaml`/`configs\bounty.yaml` both freshly bootstrapped;
+  `config.yaml`'s `adb_mapping` verified to have all nine entries
+  (`LD1`..`LD9`) as `null`.
+- No `LDMANAGER_LIVE_MODE` set — confirmed by design/tests that Start
+  therefore cannot issue a real tap even once mapping+capture are
+  verified.
+- Cleanly terminated via `Stop-Process -Id <PID> -Force`; confirmed
+  gone via `Get-Process` afterward; no lingering process (`tasklist`
+  clean). Temp simulation directory removed afterward.
+
+### Build artifact (this session)
+
+- Path: `dist\ldmanager\ldmanager.exe` (plus `_internal\` [now
+  including bundled OpenCV/numpy], `configs\*.example.yaml`,
+  `templates\*.png`, `docs\`, `VERSION`, `CHANGELOG.md`,
+  `README_FIRST_RUN.txt`)
+- Size: 4,784,289 bytes (exe only); ~170 MB total `dist\ldmanager\`
+  folder (OpenCV/numpy DLLs account for the large jump vs. prior
+  packets' ~2 MB exe / ~28 MB folder)
+- SHA-256: `8939124e3ad958fb47e39979a39bce93437f7ecc86f406f30239f81c331ebd9f`
+- `dist\`/`build\`/`*.spec` remain git-ignored — not part of any commit.
+
+### Commits
+
+- `e67fcad` — `Merge tag 'v1.0.1' (299e7a9) into kpj0526/Code --
+  REL-UPDATE-003` (the tag's content, unmodified, via `git merge
+  --no-ff`, zero conflicts)
+- `a241c5f` — `REL-UPDATE-003: remediate 3 defects found during v1.0.1
+  diff inspection` (the three fixes above)
+- This HANDOFF hash-record update is the follow-up commit immediately
+  after `a241c5f`. Not tagged, not pushed, not published, not merged
+  into `main`.
+
+### Limitations
+
+1. **Real recognition/template matching is entirely unverified against
+   a real game in this session.** `OpenCVTemplateRecognizer` and the 20
+   bundled real template PNGs came from the imported candidate; no
+   automated test (and no action in this session) exercised them
+   against a real captured frame from a real device. Every automated
+   test still uses `LabelMappingRecognizer`/`FakeAdbRunner`/
+   `PlaceholderRecognizer`-shaped fakes.
+2. **`InputGateAdbRunner`'s remediation makes real taps opt-in, not
+   impossible.** Setting `LDMANAGER_LIVE_MODE=1` fully re-enables real
+   ADB input the moment mapping+Test-capture succeed — this is a
+   deliberate, minimal, reversible safety default, not a hard
+   architectural barrier. Whoever controls deployment/distribution of a
+   real build controls whether that env var is ever set.
+3. **No real customer/LDPlayer environment was used anywhere in this
+   session** — build + launch verification confirms the packaged exe
+   *starts* and *self-bootstraps safely*, not that mission automation,
+   recognition accuracy, or the calibration workflow work correctly
+   against a real game. This session makes no such claim.
+4. **The QA-side parallel documentation** (`docs/ACCEPTANCE_STATUS.md`,
+   `docs/PROJECT_SPEC.md`, `docs/TASK_PACKET.md`, `docs/TEST_PLAN.md`,
+   `docs/PROGRESS.md`, `reports/QA_REPORT.md`, `CHANGELOG.md`,
+   `VERSION`) was imported verbatim and not reviewed/audited by this
+   session beyond confirming it doesn't break anything — its content is
+   attributable to whatever process produced `v1.0.1`, not to this
+   Code-worktree session.
+5. **`resolve_adb_path()`'s common-install-location probing**
+   (`C:\LDPlayer`, `C:\Program Files\LDPlayer`,
+   `C:\Program Files\dnplayerext2`) has not been verified against an
+   actual LDPlayer installation in this session.
+6. All limitations recorded in every prior TP-00x/RW-0x/MVP-001/
+   MVP-001-CV/UI-ADB-001/REL-0.1.0-PKG-01 section of this document
+   remain valid and are not superseded by REL-UPDATE-003.
+
+### QA focus points
+
+- Re-verify Required Outcomes 1-3 directly (per-account isolation,
+  save/clear resets readiness, calibration hidden without developer
+  mode) independently of this session's own test run.
+- Confirm `LDMANAGER_LIVE_MODE` is **unset** in whatever environment QA
+  smoke-tests in, and confirm that a verified Start (mapping OK +
+  successful Test capture, if reachable) does **not** produce any real
+  ADB tap in that state — this is the specific gap this session found
+  and closed; re-verifying it independently is high-value.
+- If a real device/game environment becomes available: this is the
+  first packet where `OpenCVTemplateRecognizer` + real templates could
+  be meaningfully exercised — but doing so is explicitly **not** claimed
+  or requested as complete by this session.
+- Confirm the Windows build artifact above launches and self-bootstraps
+  identically to the REL-0.1.0-PKG-01 artifact, just larger (OpenCV
+  bundled) — no new first-run friction introduced.
+- Spot-check that `docs/HANDOFF_CODE.md` (this file) is the only
+  Code-worktree documentation convention touched by this session — the
+  QA-side docs/reports arrived via the merge, untouched by this
+  session, and should be reviewed (if needed) through whatever process
+  produced them.
+
+## ADB-PATH-001: customer-visible ADB executable selection
+
+**Manager packet**: `ADB-PATH-001 — customer-visible ADB executable
+selection (2026-09-14)`, recorded on the `kpj0526/Manager` branch's
+`docs/TASK_PACKET.md` (read there via `git show`, never checked out or
+merged into this Code worktree). Trigger: a real customer screenshot
+showed `Device discovery failed: ADB device listing failed:
+FileNotFoundError` on `v1.0.1` even after manually setting `adb_path`
+in `configs/config.yaml` and restarting.
+
+### Status: implemented, tested, built. Not tagged, not pushed, not
+published, not merged into `main`.
+
+### Root-cause note (not exhaustively reproduced)
+
+`main()`/`build_controller()` already wired one shared
+`InputGateAdbRunner`-wrapped `SubprocessAdbRunner` to both the GUI and
+every worker (fixed earlier, in `REL-UPDATE-003`) — so a "GUI uses a
+different, unpathed runner" theory was ruled out directly by reading
+that wiring. The more likely cause is a manual-YAML-editing pitfall: a
+hand-typed, double-quoted Windows path (e.g.
+`"C:\LDPlayer\LDPlayer14\adb.exe"`) is not valid YAML — `\L` is not a
+recognized escape sequence — so the value that actually loaded may not
+have been the path the customer saw on screen. This was not proven
+with a literal repro in this session; instead, ADB-PATH-001 removes
+the entire manual-YAML-editing step, which is the fix the packet asks
+for regardless of the precise original cause.
+
+### Acceptance criteria
+
+| AC | Description | Status |
+|----|--------------|--------|
+| ADBPATH-01 | GUI shows configured/resolved ADB executable state | Done — new "ADB executable:" row shows the live `configured: ... effective: ... [found/NOT FOUND]` string, recomputed via the existing `resolve_adb_path()` after every load/Save/Clear |
+| ADBPATH-02 | User can choose a real local `adb.exe` without terminal/YAML editing; invalid path visibly rejected | Done — Browse opens a native file picker (`.exe` filter); Save validates the typed/picked path exists as a file before writing anything, else shows the error in a dedicated `adb_path_error_var` label and writes nothing |
+| ADBPATH-03 | Configured path persists locally and enables read-only discovery after restart | Done — persisted via the existing `adb_path` YAML key (`save_adb_path()`/`load_current_adb_path()` in `config_mapping.py`), read back on next `LDManagerApp` construction |
+| ADBPATH-04 | Discovery/path selection produces zero touch/Worker side effects, never assigns a serial automatically | Done — Browse/Save/Clear only ever call `list_devices()` (via the existing `_on_refresh_devices()`), never `run()`/a tap, never start a worker; covered by assertions on `fake_runner.calls` for the new controls specifically |
+| ADBPATH-05 | Regression suite/build pass; QA can verify exact Code hash | Done — see Test results / Build artifact below |
+
+### Actual files changed
+
+- `src/ldmanager/adb.py` — added `SubprocessAdbRunner.set_adb_path()`
+  (re-resolves and updates `self.adb_path` at runtime, no restart
+  needed) and `InputGateAdbRunner.set_adb_path()`/`.adb_path` (a
+  defensive pass-through via `getattr` — a wrapped runner without these
+  is a safe no-op, never an `AttributeError`).
+- `src/ldmanager/config_mapping.py` — added `AdbPathSaveError`,
+  `AdbPathSaveResult`, `load_current_adb_path()`, `save_adb_path()`.
+  Mirrors the existing `save_account_serial()` pattern: reuses
+  `_load_raw_config`/`_write_raw_config`/`resolve_config_path`,
+  fail-closed (rejects blank or a path that isn't an existing file,
+  writes nothing on rejection), preserves every other top-level config
+  section (`adb_mapping`, `logging`, ...) untouched, never deletes any
+  file (clearing only ever writes the YAML value to `null`).
+- `src/ldmanager/gui.py` — new "ADB executable:" row (`Entry` +
+  Browse/Save/Clear buttons) between the global Start All/Stop All row
+  and the per-account panel grid, plus a status label
+  (configured/effective/found-or-not) and an error label. New handlers
+  `_update_adb_path_status()`, `_on_browse_adb_path()`,
+  `_on_save_adb_path()`, `_on_clear_adb_path()`. Save/Clear call the
+  live runner's `set_adb_path()` (no restart) and then re-run the
+  existing, still read-only `_on_refresh_devices()` so the effect is
+  visible immediately.
+- `tests/fakes.py` — added `adb_path`/`set_adb_path()` to
+  `FakeAdbRunner`, mirroring `SubprocessAdbRunner`'s real shape, so GUI
+  tests can assert the runner was reinitialized in place.
+- `tests/test_adb.py` — 4 new tests for `set_adb_path()` on both
+  `SubprocessAdbRunner` and `InputGateAdbRunner`, including that a
+  missing explicit path is kept verbatim (never silently swapped to
+  `"adb"`) so a later real call fails honestly against the path the
+  user actually configured. The one pre-existing no-op test was
+  updated to use a bespoke bare double (since `FakeAdbRunner` now has
+  both attributes) so it still exercises the true no-`set_adb_path`
+  case.
+- `tests/test_config_mapping.py` — 9 new tests for
+  `load_current_adb_path()`/`save_adb_path()`: missing-file default,
+  read-back, blank rejection, missing-file rejection (fail-closed,
+  nothing written), directory-not-a-file rejection, persist + reload,
+  clear (never deletes the real file), and that `adb_mapping` and
+  `adb_path` never clobber each other in the same config file.
+- `tests/test_gui.py` — 4 new tests for the Browse/Save/Clear controls:
+  Browse fills the entry without any tap; Save of a missing path is
+  rejected visibly and persists nothing; Save of a real file persists,
+  reinitializes the live runner (`fake_runner.adb_path`), and updates
+  the status label, all with zero taps; Clear resets to auto-detect,
+  same zero-tap guarantee.
+- `docs/HANDOFF_CODE.md` — this section.
+
+### Test results
+
+```
+python -m pytest -q
+319 passed
+```
+
+Run 3x in a row for stability (consistent with this session's
+established practice) — all 3 runs: `319 passed`, 0 failures, 0
+flakes. (Prior baseline was 302; +4 `test_adb.py`, +9
+`test_config_mapping.py`, +4 `test_gui.py` = +17 -> 319.)
+
+Focused runs also independently confirmed:
+```
+python -m pytest -q tests/test_config_mapping.py       # 24 passed
+python -m pytest -q tests/test_gui.py -k "adb_path"     #  4 passed
+```
+
+### Build artifact (this session)
+
+- Path: `dist\ldmanager\ldmanager.exe` (plus `_internal\`,
+  `configs\*.example.yaml`, `templates\*.png`, `docs\`, `VERSION`,
+  `CHANGELOG.md`, `README_FIRST_RUN.txt`)
+- Size: 4,809,353 bytes (exe only)
+- SHA-256: `5d110c89df7fa23d1a05b62dbcd7caf87214eb7d94d3d2f8b3a751e83e54c56`
+- Built via `scripts\build_windows.ps1`; no live-exe launch
+  verification was performed in this session (build + full test suite
+  were treated as sufficient evidence for this handoff, per the "urgent
+  MVP priority, no extra scope" instruction; QA may perform live-launch
+  verification independently).
+- `dist\`/`build\`/`*.spec` remain git-ignored — not part of any
+  commit.
+
+### Commits
+
+- `5ade5dc` — `ADB-PATH-001: GUI-visible ADB executable path selection`
+  (implementation + tests + this HANDOFF section, in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `5ade5dc`.
+- Not tagged, not pushed, not published, not merged into `main`.
+
+### Limitations
+
+1. **The precise original customer root cause (YAML backslash-escaping
+   during manual editing) was not literally reproduced in this
+   session** — see the root-cause note above. The fix addresses the
+   entire class of problem (no more manual YAML editing needed) rather
+   than a single confirmed mechanism.
+2. **No live-exe launch verification was performed for this packet**
+   (unlike `REL-UPDATE-003`, which did a PID-tracked launch/terminate
+   check) — only `pytest` + the PyInstaller build itself were run, per
+   this task's "urgent MVP priority, no extra scope" instruction. QA
+   should perform an independent live-launch check of the new ADB
+   executable row.
+3. **`resolve_adb_path()`'s common-install-location probing and the
+   real LDPlayer `adb.exe` itself remain unverified against an actual
+   LDPlayer installation in this session** — same limitation as every
+   prior packet; nothing in ADB-PATH-001 changes that.
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by ADB-PATH-001.
+
+### QA focus points
+
+- Reproduce the original customer flow end-to-end: launch the built
+  exe, use Browse to pick a real local `adb.exe`, Save, confirm the
+  status row flips to `[found]` and device discovery (Refresh) now
+  lists real devices with **no** manual YAML editing at any point.
+- Confirm an invalid/missing path (typo, moved file) is rejected
+  visibly (`adb_path_error_var`) and that `configs/config.yaml`'s
+  `adb_path` value is **not** changed by a rejected Save — re-open the
+  file or restart the app to confirm the prior value (or none) is
+  still what's active.
+- Confirm Clear falls back to auto-detection (`resolve_adb_path()`'s
+  PATH/common-install-location search) and that no file on disk is
+  ever deleted by Clear — only the YAML value changes.
+- Confirm zero-touch: across Browse/Save/Clear and the Refresh they
+  trigger, no real ADB tap (`run()`) is ever issued and no worker is
+  ever started — this is the core safety property of this packet and
+  is covered by automated tests, but an independent live check adds
+  confidence.
+- Confirm the Windows build artifact above launches and shows the new
+  "ADB executable:" row without regressing any prior packet's GUI
+  behavior (mapping Save/Clear, Start/Stop gating, Test capture).
+
+## GAME-CAL-001: configurable mission-screen recognition/calibration correction
+
+**Manager task packet**: `GAME-CAL-001` (approved). Customer evidence
+(1280x720 captures): LD1/LD3 valid completed Mission > Region > Free
+Subjugation screen; LD4 in-progress "130/180" with a "6600" currency
+action, plus a completed state. Current Test capture reported a
+template mismatch even for valid mapped screens.
+
+### Status: implemented, tested, built. Not tagged, not pushed, not
+published, not merged into `main`. Narrowly scoped per Manager's
+mid-task priority update -- no reroll/popup automation changes, no new
+live automation.
+
+### Root cause (customer-reported mismatch)
+
+The existing Test-capture readiness gate (`app.py`'s `readiness_check`)
+only ever looked for four very *specific*, sub-state-only templates (a
+refresh-popup title, a reward-result header, a fixed "0/200" quantity
+crop). None of those are present on a plain mission-list/detail screen,
+and the "0/200" crop is tied to one specific mission's target quantity
+-- it can never match a mission whose target is a different number
+(e.g. the customer's real "130/180", target 180 not 200). A
+correctly-mapped screen therefore reported MISMATCH essentially always.
+
+### Customer clarification (mid-task, addressed in this same commit)
+
+"자유 토벌작전" ("Free Subjugation") is a **mission-list panel title**,
+not a global layout anchor -- it only appears for that one objective
+type; other mission types show other titles. It must never be used as
+a stable screen-layout anchor (that would reject every other mission's
+valid screen as a MISMATCH). This is now an explicit, enforced
+architectural separation -- see Actual files changed below.
+
+### Acceptance criteria
+
+| Requirement | Status |
+|---|---|
+| Configurable templates/ROIs/thresholds, calibrated to stable static anchors (Mission/Region/list-detail layout); never reward amount or dynamic progress as sole anchor | Done -- new `stable_screen_anchors`/`min_stable_anchor_matches` (`bounty_config.py`), consulted only for screen-layout confirmation, never for sub-state. Mission-*title* text (e.g. "자유 토벌작전") is explicitly excluded/documented as unsafe for this field. |
+| Explicit completed vs. in-progress/currency/unknown/mismatch classification | Done -- `MissionScreenState` enum (`screen_classification.classify_screen`), five-way, ordered COMPLETED > CURRENCY_ACTION > IN_PROGRESS > UNKNOWN, with MISMATCH gated separately by layout anchors. |
+| Completion touch only after verified completed state, per-account explicit serial, fresh precondition, verified postcondition | Done -- `complete_mission_if_verified()`: validates serial, freshly captures + classifies COMPLETED, **additionally** freshly verifies the selected mission is the target objective (`assess_mission_target`), re-checks `should_stop()` immediately before the tap, then bounded-retries a fresh postcondition capture confirming the screen left the completed state. |
+| Zero touch for 130/180 (progress), 6600/currency, unknown, mismatch; mismatch stays diagnostic/account-local | Done -- each state returns before any capture/tap beyond the precondition check; see fixture tests below. `readiness_check`'s MISMATCH path only ever sets that one account's Test-capture error label. |
+| Target acceptance gate explicitly recognizes "모든 몬스터 처치" (configured phrase/criteria); other titles safely non-target/no-touch or follow the bounded flow | Done -- `assess_mission_target()` (shared implementation; `bounty_mission._mission_is_acceptable` now delegates to it) requires phrase AND quantity (or the combined template) to independently match; a different title is `NON_TARGET_CONFIRMED` (bounded reroll in the live cycle) or `RECOGNITION_FAILED` (fail-closed) -- never a screen-layout MISMATCH. |
+| Preserve individual/global stop safety, no input after global stop, bounded retries/timeouts, worker containment, GUI startup | Preserved -- `run_one_cycle`/`AccountWorker`/`AccountController` untouched; `complete_mission_if_verified` checks `should_stop()` before every capture and immediately before the tap; postcondition loop is bounded by `max_postcondition_attempts`. |
+| Fixture/mock tests: differentiation, no-touch (progress/currency/unknown/mismatch), serial scope, title variation, regression; Windows build | Done -- see Test results below. |
+| `docs/HANDOFF_CODE.md` updated, `NEEDS_REAL_TEST` retained; no push/tag/publish; no live game-success claim | This section; see Limitations. |
+
+### Actual files changed
+
+- `src/ldmanager/screen_classification.py` (**new**) -- `MissionScreenState`
+  (COMPLETED/IN_PROGRESS/CURRENCY_ACTION/UNKNOWN/MISMATCH),
+  `classify_screen()`, `capture_and_classify()`, `MissionAssessment` +
+  `assess_mission_target()` (mission-title/OCR classification, shared
+  with `bounty_mission.py`), `complete_mission_if_verified()` (the
+  gated completion-touch primitive). No frame capture or tap happens
+  anywhere in this module except that one function's own explicitly
+  guarded tap.
+- `src/ldmanager/bounty_config.py` -- new optional `BountyMissionConfig`
+  fields: `stable_screen_anchors` (+ `AnchorSpec`), `min_stable_anchor_matches`,
+  `currency_action_labels` (defaults to the existing four
+  `button_refresh_*` variants), `in_progress_roi`/`in_progress_label`.
+  All optional/backward-compatible (empty/unset = that check is
+  skipped, never fabricated); `load_bounty_config()` parses and
+  validates each, including that `in_progress_roi`/`in_progress_label`
+  are only ever set together.
+- `src/ldmanager/bounty_mission.py` -- `MissionAssessment` and
+  `_mission_is_acceptable()`'s body moved to `screen_classification.py`
+  (single shared implementation instead of two copies that could
+  silently drift); `_mission_is_acceptable()` is now a one-line
+  delegation, behavior unchanged (confirmed by the full, unmodified
+  `test_bounty_mission.py` suite still passing). `run_one_cycle()`
+  itself was **not** otherwise modified -- zero regression risk to its
+  large existing tested state machine.
+- `src/ldmanager/app.py` -- `readiness_check` (the customer-reported
+  Test-capture gate) now calls `classify_screen()` instead of the old
+  four-specific-template OR-check; MISMATCH is the only case reported
+  as not-ready, with the specific anchor-count reason in the message.
+- `configs/bounty.example.yaml` -- documents the new optional fields
+  with placeholder values/commented examples, explicitly warning
+  against using a mission-title panel label (e.g. "자유 토벌작전") as a
+  `stable_screen_anchors` entry.
+- `tests/test_screen_classification.py` (**new**, 26 tests) --
+  `classify_screen` five-way differentiation (including priority
+  ordering, partial `min_stable_anchor_matches`, legacy
+  no-anchors-configured passthrough, and that a different mission title
+  never causes MISMATCH); `capture_and_classify` capture-failure vs.
+  success; `complete_mission_if_verified` zero-touch for
+  in-progress/currency/unknown/mismatch/capture-failure/blank-serial/
+  should-stop (both before capture and after precondition), a
+  confirmed-target-and-completed real touch with verified postcondition,
+  bounded postcondition failure (tap sent, `ok=False`), per-account
+  serial isolation, and two title-variation no-touch regressions
+  (uncertain-recognition fail-closed, and confident non-match).
+
+### Test results
+
+```
+python -m pytest -q
+345 passed
+```
+
+Run 3x in a row: `345 passed` every time, 0 failures, 0 flakes. (Prior
+baseline 319 + 26 new `test_screen_classification.py` tests = 345; the
+full existing `test_bounty_mission.py`/`test_app.py`/`test_gui.py`
+suites are unmodified and still pass unchanged.)
+
+### Build artifact (this session)
+
+- Path: `dist\ldmanager\ldmanager.exe` (plus `_internal\`,
+  `configs\*.example.yaml`, `templates\*.png`, `docs\`, `VERSION`,
+  `CHANGELOG.md`, `README_FIRST_RUN.txt`)
+- Size: 4,820,957 bytes
+- SHA-256: `f389375ebe37de00950ec2fc1035229bf301dd0df9b54a8f6611bcc1f2aeef37`
+- Built via `scripts\build_windows.ps1`. No live-exe launch verification
+  or real-device run was performed (see Limitations/NEEDS_REAL_TEST).
+- `dist\`/`build\`/`*.spec` remain git-ignored -- not part of any commit.
+
+### Commits
+
+- `6fa6d39` — `GAME-CAL-001: configurable mission-screen recognition/calibration`
+  (implementation + tests + this HANDOFF section, in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `6fa6d39`.
+- Not tagged, not pushed, not published, not merged into `main`.
+
+### Limitations -- NEEDS_REAL_TEST
+
+1. **No real device, no real template/anchor calibration, and no real
+   game screen was used anywhere in this session.** `classify_screen`,
+   `assess_mission_target`, and `complete_mission_if_verified` are
+   exercised exclusively by in-memory fake/mock recognizers
+   (`LabelMappingRecognizer` and small bespoke test doubles) against a
+   minimal placeholder PNG. Real-device recognition accuracy against
+   the customer's actual 1280x720 captures -- including whether the
+   *new* `stable_screen_anchors`/`in_progress_*` templates this packet
+   introduces can even be reliably calibrated from those screens --
+   remains **`NEEDS_REAL_TEST`**, exactly as it has for every prior
+   recognition-related packet in this document.
+2. **No `stable_screen_anchors`/`in_progress_roi`/`in_progress_label`
+   values were added to the real, git-ignored `configs/bounty.yaml`** --
+   only the tracked `configs/bounty.example.yaml` documents the new
+   optional fields with placeholders. A customer/QA environment must
+   still calibrate real crops from real captures before these new
+   checks do anything beyond "skipped" in a live run.
+3. **This session makes no claim that the customer's original
+   FileNotFoundError-adjacent Test-capture mismatch is now resolved
+   end-to-end against their real client** -- only that the specific,
+   identified *class* of bug (readiness gated on sub-state-only/
+   digit-specific templates instead of stable screen-layout anchors) is
+   fixed in code and covered by fixture tests. QA/customer must
+   recalibrate real anchor templates and re-verify against the actual
+   LD1/LD3/LD4 captures.
+4. **`run_one_cycle()`'s live completion path was intentionally left
+   unmodified** in this narrowly-scoped packet -- it already
+   independently satisfies "no touch below completion, bounded" (prior,
+   already-tested behavior) but does not yet call the new
+   `complete_mission_if_verified()` primitive itself. Wiring that in is
+   future work, not claimed done here.
+5. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by GAME-CAL-001.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `345 passed`) and `tests/test_screen_classification.py`
+  specifically (26 tests) to confirm the five-way classification,
+  zero-touch guarantees, and title-variation regressions.
+- Using the real customer captures (LD1/LD3/LD4), manually crop real
+  `stable_screen_anchors` (Mission tab / Region tab / list-detail
+  frame -- explicitly NOT the "자유 토벌작전" panel title) and a real
+  `in_progress_roi`/`in_progress_label` template, add them to a local
+  `configs/bounty.yaml`, and confirm Test-capture now reports the
+  correct classification (not MISMATCH) for all three real screens.
+- Confirm a non-"모든 몬스터 처치" mission (different title) on a real
+  device is never tapped by `complete_mission_if_verified`, even if it
+  visually shows a completed badge.
+- Confirm zero real ADB taps occur for the 130/180 in-progress screen
+  and the 6600-currency screen specifically, matching the customer's
+  evidence screenshots.
+- Confirm the Windows build artifact above launches without regressing
+  any prior packet's GUI behavior.
+
+## GAME-CAL-001 REAL-CAPTURE REWORK: calibrate from real customer PNGs
+
+**Trigger**: `v1.0.3-rc.1` was withdrawn — the actual customer Test
+capture still reported "Only 0/2 stable screen anchors matched" against
+the prior GAME-CAL-001 commit's `stable_screen_anchors`, which had never
+been calibrated against any real image (only mock/fake-recognizer
+fixtures existed at that point). Manager/customer supplied 3 real,
+original, unmodified 1280x720 LDPlayer captures and required real-asset
+calibration + a reproducible test proving them recognized before any
+completion claim.
+
+### Status: implemented, tested (against real assets), built. Not
+tagged, not pushed, not published, not merged into `main`.
+
+### Real captures used (documented provenance)
+
+Copied verbatim into `tests/fixtures/game_cal_001/source/` — see that
+directory's `PROVENANCE.md` for the full table (exact pixel regions,
+what each derived crop is used for, what remains uncalibrated):
+
+| File | Shows |
+|---|---|
+| `completed_target.png` | 임무 > 지역 > 자유 토벌작전 detail, 모든 몬스터 처치, **완료** (completed), 완료 button visible |
+| `in_progress_target.png` | Same mission type, different instance: 모든 몬스터 처치, **(16/165)**, currency action cost 4400 |
+| `non_target.png` | A **different** mission: 야왕궁 토벌작전, 냉혈사 처치, **(0/450)**, currency action cost 4400, plus a 순간 이동 (teleport) button |
+
+### Root cause of the withdrawal (real measurement, not guesswork)
+
+Direct measurement against the real captures found the true defect:
+`OpenCVTemplateRecognizer`'s per-image `cv2.equalizeHist` normalization
+(applied independently to a small template and to the much larger
+frame/ROI it's searched in) *degrades* an otherwise-exact match — a
+pixel-perfect crop matched via raw (non-equalized) grayscale scored
+`0.9999`/`1.0`, the *same* match after equalization scored only
+`0.68`-`0.81` (below the `0.8` threshold). Simply recalibrating ROIs
+against real pixels was not sufficient by itself; the recognizer's own
+matching method needed the same real-data proof.
+
+### Fixes
+
+1. **`src/ldmanager/recognition.py`** — `OpenCVTemplateRecognizer.recognize()`
+   now evaluates a third candidate: plain (non-equalized) grayscale
+   `TM_CCOEFF_NORMED`, alongside the existing histogram-equalized and
+   Canny-edge candidates, taking whichever of the three scores highest
+   (never averaged, never removing either existing candidate — pure
+   addition, so no existing behavior can regress). Verified against the
+   3 real captures: true matches now score `~0.9994-1.0`, confidently
+   different content scores `~0.45-0.52` — a huge, real margin at the
+   existing `0.8` threshold.
+2. **`configs/bounty.example.yaml`** — `screen_size` corrected to
+   `1280x720` (the real captures' actual resolution; was a placeholder
+   `960x540`, which would have produced wrongly-scaled real tap
+   coordinates). `stable_screen_anchors` replaced with the two real,
+   calibrated anchors (`mission_header`, `mission_objective_label`) —
+   confirmed present, identically, on all 3 real captures regardless of
+   mission title. `complete_state_roi`/`complete_state_label`
+   recalibrated to the real "완료" badge crop and its real ROI.
+   `currency_action_labels` set to the real `currency_action_4400` crop
+   (confirmed present on both real non-completed captures).
+   `template_map` gained the 5 new real-crop entries. The pre-existing
+   `button_complete` template (from an earlier, separately-sourced
+   packet) was independently confirmed, via direct measurement against
+   these same 3 real captures, to also correctly detect the real
+   completed state (`0.90` vs `~0.69`) — a useful cross-check, left in
+   place as the (still-correct) primary completed-signal path.
+3. **New real template crops**, derived (cropped, lossless) from the
+   real captures, added to both `tests/fixtures/game_cal_001/templates/`
+   and the shipped `templates/`: `mission_header.png`,
+   `mission_objective_label.png`, `complete_badge.png`,
+   `currency_action_4400.png`, `mission_target_phrase.png` (the "모든
+   몬스터 처치" objective phrase alone, no digits/quantity — wired via
+   `screen_classification.py`'s single-template target fast path,
+   renamed from the old, misleadingly-digit-specific
+   `target_all_monsters_0_of_200` key to `mission_target_phrase` to
+   match what it actually is now).
+4. **`src/ldmanager/screen_classification.py` / `bounty_mission.py`** —
+   only the key rename above; no behavioral logic changes beyond what
+   REAL-CAPTURE REWORK's prior GAME-CAL-001 commit already established.
+5. **`tests/fixtures/game_cal_001/`** — the 3 real source PNGs +
+   `PROVENANCE.md` (exact pixel regions, what's still `NEEDS_REAL_TEST`)
+   + the 5 derived template crops, as controlled fixture resources.
+6. **`templates/README.md`** — corrected a stale claim ("nothing reads
+   from this directory yet") and documented which files are real vs.
+   still-placeholder.
+
+### Preserved safety requirements (all verified against the real captures)
+
+- Variable mission titles never cause `MISMATCH`: `completed_target.png`
+  and `in_progress_target.png` share one title ("자유 토벌작전"),
+  `non_target.png` has a completely different one ("야왕궁 토벌작전") —
+  all three classify as not-`MISMATCH` (test-proven).
+- Both real non-completed captures (16/165 target-in-progress, 0/450
+  non-target) produce **zero** ADB calls of any kind through
+  `complete_mission_if_verified()` (test-proven, `runner.calls == []`).
+- 순간 이동 (the teleport button visible only in `non_target.png`) is
+  not a configured/searched label anywhere in this project — it cannot
+  be tapped by any code path here, real or mock.
+- Only the real completed + target-confirmed capture produces a tap,
+  scoped to the one explicit serial passed in (test-proven).
+
+### Actual files changed
+
+- `src/ldmanager/recognition.py` — raw-grayscale third matching
+  candidate (additive).
+- `src/ldmanager/screen_classification.py`,
+  `src/ldmanager/bounty_mission.py` — `mission_target_phrase` key
+  rename (prose/key only).
+- `configs/bounty.example.yaml` — real `screen_size`,
+  `stable_screen_anchors`, `complete_state_roi/label`,
+  `currency_action_labels`, and 5 new `template_map` entries.
+- `templates/mission_header.png`, `templates/mission_objective_label.png`,
+  `templates/complete_badge.png`, `templates/currency_action_4400.png`,
+  `templates/mission_target_phrase.png` (new, real crops).
+- `templates/README.md` — corrected stale claim.
+- `tests/fixtures/game_cal_001/` (new) — `source/` (3 real captures),
+  `templates/` (5 derived crops), `PROVENANCE.md`.
+- `tests/test_screen_classification_real_assets.py` (new, 13 tests) —
+  loads the real source PNGs + the real `OpenCVTemplateRecognizer` +
+  the real shipped `configs/bounty.example.yaml`; proves: real captures
+  are genuine 1280x720 PNGs; none of the 3 ever `MISMATCH`; the
+  completed capture classifies `COMPLETED`+`TARGET_CONFIRMED` and the
+  other two never do; both non-completed captures are `TARGET_CONFIRMED`
+  or correctly `NON_TARGET_CONFIRMED` as appropriate; and
+  `complete_mission_if_verified()` taps only the real completed capture
+  (exactly once, correct serial) and produces zero calls for both real
+  non-completed captures.
+- `tests/test_bounty_config.py` — 2 existing tests updated for the
+  corrected real `screen_size` (960->1280); no other existing test
+  files touched, and no existing test's *assertions* changed beyond
+  that literal resolution value.
+
+### Test results
+
+```
+python -m pytest -q
+358 passed
+```
+
+Run 3x in a row: `358 passed` every time, 0 failures, 0 flakes. (Prior
+baseline 345 + 13 new `test_screen_classification_real_assets.py` = 358.)
+Focused run: `pytest -q tests/test_screen_classification_real_assets.py`
+→ `13 passed`, confirming the real-asset proof independently.
+
+### Build artifact (this session)
+
+- Path: `dist\ldmanager\ldmanager.exe` (plus `_internal\`,
+  `configs\*.example.yaml`, `templates\*.png` — including the 5 new
+  real crops — `docs\`, `VERSION`, `CHANGELOG.md`,
+  `README_FIRST_RUN.txt`)
+- Size: 4,821,052 bytes
+- SHA-256: `c7ff93fdfa2823381aa306a32b35f0696bc311451db86d20b85c67d02a8cbf3c`
+- Built via `scripts\build_windows.ps1`. No live-exe launch or real
+  LDPlayer/ADB run was performed.
+- `dist\`/`build\`/`*.spec` remain git-ignored — not part of any commit.
+
+### Commits
+
+- `4688104` — `GAME-CAL-001 REAL-CAPTURE REWORK: calibrate from real
+  customer PNGs` (implementation + real-asset fixtures + tests + this
+  HANDOFF section, in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `4688104`.
+- Not tagged, not pushed, not published, not merged into `main`.
+
+### Limitations -- NEEDS_REAL_TEST (unchanged posture, narrower gaps)
+
+1. **Only one currency cost (4400) has a real example.** A mission
+   whose currency-action cost differs is not covered by
+   `currency_action_4400.png` alone — same OR-list pattern as
+   `button_refresh_4400/6600/9900/14900` would need more real crops to
+   extend. See `PROVENANCE.md`.
+2. **No distinct real "in progress" (non-currency) indicator exists**
+   in the supplied captures; `in_progress_roi`/`in_progress_label`
+   remain uncalibrated by design (both real non-completed examples
+   safely classify as `CURRENCY_ACTION` instead — still zero-touch).
+3. **Only the initial Mission > Region > detail view is covered.** The
+   refresh-popup/reward/claim/result/mission-list screens used by the
+   rest of `bounty_mission.run_one_cycle` have no real capture in this
+   fixture set and remain placeholder-calibrated.
+4. **No live device, no real ADB pipeline, and no real completion tap
+   against an actual LDPlayer instance was exercised anywhere in this
+   packet** — every test in `test_screen_classification_real_assets.py`
+   loads a static real PNG entirely offline; `FakeAdbRunner` stands in
+   for the ADB transport (it is real *image* data flowing through a
+   real recognizer, not a real *device*).
+5. All limitations recorded in every prior section of this document
+   (including the earlier `GAME-CAL-001` section immediately above)
+   remain valid except where explicitly narrowed here.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `358 passed`) and
+  `tests/test_screen_classification_real_assets.py` specifically (13
+  tests) — these load the real supplied PNGs directly from disk, so a
+  broken calibration in `configs/bounty.example.yaml` will fail this
+  file, not just a mock-based one.
+- On a real device at the customer's actual 1280x720 resolution,
+  confirm Test capture reports `stable screen anchors matched` (not
+  MISMATCH) for a real, live captured frame of this same screen —
+  this session's evidence is from 3 static supplied PNGs, not a live
+  ADB capture.
+- Confirm zero real ADB taps for a real 16/165-style in-progress screen
+  and a real non-target-title screen, matching this session's offline
+  proof.
+- Confirm the Windows build artifact above launches and packages the 5
+  new real template PNGs under `dist\ldmanager\templates\`.
+
+## REL-003: replacement customer-test prerelease (v1.0.3-rc.2)
+
+**Manager task packet**: `REL-003` (approved). User explicitly
+authorized immediate customer-test deployment. Supersedes the
+withdrawn `v1.0.3-rc.1` (see the `GAME-CAL-001 REAL-CAPTURE REWORK`
+section immediately above this one for the fix that made this
+replacement release possible).
+
+### Status: published as a GitHub prerelease. CUSTOMER-TEST / MVP.
+`NEEDS_REAL_TEST` — not final, no claim of live game success.
+
+### Source
+
+- Source commit (exact build input, no src changes since):
+  `c814ae850f3cd89e9c5e0feefc451e9c90d7aeff` (`c814ae8`)
+- Implementation commit: `4688104` (`GAME-CAL-001 REAL-CAPTURE REWORK:
+  calibrate from real customer PNGs`)
+- This section's own commit is tagged along with the release (a
+  docs-only commit -- it changes no `src/` file, so the built artifact
+  is unaffected; verified via `git diff --stat 4688104..HEAD -- src/`
+  before tagging, output empty).
+
+### Release
+
+- Tag: `v1.0.3-rc.2` (did not previously exist; confirmed via `git tag -l`
+  and `gh release list` before creating it)
+- GitHub prerelease URL: https://github.com/kpj0526/LDplayer/releases/tag/v1.0.3-rc.2
+- Marked explicitly: **CUSTOMER-TEST / MVP**, **NEEDS_REAL_TEST**, not
+  final -- see the release body for the exact limitations text (mirrored
+  below).
+- Does **not** republish, retag, or edit the withdrawn `v1.0.3-rc.1` --
+  that release remains untouched, still marked WITHDRAWN, and its asset
+  hash (`4764fe903d4c2f7d5f7d4f1904d4e53d6ee0b964bc2d622d050a4c46960da959`)
+  is not reused anywhere in this one.
+
+### Build + package
+
+- Built via `scripts\build_windows.ps1` from the exact source commit
+  above (clean working tree, no uncommitted changes).
+- `ldmanager.exe`: 4,821,052 bytes, SHA-256
+  `ab693fff9e1a7ba78759add60b11b860ee9ca5d9d561582b574291344f9332bf`
+  -- **distinct** from the withdrawn release's exe/zip hash.
+- Packaged ZIP: `ldmanager-v1.0.3-rc.2-windows.zip`, 67,644,387 bytes,
+  SHA-256 `174c34b625ad2087c5a070e604fbb8880e4f9d2935ec8e85829ab10844a4f6da`.
+  Layout: a single top-level `ldmanager\` folder containing
+  `ldmanager.exe`, `_internal\` (bundled Python/OpenCV/Tk runtime),
+  `configs\*.example.yaml`, `templates\*.png` (**including the 5 real,
+  customer-capture-calibrated crops**: `mission_header.png`,
+  `mission_objective_label.png`, `complete_badge.png`,
+  `currency_action_4400.png`, `mission_target_phrase.png`), `docs\
+  RUN_GUIDE.md` + `docs\REAL_CAPTURE_CHECKLIST.md`, `VERSION`,
+  `CHANGELOG.md`, `README_FIRST_RUN.txt` -- verified present via
+  `unzip -l` before upload (not assumed).
+- Zip and exe hashes both independently confirmed distinct from the
+  withdrawn `v1.0.3-rc.1` asset.
+
+### Commits / tag / push
+
+- This handoff-update commit (docs-only) is on `kpj0526/Code`.
+- Tag `v1.0.3-rc.2` created at this commit.
+- Pushed: `kpj0526/Code` branch and the `v1.0.3-rc.2` tag only -- no
+  other branch/tag was pushed or touched, `main` was not touched.
+
+### Limitations (mirrored in the release body)
+
+1. **CUSTOMER-TEST / MVP build, not a final release.** No claim of
+   real LD/game completion success anywhere in this build, its
+   templates, or this document.
+2. **`NEEDS_REAL_TEST`**: the 5 real calibration templates are verified
+   against 3 static, customer-supplied 1280x720 PNGs offline (see the
+   `GAME-CAL-001 REAL-CAPTURE REWORK` section above) -- not against a
+   live ADB capture from an actual running LDPlayer instance. No live
+   ADB/LDPlayer/game session was operated anywhere in producing this
+   release.
+3. Only one currency-action cost (4400) and one mission-title pairing
+   have real calibration; other missions/costs/screens in the five-slot
+   flow remain placeholder-calibrated (unchanged from the section
+   above).
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this release.
+
+### Customer safe-test steps (mirrored in the release body)
+
+1. Extract the ZIP anywhere and run `ldmanager.exe` -- first launch
+   self-creates `configs\config.yaml`/`configs\bounty.yaml` from the
+   bundled examples; nothing is pre-filled or auto-detected as "ready."
+2. Map **exactly one** account's ADB serial explicitly (Refresh ADB
+   devices, then pick/type the serial for that one LDx panel, Save) --
+   do not map all nine at once for a first test.
+3. Use **Test capture** on that one account before doing anything else,
+   and confirm the panel reports the screen as recognized (not a
+   mismatch) before considering Start.
+4. Begin with that **one** account only -- do not Start All.
+5. **Stop immediately** if the panel reports a mismatch, an unknown
+   screen, or any error -- do not continue running, and save/send the
+   diagnostic capture it writes under `diagnostics\captures\<LDx>\`.
+6. This build does not prove, and must not be treated as proving, that
+   any real in-game action (mission completion, claim, etc.) succeeds
+   on a live account -- treat any observed tap purely as a recognition/
+   calibration test, not a production automation run.
+
+### QA focus points
+
+- Independently verify the exact asset SHA-256 above against the
+  published release download, not against this document alone.
+- Confirm the release is marked prerelease (not "Latest"), and that its
+  body includes the CUSTOMER-TEST/MVP + NEEDS_REAL_TEST language and
+  the safe-test steps above verbatim or equivalently.
+- Confirm `v1.0.3-rc.1` is untouched (still WITHDRAWN, not edited, not
+  retagged) and that its asset hash does not appear anywhere in this
+  release's metadata.
+- Confirm only `kpj0526/Code` and the `v1.0.3-rc.2` tag were pushed --
+  no change to `main` or any other branch/tag.
+
+## LIVE-SERIAL-001: repair live per-account serial propagation
+
+**Manager task packet**: `LIVE-SERIAL-001` (approved corrective
+packet). Customer live reproduction: LD1's GUI displayed mapping
+``emulator-5554`` and was started; the worker crashed:
+
+```
+controller.py:127 _loop -> app.py:80 _cycle -> bounty_mission.py:373
+run_one_cycle -> _accept_or_refresh_slot -> _tap_template -> _recognize
+-> screenshot.py:71 capture_screenshot -> adb.py:149 validate_serial ->
+ValueError: Invalid ADB serial: ''
+```
+
+### Status: implemented, tested, regression-verified. Not built (not
+requested for this corrective packet), not tagged, not pushed, not
+published. `v1.0.3-rc.2` is untouched.
+
+### Root cause
+
+`app.py`'s `_make_cycle_fn(account_id, serial, ...)` closed over a
+plain **string** `serial`, resolved exactly **once**, when
+`build_controller()` ran (typically at app launch, before any real
+mapping exists -- bootstrap creates a null mapping). A later GUI Save
+(`gui.py`'s `_on_save_mapping` -> `ldmanager.config_mapping.
+save_account_serial`) correctly persists the new serial to
+`configs/config.yaml` on disk, and the GUI panel correctly displays it
+-- but the already-built worker's cycle function had no way to learn
+about it: it kept using the original, blank string captured at
+construction time. Clicking Start then ran a cycle whose very first
+capture attempt (`_tap_template` -> `_recognize` ->
+`capture_screenshot`) called `validate_serial("")`, raising. The
+worker's outer exception handler contained the crash (it didn't take
+down the app), but as an **uncaught exception** propagating through six
+stack frames -- not the "fail account-locally BEFORE any capture/ADB/
+touch call, as a contained result" behavior this packet requires.
+
+### Fix
+
+- **`src/ldmanager/app.py`** -- new `LiveSerialRegistry`: a small,
+  thread-safe, per-`AccountId` string store. `build_controller()` now
+  constructs one, seeds it from the config file (same as before), and
+  exposes it as `controller.serial_registry` (mirrors the existing
+  `controller.adb_runner`/`controller.readiness_check` bolt-on
+  pattern from ADB-PATH-001/GAME-CAL-001 -- `AccountController`'s own
+  class in `controller.py` is untouched). `_make_cycle_fn` no longer
+  takes a plain string: it takes the registry, and reads
+  `serial_registry.get(account_id)` **fresh, on every single call** --
+  never cached, never captured once. A blank/absent result returns a
+  structured `BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, (),
+  "<LDx>: no ADB serial configured...")` immediately -- zero
+  capture/ADB/touch calls, no exception.
+- **`src/ldmanager/gui.py`** -- new optional `serial_registry`
+  constructor parameter (duck-typed: only `.set(account_id, serial)`
+  is ever called; `None` is a safe no-op, preserving every existing
+  caller). `_on_save_mapping`/`_on_clear_mapping` now call
+  `self._serial_registry.set(account_id, ...)` immediately after a
+  successful save/clear -- scoped to exactly that one `account_id`,
+  never any other account's live value. `main()` wires
+  `controller.serial_registry` through to `LDManagerApp`.
+- No change to `bounty_mission.py`'s capture/recognize/tap helpers
+  (`_recognize`, `_tap_template`, `_tap_any_template`,
+  `_verify_refresh_popup`, ...) -- they already correctly receive and
+  propagate the single `serial` parameter passed into `run_one_cycle`
+  with no defaulting/inference/reuse; the bug was entirely upstream, in
+  what value reached `run_one_cycle` in the first place. Fixing the
+  source (the registry) transitively fixes every downstream helper.
+- `controller.py` itself is **unchanged** -- `AccountWorker`/
+  `AccountController`'s classes, and their own existing test suite,
+  are untouched; the fix stays entirely in the wiring layer (`app.py`)
+  plus the GUI's save/clear handlers, consistent with controller.py's
+  own documented scope ("no ADB command construction... lives here").
+
+### Acceptance criteria
+
+| Requirement | Status |
+|---|---|
+| Configured LD1 `emulator-5554` reaches every cycle helper/capture/tap argv | Done -- `test_configured_serial_reaches_every_capture_and_tap_argv` asserts every recorded `FakeAdbRunner` call (both `capture_calls` and tap `calls`) uses exactly that serial, through the real `_make_cycle_fn` -> `run_one_cycle` -> `_accept_or_refresh_slot` -> `_tap_template`/`_recognize` -> `capture_screenshot` chain. |
+| Blank/omitted serial causes zero ADB/capture/touch calls and a contained account error | Done -- `test_blank_registry_entry_causes_zero_adb_calls_and_a_contained_error`, `test_omitted_serial_after_explicit_clear_also_causes_zero_calls`: `runner.calls == []`, `runner.capture_calls == []`, a structured `CAPTURE_UNAVAILABLE` result (never an exception). `test_worker_started_with_blank_serial_is_contained_never_crashes_the_app` proves the same through a real `AccountWorker` thread. |
+| No cross-account use | Done -- `test_registry_is_strictly_per_account_no_cross_account_use`, `test_two_accounts_share_one_registry_but_never_cross_use_serials` (two live accounts, two runners, each only ever receives its own serial). |
+| Individual/global stop behavior preserved | Done -- `test_stopping_one_account_does_not_affect_another_with_live_registries`, `test_global_stop_all_still_sends_no_further_calls_with_a_live_registry` (same contracts as the pre-existing `test_controller.py` suite, now exercised alongside a live registry). |
+| The exact customer crash scenario, end to end | Done -- `test_gui_save_after_build_lets_a_fresh_start_use_the_new_serial_no_restart`: builds a cycle function while the registry is still blank (matching `build_controller()`'s real timing), then live-updates the registry (matching a GUI Save) with **no rebuild**, then starts the worker -- confirms `errored is False`, the real serial reaches every ADB call, and the cycle completes normally. |
+| GUI-facing propagation itself | Done -- `tests/test_gui.py`: `test_save_mapping_updates_the_live_serial_registry`, `test_clear_mapping_updates_the_live_serial_registry_to_blank`, `test_a_rejected_save_never_reaches_the_live_serial_registry`, `test_gui_without_a_serial_registry_never_raises_on_save_or_clear` (backward compatibility for a caller that never passes one). |
+
+### Actual files changed
+
+- `src/ldmanager/app.py` -- `LiveSerialRegistry` class; `_make_cycle_fn`
+  reads it live; `build_controller()` constructs/seeds/exposes it;
+  `main()` wires it into `LDManagerApp`.
+- `src/ldmanager/gui.py` -- new `serial_registry` constructor param;
+  `_on_save_mapping`/`_on_clear_mapping` propagate to it after a
+  successful save/clear; module docstring updated.
+- `tests/test_live_serial_propagation.py` (new, 13 tests) -- registry
+  unit behavior, `_make_cycle_fn` isolation tests (blank vs.
+  configured), the full customer-timeline `AccountWorker` reproduction,
+  cross-account isolation, and individual/global stop preservation.
+- `tests/test_gui.py` -- new `_FakeSerialRegistry` test double +
+  `fake_serial_registry` fixture wired into the shared `app` fixture;
+  4 new tests for the GUI-facing half of the propagation (including a
+  no-registry backward-compatibility check that reuses the shared `app`
+  fixture rather than a second `Tk()` root, avoiding this file's
+  already-documented Tcl/Tk multi-root flakiness).
+
+### Test results
+
+```
+python -m pytest -q
+375 passed
+```
+
+Run 6x in a row: `375 passed` every time, 0 failures, 0 flakes, 0
+warnings. (Prior baseline 358 + 13 `test_live_serial_propagation.py` +
+4 `test_gui.py` = 375.) An initial version of the customer-timeline
+`AccountWorker` reproduction test was itself flaky (a race where a
+second mission cycle could start and be interrupted before the test
+thread called `stop()`, overwriting `last_outcome`); fixed by having
+the wrapped cycle function request its own worker's stop from inside
+the worker thread, immediately after the first cycle returns, before
+`AccountWorker._loop` re-checks its `while` condition -- confirmed
+stable across 5 additional repeated runs of that file alone before
+being folded back into the full-suite stability runs above.
+
+### Commits
+
+- `966ff15` — `LIVE-SERIAL-001: repair live per-account serial
+  propagation` (implementation + tests + this HANDOFF section, in one
+  commit)
+- This hash-record update is the short follow-up commit immediately
+  after `966ff15`.
+- Not tagged, not pushed, not published. `v1.0.3-rc.2` (tag, release,
+  and its asset) is completely untouched by this packet.
+
+### Limitations
+
+1. **No live ADB, LDPlayer, or game session was used anywhere in this
+   packet** -- every test uses `FakeAdbRunner`/`LabelMappingRecognizer`
+   against an in-memory mock five-slot cycle. The fix is verified at
+   the level of "does the correct serial string reach every recorded
+   ADB call," not against a real device.
+2. **No Windows build was produced for this packet** (not requested in
+   the approved task packet -- corrective code fix only, explicitly not
+   altering the released `v1.0.3-rc.2`). QA reverifying this fix against
+   a packaged build should build fresh from this commit using
+   `scripts\build_windows.ps1`.
+3. This fix addresses the specific propagation gap the customer hit
+   (serial captured once at controller-build time). It does not
+   introduce any new capability, screen, or recognition behavior --
+   `bounty_mission.py`'s own mission-cycle logic is unchanged.
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `375 passed`) and
+  `tests/test_live_serial_propagation.py` specifically (13 tests),
+  ideally several times in a row, given the timing-sensitive nature of
+  the real-`AccountWorker`-thread reproduction test.
+- Reproduce the original customer sequence manually if a real
+  LDPlayer/ADB environment is available: launch the app (fresh, null
+  mapping), map LD1 to a real serial via the GUI, Save, then Start
+  **without restarting the app** -- confirm no `ValueError: Invalid ADB
+  serial` and that the worker's first cycle actually uses the
+  just-saved serial (e.g. via its log/diagnostics).
+- Confirm `v1.0.3-rc.2`'s tag, release, and asset hash are all
+  unchanged from the `REL-003` section above.
+
+## REL-004: customer-test prerelease with the LIVE-SERIAL-001 fix (v1.0.3-rc.3)
+
+**Trigger**: user confirmed the published `v1.0.3-rc.2` release predated
+the `LIVE-SERIAL-001` fix (a real customer crash: `ValueError: Invalid
+ADB serial: ''` when Start was clicked shortly after a GUI mapping
+Save, because the worker's cycle function had captured its serial once
+at `build_controller()` time and never learned about the later Save).
+User explicitly asked to publish the newer, fixed state as the new
+customer-test prerelease ("새롭게된걸로변경해" — "change it to the
+newer one").
+
+### Status: published as a GitHub prerelease. CUSTOMER-TEST / MVP.
+`NEEDS_REAL_TEST` — not final, no claim of live game success.
+
+### Source
+
+- Source commit (exact build input, working tree clean): `7cbd5d5`
+  (`docs: record LIVE-SERIAL-001 commit hash in handoff`)
+- Implementation commit: `966ff15` (`LIVE-SERIAL-001: repair live
+  per-account serial propagation`)
+- No `src/` changes between `966ff15` and the tagged commit (`git diff
+  --stat 966ff15..HEAD` touches only `docs/HANDOFF_CODE.md`) --
+  confirmed before building.
+
+### Release
+
+- Tag: `v1.0.3-rc.3` (did not previously exist)
+- GitHub prerelease URL: https://github.com/kpj0526/LDplayer/releases/tag/v1.0.3-rc.3
+- Marked explicitly: **CUSTOMER-TEST / MVP**, **NEEDS_REAL_TEST**, not
+  final -- same limitations/safe-test-steps language as `REL-003`,
+  updated to call out the serial-propagation fix.
+- Supersedes `v1.0.3-rc.2` for customer testing going forward; `rc.2`
+  itself is untouched (not edited, not retagged, not withdrawn -- its
+  own limitation was narrower: it worked correctly as long as an
+  account was mapped and saved *before* `build_controller()` ran, i.e.
+  before the app's first launch after a config reset -- LIVE-SERIAL-001
+  is specifically about a Save happening *after* the app is already
+  running).
+
+### Build + package
+
+- Built via `scripts\build_windows.ps1` from the exact source commit
+  above (clean working tree).
+- `ldmanager.exe`: 4,823,381 bytes, SHA-256
+  `a080e1388108e50f63b42fec90990da852ee64812398030bf9e2dc9dff7fe526`
+  -- distinct from both `v1.0.3-rc.2`'s exe hash
+  (`ab693fff9e1a7ba78759add60b11b860ee9ca5d9d561582b574291344f9332bf`)
+  and the withdrawn `v1.0.3-rc.1`'s.
+- Packaged ZIP: `ldmanager-v1.0.3-rc.3-windows.zip`, 67,644,402 bytes,
+  SHA-256 `62a8bf9d8b474698d6b0ac28bf9f8b473e887246bc9875fab102c8afca72b6bb`
+  -- distinct from `v1.0.3-rc.2`'s zip hash
+  (`174c34b625ad2087c5a070e604fbb8880e4f9d2935ec8e85829ab10844a4f6da`).
+  Contents verified via `unzip -l` before upload: `ldmanager.exe`, all
+  5 real calibration templates (`mission_header.png`,
+  `mission_objective_label.png`, `complete_badge.png`,
+  `currency_action_4400.png`, `mission_target_phrase.png`),
+  `docs\RUN_GUIDE.md` + `docs\REAL_CAPTURE_CHECKLIST.md`,
+  `configs\*.example.yaml`, `VERSION`, `CHANGELOG.md`,
+  `README_FIRST_RUN.txt`.
+
+### Commits / tag / push
+
+- This handoff-update commit (docs-only) is on `kpj0526/Code`.
+- Tag `v1.0.3-rc.3` created at this commit.
+- Pushed: `kpj0526/Code` branch (including the two LIVE-SERIAL-001
+  commits that were sitting local-only before this task) and the
+  `v1.0.3-rc.3` tag only -- no other branch/tag touched, `main` not
+  touched.
+
+### What's new vs. v1.0.3-rc.2
+
+- The `LIVE-SERIAL-001` fix (see that section above): a mapping Save
+  made *after* the app is already running now reaches an already-built
+  worker's very next cycle immediately -- no app restart required, and
+  a still-blank/not-yet-saved account fails as a contained, zero-touch
+  result instead of an uncaught `ValueError`.
+- No other behavioral change since `v1.0.3-rc.2`.
+
+### Limitations (mirrored in the release body)
+
+1. **CUSTOMER-TEST / MVP build, not a final release.** No claim of
+   real LD/game completion success anywhere in this build.
+2. **`NEEDS_REAL_TEST`**: recognition/calibration is verified against 3
+   static, customer-supplied 1280x720 PNGs offline (`GAME-CAL-001
+   REAL-CAPTURE REWORK`), and the serial-propagation fix is verified
+   with fake ADB/recognizer doubles (`LIVE-SERIAL-001`) -- neither was
+   exercised against a live ADB capture from a running LDPlayer
+   instance. No live ADB/LDPlayer/game session was operated anywhere in
+   producing this release.
+3. Only one currency-action cost and one mission-title pairing have
+   real calibration; other missions/costs/screens remain placeholder.
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this release.
+
+### Customer safe-test steps (mirrored in the release body)
+
+1. Extract the ZIP anywhere and run `ldmanager.exe`.
+2. Map **exactly one** account's ADB serial explicitly (Refresh ADB
+   devices, then pick/type the serial for that one LDx panel, Save).
+3. Use **Test capture** on that one account before doing anything else,
+   and confirm the panel reports the screen as recognized (not a
+   mismatch) before considering Start.
+4. Begin with that **one** account only -- do not Start All.
+5. Start can now safely follow a Save made in the same session, with no
+   app restart needed (the fix this release adds).
+6. **Stop immediately** if the panel reports a mismatch, an unknown
+   screen, or any error -- save/send the diagnostic capture written
+   under `diagnostics\captures\<LDx>\`.
+7. This build does not prove, and must not be treated as proving, that
+   any real in-game action succeeds on a live account.
+
+### QA focus points
+
+- Independently verify the exact asset SHA-256 above against the
+  published release download.
+- Confirm the release is marked prerelease, includes the
+  CUSTOMER-TEST/MVP + NEEDS_REAL_TEST language, and calls out the
+  LIVE-SERIAL-001 fix.
+- Confirm `v1.0.3-rc.1` and `v1.0.3-rc.2` are both untouched.
+- Reproduce the original crash scenario if a real environment is
+  available: map an account *after* the app is already running, Save,
+  then Start without restarting -- confirm no `ValueError` and that the
+  correct serial is used.
+
+## TAP-FALLBACK-CRASH-001: fix UnboundLocalError on a real dynamic-tap miss
+
+**Trigger**: user-supplied live screenshot of the running app (on
+`v1.0.3-rc.2`). LD1's Test capture succeeded (`Screen verified:
+completed (mission_header, mission_objective_label, button_complete)`,
+mapping `emulator-5558 [ok]`), but the account panel showed:
+
+```
+ERROR
+UnboundLocalError: cannot access local variable 'select' where it is
+not associated with a value
+```
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`bounty_mission.py`'s dynamic-tap/fixed-fallback pattern, used
+throughout `run_one_cycle`/`_accept_or_refresh_slot`, has this shape:
+
+```python
+dynamic_select = _tap_template(runner, serial, config, recognizer, "mission_slot_unselected")
+if dynamic_select is None:
+    select = runner.run(...)          # select is only ever assigned here
+    selected_ok = select.ok
+else:
+    selected_ok = dynamic_select
+if not selected_ok:
+    ... f"... (rc={select.returncode})" ...   # referenced unconditionally
+```
+
+`_tap_template`/`_tap_any_template` return exactly one of three things:
+`None` (the label isn't configured in `template_map` at all -- legacy/
+fixture mode), `False` (a real capture happened but no confident match,
+or the located tap itself failed), or `True` (the tap succeeded). The
+failure-detail f-string assumed `select`/`open_popup`/`confirm` was
+always assigned, but it is **only** assigned in the `dynamic_* is None`
+branch. Once a real `mission_slot_unselected` template is configured
+(as it has been since the original customer-video asset set) and the
+live frame simply doesn't show a confident match for it -- e.g. the
+account is sitting on a *different* screen, such as the already-
+completed detail view in the customer's screenshot -- `_tap_template`
+correctly returns `False`, the `else` branch runs, `select` is never
+created, and the very next line's `select.returncode` raises
+`UnboundLocalError`. This is a real, previously-undetected defect that
+predates every packet in this document except its accidental exposure:
+it stayed dormant as long as a "no confident match" ADB response was
+rare/never hit in whatever was previously tested, and became visible
+the moment a real, correctly-calibrated template started returning a
+genuine `False` against a real capture.
+
+The exact same shape exists at two more call sites in the same
+function: the refresh-popup-open tap (`open_popup.returncode`) and the
+refresh-confirm tap (`confirm.returncode`). The other four dynamic-tap
+sites in `run_one_cycle` (select-complete, complete, claim, close) use
+a plain string detail message with no `.returncode` reference, so they
+were never affected.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py` -- all three affected sites now build
+a `*_detail` string that is assigned on **both** branches: `f"rc={...}"`
+when the fixed-point fallback actually ran, or a fixed, honest
+"template-based tap: no confident match, or the located tap itself
+failed" string when the dynamic (template) path was taken (there is no
+ADB `returncode` to report there -- either no confident match was found
+at all, or the tap dispatched from that match itself failed). No
+control flow, no outcome, no touch/capture behavior changed -- this is
+purely a "the failure-detail message must never reference a value that
+was never computed" fix.
+
+### Regression tests
+
+`tests/test_bounty_mission.py` -- new `_ConfidentNoMatchRecognizer`
+test double (reports a genuinely confident `NO_MATCH`, not `UNKNOWN`,
+so `_mission_is_acceptable` reaches `NON_TARGET_CONFIRMED` rather than
+short-circuiting to `RECOGNITION_FAILED` -- needed to actually reach
+the refresh-open/confirm steps in a test) plus 3 new tests, one per
+affected call site, each configuring a real template for that one
+asset with a recognizer that confidently does not match it:
+
+- `test_slot_select_dynamic_template_no_match_is_a_structured_error_not_a_crash`
+- `test_refresh_open_dynamic_template_no_match_is_a_structured_error_not_a_crash`
+- `test_refresh_confirm_dynamic_template_no_match_is_a_structured_error_not_a_crash`
+
+Each asserts `run_one_cycle` does **not** raise, returns
+`BountyOutcome.CAPTURE_UNAVAILABLE` with the expected failure-detail
+text, reproducing the exact customer crash shape for all three call
+sites (not just the one the customer happened to hit first).
+
+### Test results
+
+```
+python -m pytest -q
+378 passed
+```
+
+Run 3x in a row: `378 passed` every time, 0 failures. (Prior baseline
+375 + 3 new tests = 378.)
+
+### Commits
+
+- `ae0de2e` — `TAP-FALLBACK-CRASH-001: fix UnboundLocalError on a real
+  dynamic-tap miss` (implementation + tests + this HANDOFF section, in
+  one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `ae0de2e`.
+
+### Limitations
+
+1. No live ADB/LDPlayer/game session was used to reproduce this --
+   fixed and verified entirely from the customer's screenshot plus
+   direct source-code tracing and fake-recognizer regression tests.
+2. This fix addresses the specific "unassigned variable referenced in
+   a failure-detail message" defect at exactly the three call sites
+   that had it. It does not change any recognition/calibration/
+   completion-gating behavior from prior packets.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `378 passed`), especially
+  `tests/test_bounty_mission.py -k dynamic_template_no_match` (3
+  tests).
+- On a real device if available: reproduce the original customer
+  condition (an account sitting on a screen where `mission_slot_
+  unselected` doesn't confidently match, e.g. an already-completed
+  mission detail view) and confirm the account panel now shows a plain
+  "select tap failed (template-based tap: ...)" error message instead
+  of an `UnboundLocalError` traceback.
+
+## SLOT-SELECT-CALIBRATION-001: slot selection is now always position-based
+
+**Trigger**: after `TAP-FALLBACK-CRASH-001` shipped (`v1.0.3-rc.4`), the
+user reported Start still didn't work on a real device -- no more
+crash, but a `capture_unavailable` error, even with LD1 sitting on the
+real 임무 목록 (mission list) screen. A new real 1280x720 capture was
+supplied to diagnose it further.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause (deeper than TAP-FALLBACK-CRASH-001)
+
+`TAP-FALLBACK-CRASH-001` fixed the crash itself, but the underlying
+call it wrapped -- `_tap_template(runner, serial, config, recognizer,
+"mission_slot_unselected")` -- was still structurally unable to
+succeed in production. Two independent problems, both found by
+measuring the real supplied capture
+(`tests/fixtures/game_cal_001/source_extra/mission_list_row1_completed.png`):
+
+1. **The configured crop bakes in the mission title text** ("자유
+   토벌작전") -- the exact anti-pattern `GAME-CAL-001` already
+   eliminated elsewhere in this project. A different mission title
+   would never match it at all.
+2. **Template matching cannot express "the Nth row".** `_tap_template`
+   searches the *entire frame* for the single highest-confidence match
+   and taps wherever that lands. With 4-5 visually identical
+   "자유 토벌작전" rows on screen, this mechanism has no way to
+   distinguish slot 1 from slot 3 -- it can only ever say "somewhere a
+   matching row exists," never "row `slot_index` specifically."
+   Worse: once `config.template_map` has *any* real entries (as
+   production always does), `_tap_template` treats an unconfigured or
+   non-matching label as a confident, hard `False` -- it never silently
+   falls back to a fixed point. So simply leaving
+   `mission_slot_unselected`/`mission_slot_selected` out of
+   `template_map` (which the prior packet already did) does **not**
+   restore the old fixed-point behavior; it still returns `False`, so
+   Start would remain non-functional (safely erroring, but never
+   actually selecting a slot) without a deeper fix.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py` -- slot selection
+(`_accept_or_refresh_slot`) and "select the completed mission"
+(`run_one_cycle`) no longer attempt template matching at all. Both now
+tap `config.slot_select_points[slot_index - 1]` /
+`config.select_complete_point` directly and unconditionally --
+position-based tapping is the mechanism actually suited to "pick the
+Nth row of a list," and template matching's earlier
+dynamic-with-fixed-fallback design is retained only where it's the
+right tool (refresh-open, refresh-confirm, accept, complete-button,
+claim, close -- each targets one specific, visually distinct button,
+not one of several identical-looking rows).
+
+`configs/bounty.example.yaml` -- `slot_select_points`/
+`select_complete_point` replaced with **real, measured** coordinates:
+row-band boundaries were found by scanning mean column brightness (not
+eyeballed) across the real capture's list column, giving row centers
+y = 0.3069 / 0.4194 / 0.5333 / 0.6458 / 0.7597 (x = 0.1172 throughout).
+The prior placeholder values (evenly spaced 0.20/0.35/0.50/0.65/0.80)
+were off by up to 0.11 -- comfortably enough to miss a ~0.097-tall row
+band entirely, which independently explains why slot selection could
+never have worked correctly even before any template was involved.
+`mission_slot_unselected`/`mission_slot_selected` remain deliberately
+unmapped, now with an explicit comment explaining why real crops should
+not be added for them without solving problem (2) above first.
+
+### Regression tests
+
+- `tests/test_bounty_mission.py`:
+  - `test_slot_select_is_always_position_based_never_template_matched`
+    -- a confidently-non-matching recognizer (which would have blocked
+    the old template-based select) no longer blocks slot selection at
+    all; the cycle proceeds past it to the next real check.
+  - `test_slot_select_tap_uses_the_exact_configured_slot_select_point`
+    -- asserts the recorded tap argv matches
+    `slot_select_points[0]` exactly.
+- `tests/test_bounty_config.py`:
+  - `test_example_bounty_config_slot_select_points_are_real_calibrated_values`
+    -- guards the shipped example config against silently drifting back
+    to the old placeholder values.
+  - `test_example_bounty_config_never_maps_the_unreliable_slot_templates`
+    -- guards against re-adding `mission_slot_unselected`/
+    `mission_slot_selected` to `template_map` (now dead weight; would
+    mislead a future calibration effort).
+- `tests/fixtures/game_cal_001/source_extra/mission_list_row1_completed.png`
+  (new) + `PROVENANCE.md` updated with the measured row-band evidence.
+
+### Test results
+
+```
+python -m pytest -q
+381 passed
+```
+
+Run 3x in a row: `381 passed` every time, 0 failures. (Prior baseline
+378 + 1 net new `test_bounty_mission.py` test (one replaced by two) + 2
+new `test_bounty_config.py` tests = 381.)
+
+### Commits
+
+- `d30534e` — `SLOT-SELECT-CALIBRATION-001: slot selection is now
+  always position-based` (implementation + tests + this HANDOFF
+  section, in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `d30534e`.
+
+### Limitations
+
+1. `select_complete_point` still always taps the row-1 position --
+   it does not yet track *which* of the 5 locked slots actually became
+   eligible/complete (same limitation the old placeholder implicitly
+   had; not newly introduced or newly fixed here).
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   the real capture was static (customer-supplied), and every test uses
+   `FakeAdbRunner`. Position-based tapping's real-world accuracy against
+   the customer's actual live client is `NEEDS_REAL_TEST`.
+3. The refresh-popup/reward/claim/result screens later in the same
+   five-slot flow remain uncalibrated placeholders -- this packet did
+   not touch them.
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `381 passed`).
+- On a real device: with LD1 on the real 임무 목록 screen, click Start
+  and confirm slot 1 is actually tapped (visually, or via the
+  diagnostic capture written after the tap) at the real row-1 position,
+  not somewhere else, and that the flow proceeds past slot selection
+  rather than immediately failing again.
+
+## DIAGNOSTIC-DETAIL-001: surface the real failure reason, not just the outcome
+
+**Trigger**: after `SLOT-SELECT-CALIBRATION-001` shipped
+(`v1.0.3-rc.5`), the user reported LD1 still stopped with a generic
+`capture_unavailable` (cycles: 2, `locked: 0/5`) on a real device. The
+GUI/log showed only `"capture_unavailable: account worker stopped"` --
+tracing the code confirmed `bounty_mission.run_one_cycle`'s own
+specific, per-step failure reason (`BountyCycleResult.detail`, e.g.
+`"Slot 1: select tap failed (rc=1)."`) was computed but **never
+surfaced anywhere** -- not the GUI, not the per-account log file. This
+made the customer's real failure impossible to diagnose from a
+screenshot alone.
+
+### Status: implemented, tested, regression-verified. Pure
+observability fix -- no capture/ADB/touch/outcome behavior changed.
+
+### Fix
+
+`src/ldmanager/controller.py` -- `AccountWorker._loop` now reads
+`getattr(result, "detail", "")` (duck-typed, exactly like the existing
+`outcome`/`.value` handling -- a result with no `.detail` at all is a
+safe no-op, never an error) and appends it to:
+- `status.last_error` (error-outcome cycles)
+- every `_append_log(...)` line (error and non-error cycles alike)
+- the per-account log file (`self._logger.error`/`.info`, now with a
+  `detail=%s` field) -- already passes through the existing
+  `SensitiveDataRedactionFilter` exactly like every other logged
+  message, so this doesn't bypass any existing secret-redaction
+  safeguard.
+
+### Regression tests
+
+`tests/test_controller.py` -- new `_DummyOutcomeWithDetail` test
+double + 3 tests:
+- `test_error_cycle_detail_reaches_last_error_and_recent_log`
+- `test_non_error_cycle_detail_also_reaches_recent_log`
+- `test_a_result_without_detail_is_a_safe_noop_never_raises` (backward
+  compatibility with every existing plain `_DummyOutcome`-shaped fake
+  used throughout the rest of this file/project)
+
+### Test results
+
+```
+python -m pytest -q
+384 passed
+```
+
+Run 3x in a row: `384 passed` every time, 0 failures. (Prior baseline
+381 + 3 new tests = 384.)
+
+### Commits
+
+- `4224ccc` — `DIAGNOSTIC-DETAIL-001: surface the real failure reason,
+  not just outcome` (implementation + tests + this HANDOFF section, in
+  one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `4224ccc`.
+
+### Limitations
+
+1. This is purely an observability fix. It does not change, and is not
+   claimed to fix, whatever the customer's real underlying
+   `capture_unavailable` cause turns out to be on their live device --
+   that remains open, and this fix exists specifically so the *next*
+   occurrence is diagnosable from the GUI/log directly instead of
+   needing a screenshot round-trip.
+2. No live ADB/LDPlayer/game session was used to verify this --
+   verified with fake cycle-result doubles only.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `384 passed`).
+- On a real device: reproduce any error condition and confirm the GUI
+  panel's error text and the per-account log file now both show a
+  specific reason (e.g. "Slot 1: select tap failed (rc=...)") rather
+  than just a bare outcome name like "capture_unavailable".
+
+## STDERR-DETAIL-001: include the real ADB stderr text, not just rc=N
+
+**Trigger**: `DIAGNOSTIC-DETAIL-001` (`v1.0.3-rc.6`) let the user see the
+first real, specific failure from their live device:
+`"Slot 1: select tap failed (rc=125)."` — but a bare return code alone
+still wasn't enough to know *why* the tap failed.
+
+### Status: implemented, tested, regression-verified. Pure
+observability fix -- no capture/ADB/touch/outcome behavior changed.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py` -- new `_short()` helper (trims/
+one-lines a raw ADB `stderr` string, safe on empty/`None`). The three
+select/refresh-open/refresh-confirm tap-failure details (already fixed
+for the `UnboundLocalError` in `TAP-FALLBACK-CRASH-001`) and the
+select-complete tap-failure detail (added in
+`SLOT-SELECT-CALIBRATION-001`) now all include `stderr=...` alongside
+`rc=...`. This text still passes through the per-account logger's
+existing `SensitiveDataRedactionFilter` once `controller.py` logs it
+(`DIAGNOSTIC-DETAIL-001`) -- unchanged safety posture, an ADB tap's
+stderr is not expected to ever contain credential-shaped text but the
+filter remains the actual safety net regardless.
+
+### Regression tests
+
+`tests/test_bounty_mission.py` --
+`test_select_tap_failure_detail_includes_the_real_adb_stderr`: a canned
+`AdbCommandResult(returncode=125, stderr="error: device offline")` for
+the exact slot-1 select tap argv, asserting both `"rc=125"` and
+`"error: device offline"` appear in the result detail.
+
+### Test results
+
+```
+python -m pytest -q
+385 passed
+```
+
+Run 3x in a row: `385 passed` every time, 0 failures. (Prior baseline
+384 + 1 new test = 385.)
+
+### Commits
+
+- `9f765de` — `STDERR-DETAIL-001: include the real ADB stderr text, not
+  just rc=N` (implementation + tests + this HANDOFF section, in one
+  commit)
+- This hash-record update is the short follow-up commit immediately
+  after `9f765de`.
+
+### Limitations
+
+1. Pure observability fix. Does not fix or claim to fix the customer's
+   real `rc=125` cause on their live device -- exists so the actual ADB
+   error text is visible for the next diagnosis step.
+2. No live ADB/LDPlayer/game session was used to verify this -- a
+   canned fake `AdbCommandResult` was used, not a real `rc=125` capture
+   from the field.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `385 passed`).
+- On the customer's real device: reproduce the `rc=125` select-tap
+  failure and confirm the GUI/log now show the actual `stderr` text
+  from `adb shell input tap`, not just the bare return code.
+
+## REWARD-SCREEN-CALIBRATION-001: real calibration for the reward-claim screen
+
+**Trigger**: after `SLOT-SELECT-CALIBRATION-001` + `DIAGNOSTIC-DETAIL-001`
++ `STDERR-DETAIL-001` shipped, the user enabled `LDMANAGER_LIVE_MODE=1`
+and ran a real live cycle: all 5 slots were genuinely accepted
+(`locked: 5/5`), the real complete tap was sent, and the account
+reached the actual "보상 받기" (Get Reward) screen for the first time --
+then stalled on `reward_verify_failed` ("Reward screen never verified
+within 3 attempt(s).").
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`reward_screen_roi`/`reward_screen_label`/`claim_point`/
+`button_claim_reward` had never been calibrated against any real
+capture -- only the initial Mission > Region > detail screen was
+(`GAME-CAL-001`). The customer supplied a real 1280x720 Test-capture of
+the actual reward screen (`tests/fixtures/game_cal_001/source_extra/
+reward_screen.png`), enabling the same real-crop calibration approach
+used throughout this project.
+
+### Fix
+
+Two real crops taken from the supplied capture (measured pixel bands,
+verified by direct visual inspection):
+- `reward_odds_label.png` -- the "확률" (odds/probability) label:
+  generic reward-screen UI chrome, present regardless of mission title,
+  confirmed (real `OpenCVTemplateRecognizer`) to match only this real
+  capture and none of the other 4 real captures on file.
+- `reward_claim_button.png` -- the real "보상 받기" button, replacing
+  the old `button_claim_reward` template_map entry's never-validated
+  placeholder file (same config key, so no call-site changes needed).
+
+`configs/bounty.example.yaml`: `reward_screen_roi`/`reward_screen_label`
+now point at the real odds-label crop/ROI; `claim_point` set to the
+real, measured button center (fixed fallback only -- the dynamic
+`button_claim_reward` template is tried first).
+
+### Regression tests
+
+`tests/test_reward_screen_real_assets.py` (new, 5 tests) -- loads the
+real reward-screen capture + the real recognizer + the real shipped
+config: confirms it's a genuine 1280x720 PNG; confirms
+`reward_screen_label` matches only that capture and never any of the
+other 4 real captures on file (explicit false-positive guard); same
+for the `button_claim_reward` template.
+
+### Test results
+
+```
+python -m pytest -q
+390 passed
+```
+
+Run 3x in a row: `390 passed` every time, 0 failures. (Prior baseline
+385 + 5 new tests = 390.)
+
+### Commits
+
+- `622d7ad` — `REWARD-SCREEN-CALIBRATION-001: real calibration for the
+  reward-claim screen` (implementation + tests + this HANDOFF section,
+  in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `622d7ad`.
+
+### Limitations
+
+1. Only the reward-claim screen is now real-calibrated. The
+   result-screen/close/mission-list-return steps later in the same
+   flow remain uncalibrated placeholders -- the next real blocker, if
+   any, is most likely there.
+2. `button_claim_reward`'s real-vs-false-capture confidence margin is
+   narrower (~0.77 vs ~1.0) than the other real crops in this project
+   (~0.45-0.52 vs ~1.0) -- both the real "완료" button and the real
+   "보상 받기" button apparently share similar gold-bordered button
+   graphic styling. Still correctly classified at the configured 0.8
+   threshold, but a smaller margin than ideal; worth reconfirming if a
+   real live run ever produces a surprising false match here.
+3. This calibration came from ONE real capture supplied by the
+   customer via a phone-camera video, then a clean in-app Test-capture
+   of the same screen -- the clean capture (not the video) is what was
+   actually used for pixel measurement.
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `390 passed`) and
+  `tests/test_reward_screen_real_assets.py` specifically.
+- On a real device: confirm a full live cycle (with `LDMANAGER_LIVE_MODE=1`)
+  now proceeds past the reward-claim step instead of stalling on
+  `reward_verify_failed`, and confirm the next real blocker (if any) is
+  in the result/close/mission-list steps, which remain uncalibrated.
+
+## COMPLETE-DETAIL-001: actionable detail for complete/claim/close, + a false-positive safety check
+
+**Trigger**: after `REWARD-SCREEN-CALIBRATION-001` shipped, the user's
+live run progressed further and then stalled with a bare
+`"Complete tap failed."` -- no rc/stderr, no reason. Given the
+possibility that this indicated an unsafe false-positive completion
+trigger, this was investigated as a safety question first, before
+being treated as a plain observability gap.
+
+### Status: implemented, tested, regression-verified. Includes a
+verified safety finding (no false positive) plus a message-consistency
+fix.
+
+### Safety investigation (no code change resulted from this alone)
+
+Checked whether the existing `button_complete.png` template (an older,
+pre-`GAME-CAL-001` asset never previously cross-checked against these
+specific real screens) was producing a false positive on a genuinely
+incomplete mission. The customer supplied two more real captures: a
+target-200 in-progress mission (`51/200`, cost-4400 currency action --
+a new target quantity, distinct from the 165/180/450 examples already
+on file) and a different mission's reward-preview/close screen. Direct
+measurement (`tests/fixtures/game_cal_001/PROVENANCE.md`) shows
+`button_complete.png` scores 0.774 on both -- safely below the 0.8
+threshold, correctly not matched. Across all 7 real captures now on
+file, it matches only screens with a genuinely visible "완료" button.
+**Conclusion: no false positive; the completion gate is not tapping
+blindly.**
+
+### Actual root cause
+
+The already-documented `select_complete_point` limitation ("always
+taps row 1", `SLOT-SELECT-CALIBRATION-001`) manifesting live: kill-
+progress eligibility can be confirmed correctly (a real completed
+mission genuinely visible somewhere), but if that mission isn't at row
+1, the fixed `select_complete_point` tap lands on a *different*,
+still-incomplete mission's detail -- which correctly has no
+"button_complete" to find. The old bare `"Complete tap failed."`
+message gave no way to tell this safe-refusal case apart from a real
+problem.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py` -- the Complete/Claim/Close-result
+tap-failure details now distinguish, the same way the earlier
+Select/Refresh-open/Refresh-confirm fixes did (`STDERR-DETAIL-001`):
+`rc=..., stderr=...` when a real fixed-point ADB tap was sent and
+failed, vs. an explicit `"no confident button_complete/button_claim_
+reward/button_close_reward match on the current screen"` when the
+dynamic template search itself found nothing -- for `button_complete`
+specifically, the message also names the likely cause
+(`select_complete_point` may not be showing the eligible mission).
+
+### Regression tests
+
+`tests/test_bounty_mission.py` --
+`test_complete_tap_no_confident_match_gives_an_actionable_reason_not_a_bare_failure`:
+reaches the complete-tap step via a genuine kill-progress-counter
+eligibility match, with `button_complete` configured but not matching
+the frame -- asserts the new, actionable detail text.
+
+### Test results
+
+```
+python -m pytest -q
+391 passed
+```
+
+Run 3x in a row: `391 passed` every time, 0 failures. (Prior baseline
+390 + 1 new test = 391.)
+
+### Commits
+
+- `20fc1b8` — `COMPLETE-DETAIL-001: actionable detail for
+  complete/claim/close + safety check` (implementation + tests + this
+  HANDOFF section, in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `20fc1b8`.
+
+### Limitations
+
+1. **The underlying `select_complete_point` "always row 1" gap is
+   NOT fixed by this packet** -- only made diagnosable. A live run
+   where the eligible mission genuinely isn't at row 1 will still stop
+   at this step (safely, correctly refusing to tap) rather than
+   completing it. Properly fixing that requires tracking *which*
+   locked slot became eligible and selecting that specific position --
+   a larger change not made here.
+2. No live ADB/LDPlayer/game session was used to verify the message
+   fix itself -- verified with fake doubles. The false-positive safety
+   check, however, used two real customer-supplied captures.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `391 passed`).
+- On a real device: if a live run reaches "Complete tap failed" again,
+  confirm the new detail text explains it and that no unintended tap
+  occurred (a manual visual check that the on-screen mission state is
+  unchanged from before the attempt).
+- Independently review whether `select_complete_point`'s "always row 1"
+  limitation should now be prioritized as its own follow-up packet --
+  this session left it diagnosable but unresolved.
+
+## COMPLETE-SLOT-TRACKING-001: complete the slot that's actually eligible
+
+**Trigger**: user directive to fix the `select_complete_point`
+"always row 1" limitation for real (flagged but not fixed in
+`SLOT-SELECT-CALIBRATION-001`/`COMPLETE-DETAIL-001`), with an explicit
+requirement to keep multi-account (LD1..LD9) isolation correct.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause (confirmed against real evidence)
+
+A slot's completion state is only visible in **that slot's own opened
+detail view** — confirmed from every real capture on file: the
+mission-list rows themselves carry no per-row completion indicator.
+The previous design ran ONE full-screen completion check against
+whatever was currently displayed, then unconditionally re-selected
+**row 1's fixed position** to complete — correct only when the
+eligible mission happened to be at row 1.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py`'s kill-progress polling now visits
+**every still-candidate locked slot individually** on each bounded
+poll attempt: a plain select/navigation tap (never complete/claim) to
+open that slot's own detail, then the same kill-progress-counter /
+complete-badge check as before, scoped to that one slot. The exact
+`slot_index` that qualifies is remembered, and the completion step
+re-selects **that same slot** (never a different, possibly
+still-incomplete one) before tapping complete. `0-199/200` still never
+taps complete/claim — only the added navigation (select) taps are new,
+and only ever to *look*, consistent with every other safety guarantee
+in this project.
+
+`select_complete_point` is no longer consulted by the live completion
+path (kept in the config schema for backward compatibility only,
+documented as such in both `bounty_config.py` and
+`configs/bounty.example.yaml`).
+
+### Regression tests
+
+`tests/test_bounty_mission.py`:
+- `test_completion_targets_the_slot_that_actually_became_eligible_not_row_1`
+  -- a `_SlotAwareRunner`/`_SlotAwareRecognizer` pair models a real
+  screen where only slot 3's own detail shows completion; asserts the
+  tap immediately preceding the complete-button tap is slot 3's
+  position, never slot 1's.
+- `test_kill_progress_polling_never_crosses_accounts_with_multiple_ld_instances`
+  -- two independent accounts (own runner/serial/recognizer), each with
+  a DIFFERENT eligible slot (2 and 4), run one after another: every
+  recorded tap for each stays scoped to that account's own serial, and
+  each completes its own correct slot, never the other's -- the
+  explicit LD1..LD9 multi-instance safety check this packet was asked
+  to include.
+- Two pre-existing tests (`test_full_cycle_reaches_completed_state_once`,
+  `test_kill_progress_incomplete_never_taps_complete_or_reward`) had
+  their exact tap-count assertions updated to reflect the new,
+  correctly-larger (but still fully bounded) per-slot polling call
+  pattern -- their pass/fail *behavior* is unchanged, only the literal
+  count of navigation taps.
+
+### Test results
+
+```
+python -m pytest -q
+393 passed
+```
+
+Run 3x in a row: `393 passed` every time, 0 failures. (Prior baseline
+391 + 2 new tests = 393.)
+
+### Commits
+
+- `991d22d` — `COMPLETE-SLOT-TRACKING-001: complete the slot that's
+  actually eligible` (implementation + tests + this HANDOFF section,
+  in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `991d22d`.
+
+### Limitations
+
+1. Per-slot polling means up to `slot_count` extra select/navigation
+   taps per poll attempt (bounded by `max_kill_progress_poll_attempts`)
+   -- more real ADB traffic than before, though still entirely
+   navigation, never complete/claim, and still fully bounded.
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified with fake/stateful test doubles that model "only one
+   specific slot's detail shows completion," not a real device.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `393 passed`).
+- On a real device: with 2+ locked slots where the eligible one is NOT
+  row 1, confirm the flow now actually reaches and completes the
+  correct mission instead of safely stalling at "Complete tap failed."
+- With 2+ real LD instances mapped, confirm no cross-account
+  interference during a live run.
+
+## RESULT-CLOSE-CALIBRATION-001: real calibration for the result/close screen
+
+**Trigger**: after `COMPLETE-SLOT-TRACKING-001` shipped, the user's
+live run progressed further and then stalled repeatedly on the same
+post-claim "결과"/"닫기" (Close) popup screen — `result_screen_roi`/
+`label`/`close_result_point`/`button_close_reward` had never been
+calibrated against any real capture. The user supplied a fresh real
+1280x720 Test-capture of the exact stuck screen.
+
+### Status: implemented, tested, regression-verified. Includes a
+correction to an earlier documentation mistake (see below).
+
+### Correction to `COMPLETE-DETAIL-001`'s fixtures
+
+While saving real captures for that earlier packet's false-positive
+safety check, two files were mistakenly saved under inaccurate names:
+`in_progress_51_of_200.png` and `close_result_screen.png` both actually
+contained the **same** "닫기" result popup — neither was the real
+"모든 몬스터 처치 (51/200)" screen shown alongside them at the time (that
+frame was never saved). Both files have been removed; the safety
+conclusion they were used for (`button_complete.png` does not false-
+positive on the real Close popup, confidence 0.774 < 0.8) remains
+correct and unaffected, since the popup content they actually did
+contain was still tested. See `tests/fixtures/game_cal_001/
+PROVENANCE.md` for the full correction.
+
+### Root cause
+
+Investigated whether the "보상 받기" (claim) and "닫기" (close) buttons
+could be reliably distinguished by template matching, the same way
+`reward_claim_button.png` was calibrated in `REWARD-SCREEN-
+CALIBRATION-001`. Even a tight, text-only crop of each (excluding the
+shared ornate border) scored too close for safety — a "닫기" crop
+scored 0.80 against the real `reward_screen.png`, right at the 0.8
+threshold. **These two buttons cannot be reliably told apart by
+template matching alone** (identical gold-button frame, only ~2
+characters of text differ).
+
+### Fix
+
+Rather than fight an unreliable text-match, two ALREADY-calibrated,
+high-margin real anchors are reused instead:
+- `result_screen_label` now reuses `reward_odds_label` ("확률") —
+  confirmed present on both the reward and result popups
+  (~0.81-1.0 confidence) and confirmed absent from every plain
+  detail/list real capture (~0.26-0.30).
+- `mission_list_label` now reuses `mission_objective_label` ("임무
+  목표") — confirmed present on every plain detail/list real capture
+  (~0.998-1.0) and confirmed absent from both popups (~0.07) — a far
+  more precise "we actually left the popup" signal than the old,
+  never-calibrated placeholder ("현상금 목록") ever had.
+- `close_result_point` was measured directly from the real capture
+  (same position as `claim_point` — same button frame, different game
+  state).
+
+`src/ldmanager/bounty_mission.py` — the close step no longer attempts
+any `button_close_reward` template search at all (mirroring
+`SLOT-SELECT-CALIBRATION-001`'s reasoning): it always taps
+`close_result_point` directly, safe because the preceding
+`result_screen_label` check already confirmed a real post-complete
+popup is showing. `configs/bounty.example.yaml` no longer maps
+`button_close_reward` at all (documented why).
+
+### Regression tests
+
+- `tests/test_result_close_real_assets.py` (new, 6 tests) — real
+  capture is a genuine 1280x720 PNG; `result_screen_label` matches only
+  the real result/close screen and never any plain detail/list real
+  capture; `mission_list_label` matches every plain detail/list real
+  capture and never the popup; `button_close_reward` confirmed absent
+  from the shipped config.
+- `tests/test_bounty_mission.py` —
+  `test_close_result_tap_uses_the_exact_configured_close_point_never_a_template`:
+  confirms the close tap argv matches `close_result_point` exactly.
+
+### Test results
+
+```
+python -m pytest -q
+400 passed
+```
+
+Run 3x in a row: `400 passed` every time, 0 failures. (Prior baseline
+393 + 6 + 1 = 400.)
+
+### Commits
+
+- `9c69ec5` — `RESULT-CLOSE-CALIBRATION-001: real calibration for the
+  result/close screen` (implementation + tests + this HANDOFF section,
+  in one commit)
+- This hash-record update is the short follow-up commit immediately
+  after `9c69ec5`.
+
+### Limitations
+
+1. This completes real calibration for every step of the five-slot
+   flow's happy path that a real live run has reached so far (select,
+   accept, complete, reward, claim, result, close). The
+   mission-list-return step immediately after close has not itself
+   been separately exercised live yet (it reuses the already-verified
+   `mission_objective_label` anchor, but the exact next real screen
+   after "닫기" has not been directly observed).
+2. No live ADB/LDPlayer/game session was used to verify this fix —
+   verified against the one real supplied capture, offline.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `400 passed`) and
+  `tests/test_result_close_real_assets.py` specifically.
+- On a real device: confirm a live run now proceeds past the result/
+  close step (tapping the real "닫기" button at the measured position)
+  and reaches mission-list verification -- the likely next real
+  blocker, if any.
+
+## EARLY-COMPLETE-CHECK-001: don't re-walk slots already known complete
+
+**Trigger**: user question after `RESULT-CLOSE-CALIBRATION-001` shipped:
+after closing the result popup once, `runtime.reset_after_verified_
+return()` unlocks all 5 slots for the next round, and every slot gets
+re-visited to re-confirm its target phrase. If one of those freshly
+re-accepted slots was ALREADY complete, the code still ignored that and
+ran a whole separate kill-progress polling pass afterward, re-selecting
+every locked slot again from scratch just to rediscover what the
+accept loop's own already-open view had just shown. Reported as a real
+observed inefficiency, not a crash or a stuck point.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`_accept_or_refresh_slot` only ever checks the target phrase/quantity,
+never completion — by design, since checking completion is irrelevant
+for slots that visibly aren't done yet. But the main accept loop threw
+away the view it had just opened for each slot as soon as the phrase
+check passed, then handed off to a completely separate "kill-progress:
+bounded polling" loop that re-opened (re-tapped) every locked slot all
+over again, from slot 1, to find which one (if any) was complete. When
+the eligible slot happened to be one accepted early in the round, this
+meant a full second sweep across every slot just to re-observe
+something already visible one tap earlier.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py`'s `run_one_cycle`: immediately after
+a slot is accepted and locked in the main loop, and only while no
+eligible slot has been found yet, the SAME already-open view is
+re-used (no extra tap) to check `kill_progress_roi`/label and the
+completion badge (`button_complete` template if mapped, else
+`complete_state_roi`/label) — exactly the same checks the kill-progress
+phase would have made. If it matches, `eligible_slot_index` is recorded
+right there. The downstream kill-progress polling loop now starts from
+`eligible = eligible_slot_index is not None` and breaks immediately if
+already eligible, so when a slot's completion was caught during the
+accept pass, the entire redundant re-select-and-check sweep across
+every locked slot is skipped outright — the flow goes straight to
+re-selecting that one known slot for the complete tap.
+
+### Regression tests
+
+- `tests/test_bounty_mission.py` —
+  `test_early_complete_check_skips_the_redundant_kill_progress_reselect_pass`
+  (new): with slot 1 the eligible one, confirms its detail view is
+  opened only twice before the complete tap — once to accept it, once
+  to re-select it right before completing — never a third, redundant
+  time for a kill-progress-phase re-check.
+- `test_full_cycle_reaches_completed_state_once`: tap-count assertion
+  updated from `5+1+4+5` (`COMPLETE-SLOT-TRACKING-001`-era, one extra
+  kill-progress-phase select for slot 1) down to `5+4+5=14`, since that
+  extra select no longer happens.
+- All prior COMPLETE-SLOT-TRACKING-001/kill-progress regression tests
+  (targeting-the-right-slot, multi-LD-instance isolation, bounded
+  polling on incomplete slots) still pass unchanged — this packet only
+  removes REDUNDANT work, never changes which slot ends up targeted.
+
+### Test results
+
+```
+python -m pytest -q
+401 passed
+```
+
+Run 3x in a row: `401 passed` every time, 0 failures. (Prior baseline
+400 + 1 new test = 401.)
+
+### Commits
+
+- `6035d34` — `EARLY-COMPLETE-CHECK-001: don't re-walk
+  slots already known complete` (implementation + tests + this
+  HANDOFF section, in one commit)
+- Followed by a short "docs: record EARLY-COMPLETE-CHECK-001 commit
+  hash in handoff" commit recording the real hash.
+
+### Limitations
+
+1. This is a pure efficiency fix (fewer redundant taps/checks per
+   round) — it does not change which slot is targeted for completion,
+   does not touch any template/coordinate calibration, and does not
+   address any new failure mode.
+2. No live ADB/LDPlayer/game session was used to verify this fix —
+   verified against the existing fake-runner/recognizer test harness
+   only, same as prior packets' unit-level verification.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `401 passed`).
+- On a real device with multiple slots already complete at round
+  start: confirm the flow reaches "완료" faster (visibly fewer
+  select-and-wait steps) than before, without skipping or misfiring on
+  any slot.
+
+## REFRESH-CALIBRATION-001: real calibration for the refresh/reroll flow
+
+**Trigger**: after `EARLY-COMPLETE-CHECK-001` shipped, the user
+reported a live run stuck on a different mission on a different slot:
+"십변도 토벌작전[던전]" / 귀마황 처치 (0/250), a dungeon-type,
+never-target mission, with `Slot 3: refresh-open tap failed`.
+`refresh_button_point`/`refresh_popup_anchor_roi`/
+`refresh_popup_title_roi`/`refresh_confirm_point` had never been
+calibrated against any real capture. The user supplied three real
+1280x720 captures: two of the region-quest list view (different
+slots/missions selected) and one of the actual renewal-confirmation
+popup.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+Same bug class as `TAP-FALLBACK-CRASH-001`/`SLOT-SELECT-CALIBRATION-
+001`, a third time: `button_refresh_4400/6600/9900/14900`/
+`button_refresh_confirm` (mapped in `template_map`) are
+pre-`GAME-CAL-001` placeholder assets (380x116/180x55 -- the wrong
+proportions for a real 1280x720 capture, never real crops). A real
+live run proved they never confidently match, and because
+`template_map` being non-empty overall makes `_tap_any_template()`/
+`_tap_template()` return a hard `False` (not `None`) for an
+unconfident match, this silently blocked the fixed-point fallback from
+ever running.
+
+### Fix
+
+Real evidence resolved this cleanly:
+- `refresh_button_point` is the real, measured center of the
+  currency-cost action box -- which turned out to be the EXACT same
+  real UI element already calibrated in `GAME-CAL-001` as
+  `currency_action_4400.png` (cross-validated via direct template
+  match: 0.993 confidence, at the same pixel offset this packet's
+  independent hand-measurement found). Confirmed present at the
+  identical pixel position across three independent real captures
+  (`cv2.absdiff` mean 0.0 between the two new list-view captures at
+  that region), so it is positionally fixed regardless of which
+  slot/mission is currently selected or its currently displayed price.
+- Two real crops from the actual renewal-confirmation popup
+  (`region_quest_renew_confirm.png`) now structurally verify the
+  popup before ever tapping confirm: `refresh_popup_title_label`
+  ("지역 퀘스트를 갱신 하시겠습니까?") and `refresh_popup_anchor_label`
+  ("갱신 금액") -- both confirmed to match only this real popup and
+  none of the other 9 real captures on file.
+- `refresh_confirm_point` was measured directly as the popup's real
+  "확인" button center.
+
+`src/ldmanager/bounty_mission.py` -- refresh-open and refresh-confirm
+no longer attempt any template search at all (mirroring
+`SLOT-SELECT-CALIBRATION-001`/`RESULT-CLOSE-CALIBRATION-001`'s
+reasoning): refresh-open always taps `refresh_button_point` directly,
+and refresh-confirm always taps `refresh_confirm_point` directly, safe
+because the structural popup-verification check runs in between and
+refuses to confirm blindly if the real popup isn't actually showing
+(`REFRESH_POPUP_NOT_VERIFIED`, never a wrong tap). The now-dead
+`_tap_any_template()` helper (no remaining call sites) was deleted.
+`configs/bounty.example.yaml` no longer maps
+`button_refresh_confirm`/`button_refresh_4400/6600/9900/14900` at all,
+and no longer carries two stray, never-referenced literal-Korean-text
+template_map entries ("지역 퀘스트 갱신"/"확인" -> a different stale
+asset) left over from an earlier, unrelated attempt.
+
+### Regression tests
+
+- `tests/test_refresh_popup_real_assets.py` (new, 7 tests) -- real
+  captures are genuine 1280x720 PNGs; `refresh_popup_title_label`/
+  `refresh_popup_anchor_label` match only the real renewal-confirm
+  popup and never any of the 9 other real captures; `refresh_button_
+  point` lands inside the real `currency_action_4400` template's
+  bounding box on both real list-view captures (0.98+ confidence);
+  the 5 stale refresh-button templates confirmed absent from the
+  shipped config.
+- `tests/test_bounty_config.py` --
+  `test_example_bounty_config_refresh_fields_are_real_calibrated_values`,
+  `test_example_bounty_config_never_maps_the_stale_refresh_button_templates`.
+- `tests/test_bounty_mission.py` -- replaced the two now-obsolete
+  "dynamic template no-match" tests (their premise no longer exists)
+  with `test_refresh_open_is_always_position_based_never_template_
+  matched`, `test_refresh_open_tap_failure_detail_includes_the_real_
+  adb_stderr`, and `test_refresh_confirm_is_always_position_based_
+  never_template_matched`; updated
+  `test_slot_select_is_always_position_based_never_template_matched`'s
+  assertion (it now reaches -- and correctly fails at -- the popup's
+  own structural verification, not a since-removed "refresh-open"
+  template check).
+
+### Test results
+
+```
+python -m pytest -q
+411 passed
+```
+
+Run 3x in a row: `411 passed` every time, 0 failures. (Prior baseline
+401 + 6 new bounty_mission + 2 new bounty_config + ... see file diff;
+net +10 across the two obsolete tests replaced by three, plus 7 new
+real-asset tests and 2 new config-guard tests.)
+
+### Commits
+
+- `dae5fea` -- `REFRESH-CALIBRATION-001: real
+  calibration for the refresh/reroll flow` (implementation + tests +
+  this HANDOFF section, in one commit)
+- Followed by a short "docs: record REFRESH-CALIBRATION-001 commit
+  hash in handoff" commit recording the real hash.
+
+### Limitations
+
+1. The exact game action that opens the renewal-confirm popup is
+   inferred from real evidence (the currency-action box is positionally
+   fixed and present on every real capture checked), not directly
+   observed as one continuous tap-then-popup interaction -- the
+   captures were supplied as separate reference screenshots, not a
+   recorded sequence. If `refresh_button_point` turns out not to open
+   this exact popup on some other real screen state, the structural
+   popup-verification check immediately downstream fails closed
+   (`REFRESH_POPUP_NOT_VERIFIED`, never a wrong tap) rather than
+   silently misbehaving.
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the real supplied captures, offline.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `411 passed`) and
+  `tests/test_refresh_popup_real_assets.py` specifically.
+- On a real device: confirm a live run now proceeds past a non-target
+  slot's refresh/reroll step (tapping the real currency-action box,
+  then the real renewal-confirm popup's "확인") instead of failing at
+  "refresh-open tap failed" -- the likely next real blocker, if any, is
+  whether the tapped currency-action box actually opens this exact
+  popup on every mission type (dungeon-type included), per Limitation 1
+  above.
+
+## ACCEPT-CONFIRM-001: tap the accept-mission confirm button on the fast path too
+
+**Trigger**: after `REFRESH-CALIBRATION-001` shipped, the user
+reported a live run stuck on the "자유 토벌작전" mission-detail popup
+(임무 목표: 모든 몬스터 처치 (0/200), price 6600, "확인" button) --
+the actual TARGET mission, showing on the very first check (no refresh
+needed). The user supplied a real 1280x720 capture of the exact stuck
+screen.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`_accept_or_refresh_slot` has two paths to "target confirmed": the
+fast path (phrase/quantity already match on the first check) and the
+path after a refresh+confirm round-trip. Only the second path ever
+tapped an accept/confirm button (via `_tap_template(..., "button_
+accept_mission")`) -- itself a stale, unreliable pre-GAME-CAL-001
+placeholder asset (180x55, scores only 0.726 against a real capture of
+this popup, below the 0.8 threshold). The fast path returned
+`SlotOutcome(slot_index, True, ...)` without ever tapping anything,
+leaving this popup open on screen; every subsequent slot's select tap
+then landed harmlessly on the still-open popup instead of the mission
+list underneath, and the whole cycle stalled indefinitely -- exactly
+the screen the customer reported.
+
+Confirmed with the real capture: the shipped config's actual
+production acceptance signal (`mission_target_phrase`, the combined
+OR-matched phrase+quantity template) matches this real popup at 0.982
+confidence -- i.e. this is precisely the real state where the old fast
+path fired and got stuck.
+
+### Fix
+
+Added a new required config field, `accept_mission_point`, real-
+measured directly from the customer's capture (real "확인" button
+bounding box x:662-840, y:500-550, center rel 0.5867/0.7292 -- measured
+to within 1px of `REFRESH-CALIBRATION-001`'s `refresh_confirm_point`,
+kept separate anyway since the two popups are semantically distinct).
+`src/ldmanager/bounty_mission.py`: both the fast path and the
+post-refresh path now always tap `accept_mission_point` directly --
+never a template search (mirroring every prior *-CALIBRATION-001
+packet's reasoning). `configs/bounty.example.yaml` no longer maps
+`button_accept_mission` at all.
+
+### Regression tests
+
+- `tests/test_accept_popup_real_assets.py` (new, 5 tests) -- real
+  capture is a genuine 1280x720 PNG; the production `mission_target_
+  phrase` signal confirms this real popup as the target mission
+  (reproducing the exact stuck state); the stale `button_accept_
+  mission.png` template confirmed NOT confidently matching this real
+  popup; `accept_mission_point` confirmed to land inside the real
+  button's measured bounding box; the stale template confirmed absent
+  from the shipped config.
+- `tests/test_bounty_config.py` --
+  `test_example_bounty_config_accept_mission_point_is_a_real_calibrated_value`.
+- `tests/test_bounty_mission.py` --
+  `test_already_acceptable_slot_still_taps_the_accept_mission_confirm_button`
+  (direct proof of the fix: the fast path, exercised via a recognizer
+  that matches everything on the first check -- no refresh -- still
+  taps `accept_mission_point`), `test_accept_mission_tap_failure_
+  detail_includes_the_real_adb_stderr`; updated the two existing tap-
+  count assertions (`test_full_cycle_reaches_completed_state_once`,
+  `test_kill_progress_incomplete_never_taps_complete_or_reward`) to
+  account for the one additional tap per already-acceptable slot.
+- Added the new required `accept_mission_point` field to every other
+  direct `BountyMissionConfig(...)` test constructor
+  (`tests/test_live_serial_propagation.py`,
+  `tests/test_screen_classification.py`) and the raw-YAML fixture in
+  `tests/test_app.py`.
+
+### Test results
+
+```
+python -m pytest -q
+419 passed
+```
+
+Run 3x in a row: `419 passed` every time, 0 failures. (Prior baseline
+411 + 5 new accept-popup real-asset + 1 new config-guard + 2 new
+bounty_mission tests = 419.)
+
+### Commits
+
+- `25b6760` -- `ACCEPT-CONFIRM-001: tap the
+  accept-mission confirm button on the fast path too` (implementation +
+  tests + this HANDOFF section, in one commit)
+- Followed by a short "docs: record ACCEPT-CONFIRM-001 commit hash in
+  handoff" commit recording the real hash.
+
+### Limitations
+
+1. `accept_mission_point` and `refresh_confirm_point` happen to
+   measure to the same real screen position across the two real
+   captures on file -- if the game ever renders these two popups at
+   different positions in some other state, only the one that was
+   actually captured is verified; this stays a documented, watched
+   coincidence, not an assumption baked into the code (they are two
+   separate config fields, not aliased).
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the real supplied capture, offline.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `419 passed`) and
+  `tests/test_accept_popup_real_assets.py` specifically.
+- On a real device: confirm a live run now proceeds past a slot whose
+  target mission is already showing on the first check (no refresh
+  needed) instead of stalling on the open "확인" popup -- the likely
+  next real blocker, if any, is whatever real screen follows this tap.
+
+## EARLY-COMPLETE-JUMP-001 / COMPLETE-RETRY-001: act on a complete slot immediately, and retry a missed complete tap
+
+**Trigger**: user question after `ACCEPT-CONFIRM-001` shipped: (1) "왜
+자꾸 순회공연해 한번완료누르고 내려가서 완료있으면 바로 작업하고
+없으면 돌리고해야지" -- after finding a complete slot partway down
+the list, why does the flow keep touring/accepting the remaining slots
+before acting on it? (2) "완료되고 확인눌렀을때 잘 안되잖아? 그럼
+한번더 리셋하는게 당연한 상식아니야?" -- when the complete tap doesn't
+land, isn't re-selecting and retrying the obvious fix instead of
+failing outright?
+
+### Status: implemented, tested, regression-verified.
+
+### Fix 1: EARLY-COMPLETE-JUMP-001
+
+`run_one_cycle`'s main accept loop already checked each freshly-
+accepted slot for completion inline (`EARLY-COMPLETE-CHECK-001`), but
+still kept iterating and accepting/refreshing every remaining slot
+before moving on to the complete/claim/close section. Now, the moment
+a slot is found complete during this loop, it `break`s immediately --
+any slots not yet visited this pass simply keep their existing runtime
+state (already-locked slots stay locked; anything else is picked up
+again on the next cycle) rather than being pointlessly
+accepted/refreshed first. `src/ldmanager/bounty_mission.py`'s accept
+loop.
+
+### Fix 2: COMPLETE-RETRY-001
+
+The complete tap (select the eligible slot's detail, then tap
+"완료") previously failed the whole cycle outright
+(`CAPTURE_UNAVAILABLE`) on the very first miss -- including the common,
+recoverable case where `select_complete_point`'s fresh capture simply
+didn't happen to show the eligible mission's detail view yet. Now
+bounded-retried (new `max_complete_verify_attempts` config field,
+default 3): each attempt re-selects the eligible slot and retries the
+complete tap; only exhausting all attempts fails the cycle, and the
+detail now reports the attempt count.
+
+### Regression tests
+
+- `tests/test_bounty_mission.py` --
+  `test_early_complete_jump_stops_accepting_remaining_slots_once_one_is_eligible`
+  (slot 3 eligible; slots 4/5's select points proven never tapped
+  before the complete tap), `test_complete_tap_retries_by_reselecting_
+  instead_of_failing_on_first_miss` (first `button_complete` check
+  misses, second matches; still reaches `COMPLETED_CYCLE`, having
+  re-tapped the eligible slot's select point once per attempt),
+  `test_complete_tap_failure_detail_reports_the_attempt_count`.
+- Updated `test_full_cycle_reaches_completed_state_once`'s slot-count
+  and tap-count assertions: since its recognizer matches every label
+  unconditionally, slot 1 is now found complete on its own first check
+  and the cycle jumps straight to claiming it (6 slot outcomes / 16
+  taps, down from 10 / 24 -- slots 2-5 are genuinely never visited this
+  pass, which is the fix working as intended, not a regression).
+
+### Test results
+
+```
+python -m pytest -q
+422 passed
+```
+
+Run 3x in a row: `422 passed` every time, 0 failures. (Prior baseline
+419 + 3 new tests = 422.)
+
+### Commits
+
+- `44f696c` -- `EARLY-COMPLETE-JUMP-001/COMPLETE-
+  RETRY-001: act on a complete slot immediately, and retry a missed
+  complete tap` (implementation + tests + this HANDOFF section, in one
+  commit)
+- Followed by a short "docs: record EARLY-COMPLETE-JUMP-001/COMPLETE-
+  RETRY-001 commit hash in handoff" commit recording the real hash.
+
+### Limitations
+
+1. Skipping the remaining slots' accept/refresh this pass means their
+   target-phrase state isn't re-verified until a later cycle visits
+   them -- acceptable since nothing about their state changed by
+   skipping them (they simply keep whatever runtime state they already
+   had).
+2. `max_complete_verify_attempts`'s retry re-selects the SAME slot each
+   time; if the real root cause of a miss is something other than a
+   momentarily-stale capture (e.g. the slot's popup was never really
+   eligible), the retry will predictably keep missing until the bound
+   is hit and the cycle fails with a clear, attempt-counted detail --
+   never silently.
+3. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the existing fake-runner/recognizer test harness.
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `422 passed`).
+- On a real device with a slot that completes partway down the list:
+  confirm the flow claims it immediately rather than finishing the
+  full slot walk first, and that a real complete-tap miss (if it ever
+  occurs) recovers via retry instead of failing the whole cycle.
+
+## NO-CONSOLE-FLICKER-001: suppress the black console window on every ADB call
+
+**Trigger**: user reported a black, flickering window appearing
+constantly during a live run and asked for it to be fixed. Confirmed
+directly from a ~83s screen-recording video the user supplied: a
+`cmd.exe`-style console window titled `C:\LDPlayer\LDPlayer14\adb...`,
+completely black/empty, repeatedly popping open over the app.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`SubprocessAdbRunner`'s three `subprocess.run()` calls (`list_devices`,
+`run`, `capture_binary`) spawn `adb.exe` as a genuine child process with
+no console-suppression flag. On Windows, launching a console
+executable from a GUI process (this app's `--windowed` PyInstaller
+build) opens a brand-new console window for that child process unless
+explicitly suppressed -- and since one ADB command is issued per
+tap/capture, a live run flickers this open-and-close on essentially
+every automation step.
+
+### Fix
+
+`src/ldmanager/adb.py`: added a module-level
+`_NO_CONSOLE_WINDOW_KWARGS` built once (`{"creationflags":
+subprocess.CREATE_NO_WINDOW}` on Windows, `{}` elsewhere --
+`creationflags` is a Windows-only `subprocess.run()` kwarg; passing it
+on POSIX raises `ValueError`, so it's platform-guarded rather than
+passed unconditionally) and spread into all three `subprocess.run()`
+calls.
+
+### Regression tests
+
+- `tests/test_adb.py` --
+  `test_subprocess_adb_runner_never_flashes_a_console_window_on_windows`:
+  monkeypatches `subprocess.run`, confirms every one of the three real
+  calls (`list_devices`, `run`, `capture_binary`) passes
+  `creationflags=subprocess.CREATE_NO_WINDOW` (skipped on non-Windows,
+  since the flag doesn't apply there).
+
+### Test results
+
+```
+python -m pytest -q
+429 passed
+```
+
+Run 3x in a row: `429 passed` every time, 0 failures. (Prior baseline
+428 + 1 new test = 429.)
+
+### Commits
+
+- `cb2221f` -- `NO-CONSOLE-FLICKER-001: suppress the
+  black console window on every ADB call` (implementation + tests +
+  this HANDOFF section, in one commit)
+- Followed by a short "docs: record NO-CONSOLE-FLICKER-001 commit hash
+  in handoff" commit recording the real hash.
+
+### Limitations
+
+1. Only suppresses console windows spawned by THIS app's own ADB
+   subprocess calls -- any window LDPlayer itself or another tool
+   opens is out of scope.
+2. Verified via a monkeypatched `subprocess.run` (argv/kwargs-level),
+   not by visually confirming the window no longer appears on a real
+   Windows desktop during a live run.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `429 passed`).
+- On a real device: confirm no console window flashes during a live
+  run (Test capture, Start, several taps).
+
+## REFRESH-TRIGGER-CORRECTION-001: refresh_button_point was tapping the wrong (but visually near-identical) box
+
+**Trigger**: after `NO-CONSOLE-FLICKER-001` shipped, the user reported
+`REFRESH-CALIBRATION-001`'s fix still didn't work on the dungeon-type
+mission ("십변도 토벌작전[던전]") -- confirmed from a supplied video's
+app log: `cycles: 10 last: refresh_popup_not_verified`, `Slot 3:
+refresh popup never verified structurally within 3 attempt(s)`. The
+user then supplied a second, short screen recording demonstrating a
+manual, successful refresh of that exact mission.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`REFRESH-CALIBRATION-001` calibrated `refresh_button_point` against
+the persistent currency-action box visible on the plain list view (no
+popup open) -- real, confidently cross-validated against
+`currency_action_4400.png`, but the WRONG box. The video showed the
+user tapping a DIFFERENT box instead: the accept popup's own embedded
+price/counter box, immediately left of the "확인" button on the same
+row -- visually almost identical (same counter+price+icon styling,
+same gold border) but at a different screen position. Since
+`ACCEPT-CONFIRM-001` established that selecting a slot immediately
+shows this popup (not a bare list row), `refresh_button_point`'s tap
+always fires while the popup is already open -- and the underlying
+list's box, though it may still be visible peeking out from behind the
+popup in some captures, is not interactive at that moment (the modal
+popup blocks it). This is why `_verify_refresh_popup` never confirmed
+the real renewal dialog: the tap was landing somewhere inert instead
+of the actual trigger.
+
+### Fix
+
+`configs/bounty.example.yaml`: `refresh_button_point` is now the real,
+measured center of the popup's own price box (x:438-622, y:498-552 in
+1280x720, rel `0.4141`/`0.7292`) -- confirmed identical across two real
+captures at different refresh counts/prices (1/6600 and 7/75500), i.e.
+unaffected by the price's digit count. `src/ldmanager/bounty_mission.py`'s
+comments updated to describe the correct box.
+
+### Regression tests
+
+- `tests/test_refresh_popup_real_assets.py` --
+  `test_refresh_button_point_lands_on_the_real_accept_popup_price_box`
+  (new, replaces the now-wrong `test_refresh_button_point_lands_on_
+  the_real_currency_action_box`): confirms the tap point falls inside
+  the real popup price-box bbox on both real captures.
+  `test_refresh_button_point_is_never_the_persistent_list_currency_
+  action_box` (new): explicit negative guard against regressing back
+  to the old, wrong box's bbox.
+- `tests/test_bounty_config.py` --
+  `test_example_bounty_config_refresh_fields_are_real_calibrated_values`
+  updated to the new value, with an explanatory docstring covering
+  both the original placeholder AND `REFRESH-CALIBRATION-001`'s own
+  real-but-wrong value.
+
+### Test results
+
+```
+python -m pytest -q
+430 passed
+```
+
+Run 3x in a row: `430 passed` every time, 0 failures. (Prior baseline
+429 + 1 net new test = 430 -- one test replaced, one added.)
+
+### Commits
+
+- `279fe1b` -- `REFRESH-TRIGGER-CORRECTION-001:
+  refresh_button_point was tapping the wrong (but visually near-
+  identical) box` (implementation + tests + this HANDOFF section, in
+  one commit)
+- Followed by a short "docs: record REFRESH-TRIGGER-CORRECTION-001
+  commit hash in handoff" commit recording the real hash.
+
+### Limitations
+
+1. The two boxes' near-identical visual styling is a real, recurring
+   risk in this UI -- any future similar "counter + price + icon"
+   element should be cross-checked against ALL real captures showing
+   both a popup-open and popup-closed state before being assumed to be
+   the same element.
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the real supplied captures and the customer's
+   screen recording, offline.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `430 passed`).
+- On a real device: confirm a live run now proceeds past a non-target
+  slot's refresh/reroll step on BOTH regular "자유 토벌작전" and
+  dungeon-type ("...[던전]") missions, reaching the real renewal-
+  confirm dialog instead of "refresh popup never verified".
+
+## RETRY-PACING-001: retry_delay_seconds was configured but never actually applied
+
+**Trigger**: user reported "refresh popup not verified" still
+happening after `REFRESH-TRIGGER-CORRECTION-001` fixed the tap
+position. Investigated the whole retry/verify path from first
+principles rather than assuming another tap-position error.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`BountyMissionConfig.retry_delay_seconds` is a real, validated,
+documented config field (`configs/bounty.example.yaml` ships it as
+`1.0`) -- but `bounty_mission.py` never read or used it anywhere. Every
+bounded verify loop (refresh-popup verify, kill-progress poll,
+complete-tap retry, reward verify, result verify, mission-list verify)
+fired its capture+check attempts back-to-back with zero pause between
+them -- as fast as ADB round-trips allowed. If the real game UI takes
+even a few hundred milliseconds to finish a transition/fade-in
+animation after a tap (entirely plausible for a popup opening), every
+attempt in a 3-attempt bounded loop could fire and complete WHILE the
+animation was still in progress, and none of them would ever see the
+final rendered state -- a spurious "never verified" result with a
+perfectly correct tap. This is a different, deeper bug than
+`REFRESH-TRIGGER-CORRECTION-001`'s wrong-tap-position bug, and likely
+compounded it (would have caused occasional failures even with the
+right tap target).
+
+Note: `retry_delay_seconds` IS correctly used elsewhere in this
+codebase -- `guarded_touch.py`'s `paced_guarded_touch` (used by the
+older, separate `mission.py`/`mission_config.py` generic-mission
+flow) -- so this was specifically a `bounty_mission.py` gap, not a
+project-wide pattern that was simply never implemented anywhere.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py`: added an injectable `sleep_fn:
+Callable[[float], None] = time.sleep` parameter to `run_one_cycle`
+(threaded through to `_accept_or_refresh_slot`), and inserted
+`sleep_fn(config.retry_delay_seconds)` between (never after) failed
+attempts in all six bounded loops: refresh-popup verify,
+complete-tap retry, reward verify, result verify, mission-list verify
+(each per-attempt), and kill-progress polling (once per full pass over
+the candidate slots, since that loop waits on real gameplay progress,
+not a UI transition). `retry_delay_seconds: 0.0` (the test-harness
+default) is still a real, valid pace -- `sleep_fn` is always called,
+just with a zero delay, never skipped outright.
+
+### Regression tests
+
+- `tests/test_bounty_mission.py` --
+  `test_retry_delay_seconds_actually_paces_the_popup_verify_loop`:
+  direct proof `sleep_fn` is invoked with `retry_delay_seconds` exactly
+  `max_popup_verify_attempts - 1` times (between attempts, never after
+  the last one) when every attempt misses.
+  `test_retry_delay_seconds_zero_is_a_real_but_instant_pace`: confirms
+  `sleep_fn` is still called (with `0.0`) rather than skipped when the
+  configured delay is zero.
+
+### Test results
+
+```
+python -m pytest -q
+432 passed
+```
+
+Run 3x in a row: `432 passed` every time, 0 failures. (Prior baseline
+430 + 2 new tests = 432.)
+
+### Commits
+
+- `65a6545` -- `RETRY-PACING-001: retry_delay_seconds
+  was configured but never actually applied` (implementation + tests +
+  this HANDOFF section, in one commit)
+- Followed by a short "docs: record RETRY-PACING-001 commit hash in
+  handoff" commit recording the real hash.
+
+### Limitations
+
+1. `retry_delay_seconds` is a single, global pace value shared by every
+   bounded loop in this module -- a UI element that genuinely needs a
+   longer settle time than others would still need its own dedicated
+   field if this one value (1.0s in the shipped example) turns out
+   insufficient for some specific step.
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified via an injectable `sleep_fn` test double, not by measuring
+   real UI transition timing on an actual device.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `432 passed`).
+- On a real device: confirm "refresh popup never verified" no longer
+  occurs on a correctly-tapped popup; if it still does, the next
+  candidate is `retry_delay_seconds: 1.0` simply being too short for
+  this specific device/instance's real UI transition time (increase it
+  in `configs/bounty.yaml` and retest before assuming another
+  calibration bug).
+
+## RETRY-BUDGET-001: widen the popup-verify timing budget
+
+**Trigger**: user reported "refresh popup not verified" recurring
+intermittently even after `RETRY-PACING-001` started actually pacing
+retries -- "아까는 잘되던게 또 안됨" (it worked a moment ago, now it
+doesn't again). Intermittent (not 100% reproducible) failure near an
+already-confirmed-correct tap position is the signature of a timing
+margin that's thin rather than absent or wrong.
+
+### Status: implemented, tested, regression-verified.
+
+### Fix
+
+`configs/bounty.example.yaml`: raised `max_popup_verify_attempts`
+(3 -> 5) and `retry_delay_seconds` (1.0 -> 1.5), widening the total
+worst-case wait budget for the popup to finish rendering from ~2-3s to
+up to ~6s before concluding it never showed.
+
+### Regression tests
+
+- `tests/test_bounty_config.py` --
+  `test_example_bounty_config_retry_budget_was_widened`: guards against
+  silently drifting back to the original, thinner budget.
+  `test_negative_retry_delay_is_rejected` updated to match the new
+  `retry_delay_seconds` value, with an added assertion that fails
+  loudly (rather than silently no-op-ing) if this fixture ever drifts
+  out of sync with the example config again.
+
+### Test results
+
+```
+python -m pytest -q
+436 passed
+```
+
+### Limitations
+
+1. If "never verified" still recurs after this, it likely needs real
+   evidence (a screen recording of the exact miss) rather than a
+   further budget increase -- see `RETRY-PACING-001`'s QA note.
+2. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+## ERROR-VISIBILITY-001: flagged-but-not-fatal outcomes never reached the GUI's error display
+
+**Trigger**: same investigation -- the user said the recurring
+failure "에러로그에는 안잡혀" (doesn't get caught in the error log).
+Traced to `controller.py`'s `AccountWorker._loop`: the fatal-outcome
+set that populates `last_error`/`errored` (the GUI's red-text error
+display) only ever contained
+`{recognition_failed, capture_unavailable, stale_screen,
+unknown_screen, adb_error}`. Six other genuine "something didn't work"
+`BountyOutcome` values --
+`refresh_popup_not_verified`, `slot_accept_failed`,
+`reward_verify_failed`, `result_verify_failed`,
+`mission_list_verify_failed`, `re_accept_failed` -- fell through to the
+plain, scrolling "cycle result:" log line instead, and `last_error`/
+`errored` were never touched for any of them. Since the GUI's
+`status_var` only ever shows "ERROR" while NOT running (line 179 in
+`gui.py`: `"running" if status.running else ("ERROR" if ...)`), and the
+worker never stops for these outcomes, the only visible signal was
+`error_var` (red text) -- which these six outcomes never populated at
+all. A real, recurring failure could sit in the log for many cycles
+with zero red-text indication anything was wrong.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+The fatal-outcome check was written once for the original, narrower
+set of failure modes and never revisited as `bounty_mission.py` grew
+new structured `BountyOutcome` values over the course of this project
+-- a coverage gap, not a logic bug in the check itself.
+
+### Fix
+
+`src/ldmanager/controller.py`: added `_FLAGGED_NON_FATAL_OUTCOMES`, a
+second outcome set. Outcomes in it now populate `last_error`/`errored`
+(visible in the GUI's red text) exactly like the fatal set does, log
+with a `WARN:` prefix (not `ERROR:`, to stay visually distinct from a
+worker-stopping failure), and log at `logging.WARNING` -- but do NOT
+break the loop; `bounty_mission.py`'s bounded-retry design expects
+`run_one_cycle` to be called again after these. `kill_progress_not_
+complete`/`completed_cycle`/`stopped` and any other outcome stay in
+the plain, non-flagged "cycle result:" path (genuinely informational,
+not a failure) -- and that path now also explicitly clears any
+previous `last_error`/`errored`, so a transient flagged outcome
+doesn't leave the GUI stuck red after the flow recovers.
+
+### Regression tests
+
+- `tests/test_controller.py` --
+  `test_flagged_non_fatal_outcome_is_visible_but_worker_keeps_going`
+  (direct proof: `errored`/`last_error` populated, `WARN:` log line
+  present, `ERROR:` absent, and the cycle function was called more
+  than once -- the worker never stopped on this outcome alone),
+  `test_flagged_non_fatal_outcome_clears_after_a_later_successful_cycle`,
+  `test_all_six_flagged_outcomes_are_visible_without_stopping`
+  (parametrized over all six).
+
+### Test results
+
+```
+python -m pytest -q
+436 passed
+```
+
+Run 3x in a row: `436 passed` every time, 0 failures. (Prior baseline
+433 + 3 new controller tests = 436.)
+
+### Commits
+
+- `01a7cfe` -- `RETRY-BUDGET-001/ERROR-VISIBILITY-001:
+  widen the retry budget and surface flagged-but-not-fatal outcomes in
+  the GUI` (implementation + tests + both HANDOFF sections, in one
+  commit)
+- Followed by a short "docs: record RETRY-BUDGET-001/ERROR-
+  VISIBILITY-001 commit hash in handoff" commit recording the real
+  hash.
+
+### Limitations
+
+1. `last_error`'s red text is only visible while looking at that
+   specific account's panel -- there is still no aggregate/summary
+   indicator across all 9 accounts at a glance.
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the existing fake-worker test harness.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `436 passed`).
+- On a real device: confirm a `refresh_popup_not_verified` (or any of
+  the other five flagged outcomes) now shows red text in the GUI
+  immediately, without needing to read the scrolling log, while the
+  worker keeps running and retrying.
+
+## RETRY-BUDGET-002 / PHASE-VISIBILITY-001: widen the remaining verify budgets, and stop the phase display going stale
+
+**Trigger**: after `RETRY-BUDGET-001`/`ERROR-VISIBILITY-001` shipped
+and correctly surfaced a real failure in red, the user's next live run
+showed `mission_list_verify_failed` -- the SAME "thin timing margin"
+symptom `RETRY-BUDGET-001` fixed for popup-verify, now on a different
+step, in the log the visibility fix had just made readable. The same
+capture also showed `phase: WAITING_KILL_PROGRESS` while the cycle had
+actually progressed all the way through complete/claim/close and was
+failing at mission-list verification -- a stale, misleading phase
+display made worse debugging in exactly this kind of remote-diagnosis
+session.
+
+### Status: implemented, tested, regression-verified.
+
+### Fix 1: RETRY-BUDGET-002
+
+`configs/bounty.example.yaml`: `max_complete_verify_attempts`,
+`max_reward_verify_attempts`, `max_result_verify_attempts`, and
+`max_mission_list_verify_attempts` all raised 3 -> 5, matching
+`max_popup_verify_attempts`'s existing widened value. `RETRY-PACING-
+001` left every one of these loops completely unpaced until it
+shipped, so all five are equally exposed to the same thin-margin
+failure mode -- not just the one that happened to be reported first.
+
+### Fix 2: PHASE-VISIBILITY-001
+
+`src/ldmanager/bounty_mission.py`'s `run_one_cycle`: `runtime.phase`
+(the GUI's "phase:" display) is now updated at every major step --
+`COMPLETING`, `CLAIMING`, `CLOSING_RESULT`, `VERIFYING_MISSION_LIST`
+-- not just the original single `WAITING_KILL_PROGRESS` assignment.
+(Separately noted: this module's `on_phase` callback parameter is
+never wired to anything in production -- `app.py`'s cycle-function
+wrapper doesn't pass it -- so `runtime.phase`, which IS read by the
+GUI, was the only mechanism worth fixing here.)
+
+### Regression tests
+
+- `tests/test_bounty_config.py` --
+  `test_example_bounty_config_retry_budget_was_widened` extended to
+  cover all five `max_*_verify_attempts` fields, not just popup-verify.
+- `tests/test_bounty_mission.py` --
+  `test_runtime_phase_advances_through_the_post_completion_steps`:
+  direct proof `runtime.phase` reaches `VERIFYING_MISSION_LIST` (not
+  stuck at `WAITING_KILL_PROGRESS`) when the cycle progresses through
+  complete/claim/close and fails only at the final mission-list check.
+
+### Test results
+
+```
+python -m pytest -q
+437 passed
+```
+
+Run 3x in a row: `437 passed` every time, 0 failures. (Prior baseline
+436 + 1 new test = 437.)
+
+### Commits
+
+- `28d5e24` -- `RETRY-BUDGET-002/PHASE-VISIBILITY-001:
+  widen the remaining verify budgets, and stop the phase display going
+  stale` (implementation + tests + this HANDOFF section, in one
+  commit)
+- Followed by a short "docs: record RETRY-BUDGET-002/PHASE-
+  VISIBILITY-001 commit hash in handoff" commit recording the real
+  hash.
+
+### Limitations
+
+1. If a verify step still fails after this widened budget, it likely
+   needs real evidence (a screen recording of the exact miss) rather
+   than a further budget increase -- see `RETRY-PACING-001`'s QA note,
+   which applies equally to all five loops now.
+2. `runtime.phase` is still a coarse, step-level indicator (not
+   per-attempt) -- it tells you WHICH step is in progress, not how
+   many of that step's bounded attempts have been used so far (the log
+   line already reports the latter once the step concludes).
+3. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the existing fake-runner/recognizer test harness.
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `437 passed`).
+- On a real device: confirm the "phase:" display now updates as a live
+  run progresses through complete -> claim -> close -> mission-list
+  verification, and that any of the five verify steps now has more
+  room to succeed before reporting a failure.
+
+## REFRESH-RESULT-DISMISS-001: dismiss the post-refresh acknowledgment popup
+
+**Trigger**: real customer report -- "Slot 3: refresh popup never
+verified" kept recurring across many cycles even after
+`REFRESH-TRIGGER-CORRECTION-001` (correct tap position) and
+`RETRY-BUDGET-001/002` (widened timing budgets) shipped. The customer
+supplied real screenshots of the actual stuck screen after being asked
+to Stop-then-Test-capture at the exact moment of failure.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+After confirming a mission renewal ("지역 퀘스트를 갱신
+하시겠습니까?" -> "확인"), the game shows ONE MORE brief
+acknowledgment popup for the newly-rolled mission -- title + "확률"
+(odds) + a single reward icon + "닫기" -- before returning to the
+normal accept-popup state. `_accept_or_refresh_slot`'s refresh loop
+had no concept of this screen at all: after tapping
+`refresh_confirm_point`, it went straight to re-checking mission
+acceptability, which correctly reported "not acceptable" against this
+unexpected screen every time -- looping the whole refresh sequence
+again, hitting the same unhandled acknowledgment popup again, forever.
+This is why the failure kept recurring specifically on slots that
+needed a refresh (never on slots already acceptable on the first
+check) and why widening the retry budget didn't help -- it wasn't a
+timing problem, it was a genuinely un-handled screen.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py`'s refresh loop: immediately after
+the confirm tap succeeds, a single best-effort check (not a bounded
+retry loop) -- if `reward_screen_label` ("확률", already calibrated in
+`REWARD-SCREEN-CALIBRATION-001`) matches, tap `close_result_point`
+(already calibrated in `RESULT-CLOSE-CALIBRATION-001`) to dismiss it.
+Both are reused as-is -- real evidence showed this acknowledgment
+popup is structurally identical to the reward/result screens (same
+"확률" anchor, 1.0 confidence match) and its "닫기" button sits at the
+exact same real position already measured for `close_result_point`/
+`claim_point`. If the popup isn't actually showing, the check is a
+harmless no-op and the normal acceptability check proceeds unchanged.
+
+### Regression tests
+
+- `tests/test_refresh_result_dismiss_real_assets.py` (new, 3 tests):
+  both real captures are genuine 1280x720 PNGs; `reward_screen_label`
+  matches both at high confidence; `close_result_point` confirmed to
+  land inside the real "닫기" button's measured bbox.
+- `tests/test_bounty_mission.py` --
+  `test_refresh_result_ack_popup_is_dismissed_before_rechecking_acceptability`
+  (the ack popup always shows after each confirm; mission only becomes
+  acceptable after one full refresh+confirm+dismiss round-trip, and
+  the dismiss tap is proven to happen between confirm and acceptance),
+  `test_refresh_result_ack_popup_absent_is_a_harmless_noop` (bounded
+  so the cycle can never reach the real, separate close-result step;
+  `close_result_point` proven never tapped when the ack popup never
+  shows).
+
+### Test results
+
+```
+python -m pytest -q
+442 passed
+```
+
+Run 3x in a row: `442 passed` every time, 0 failures. (Prior baseline
+437 + 3 new real-asset + 2 new bounty_mission tests = 442.)
+
+### Commits
+
+- `b51df7b` -- `REFRESH-RESULT-DISMISS-001: dismiss
+  the post-refresh acknowledgment popup` (implementation + tests +
+  this HANDOFF section, in one commit)
+- Followed by a short "docs: record REFRESH-RESULT-DISMISS-001 commit
+  hash in handoff" commit recording the real hash.
+
+### Limitations
+
+1. Whether this acknowledgment popup appears on EVERY refresh
+   round-trip, or only sometimes (e.g. only for certain rolled mission
+   types), wasn't independently confirmed -- the fix is safe either
+   way (best-effort, harmless no-op if absent), but if it turns out to
+   need a different dismiss condition in some case, that needs new
+   real evidence.
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the real supplied captures, offline.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `442 passed`) and
+  `tests/test_refresh_result_dismiss_real_assets.py` specifically.
+- On a real device: confirm a live run refreshing a non-target slot
+  (dungeon-type included) now proceeds past this acknowledgment popup
+  instead of looping on "refresh popup never verified" indefinitely.
+
+## REFRESH-RESULT-DISMISS-002: pace the ack-popup check itself
+
+**Trigger**: user reported the refresh flow still not working after
+`REFRESH-RESULT-DISMISS-001` shipped, describing it as "닫기 버튼을
+못 누르는 느낌" (feels like it can't press the close button). Self-
+review of the just-shipped fix (prompted by the user asking what
+changed since it last worked) found the bug before any new evidence
+was needed.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`REFRESH-RESULT-DISMISS-001`'s new check fired immediately after the
+refresh-confirm tap, with **zero pacing** -- the exact same mistake
+`RETRY-PACING-001` fixed everywhere else in this module, reintroduced
+in this one new spot added afterward. If the acknowledgment popup
+takes even a moment to render, a zero-delay check reads the screen
+before the popup exists, `reward_screen_label` correctly doesn't
+match (there's nothing there yet to match), the dismiss tap never
+fires, and the popup -- now actually rendering -- blocks the very next
+check too. From the outside this is indistinguishable from "the close
+tap doesn't work," which is exactly how the user described it.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py`: a single `sleep_fn(config.
+retry_delay_seconds)` call now runs before the ack-popup check.
+Deliberately kept as one pre-delay before one check (not a bounded
+multi-attempt loop like the popup-verify step) -- once actually
+rendered, the real "확률" anchor matches reliably (1.0 confidence on
+real captures), so this was never a "keep re-checking" problem; a
+multi-attempt loop here would instead add several seconds of dead time
+to EVERY refresh round-trip, including the -- likely far more common
+-- case where this popup never shows at all.
+
+### Regression tests
+
+- `tests/test_bounty_mission.py` --
+  `test_refresh_result_ack_popup_check_is_paced_not_instant`: direct
+  proof `sleep_fn` is invoked with `retry_delay_seconds` before the
+  ack-popup check runs, isolated from whether the popup actually
+  appears.
+
+### Test results
+
+```
+python -m pytest -q
+443 passed
+```
+
+Run 3x in a row: `443 passed` every time, 0 failures. (Prior baseline
+442 + 1 new test = 443.)
+
+### Commits
+
+- `6ece9b0` -- `REFRESH-RESULT-DISMISS-002: pace the
+  ack-popup check itself` (implementation + tests + this HANDOFF
+  section, in one commit)
+- Followed by a short "docs: record REFRESH-RESULT-DISMISS-002 commit
+  hash in handoff" commit recording the real hash.
+
+### Limitations
+
+1. Adds up to one `retry_delay_seconds` (1.5s in the shipped example)
+   of latency to every refresh round-trip, whether or not the ack
+   popup actually appears -- an intentional, bounded trade-off over a
+   multi-attempt loop's larger worst-case delay.
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the existing fake-runner/recognizer test harness.
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `443 passed`).
+- On a real device: confirm the acknowledgment popup (when it appears)
+  now actually gets dismissed instead of appearing stuck/unresponsive.
+
+## RETRY-PACING-002: pace the acceptability check right after select too
+
+**Trigger**: user pushback after `REFRESH-RESULT-DISMISS-002` shipped
+-- "저번에도 대기가 있었는데 안됬잖아 다른문제아냐?" (there was
+already a delay before too, and it didn't work -- isn't this a
+different problem?). Fair, well-founded skepticism: a delay already
+existed elsewhere in this exact flow (the popup-verify loop,
+`RETRY-PACING-001`) and refresh still failed, so a full audit of every
+tap-then-check transition in the module was done rather than assuming
+the same class of fix would land correctly a third time by guesswork.
+
+### Status: implemented, tested, regression-verified.
+
+### Audit
+
+Every `runner.run(...)` tap call site in `bounty_mission.py` was
+checked for what immediately follows it. Most feed into a bounded,
+multi-attempt verify loop (popup-verify, complete-retry, reward/
+result/mission-list-verify, kill-progress poll) -- these already pace
+BETWEEN attempts (`RETRY-PACING-001`), so even though the very FIRST
+attempt in each loop still has no pre-delay, a mid-transition miss on
+attempt 1 self-heals via the later, properly-paced attempts. One real
+gap stood out: `_accept_or_refresh_slot`'s initial select tap is
+followed by `_mission_is_acceptable` -- a single read with NO retry
+loop of its own. Selecting a slot opens its detail popup
+(`ACCEPT-CONFIRM-001`), so a zero-delay read here can catch the screen
+mid-transition -- best case a false `NON_TARGET_CONFIRMED` (sends an
+already-good mission through a needless refresh), worst case
+`RECOGNITION_FAILED`, which is a FATAL outcome that halts the whole
+worker outright. This is a materially worse failure mode than the
+other, self-healing gaps -- worth fixing even though the same delay
+value is already paid elsewhere in the loops that follow it.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py`: a single `sleep_fn(config.
+retry_delay_seconds)` now runs immediately after the initial slot
+select tap, before the first `_mission_is_acceptable` read. The
+kill-progress poll loop's per-slot select+check (structurally similar
+but checking a stable, already-rendered detail view rather than a
+freshly-opened popup, and already covered by the outer poll loop's
+between-pass pacing) was deliberately left as-is, to avoid adding
+several more seconds per cycle for a comparatively low-risk spot.
+
+### Regression tests
+
+- `tests/test_bounty_mission.py` --
+  `test_retry_pacing_002_paces_the_acceptability_check_right_after_select`:
+  direct proof `sleep_fn` is invoked with `retry_delay_seconds`
+  immediately after the select tap, before the first acceptability
+  read. Updated `test_retry_delay_seconds_actually_paces_the_popup_
+  verify_loop` and `test_retry_delay_seconds_zero_is_a_real_but_
+  instant_pace`'s expected `sleep_calls` sequences to include this new
+  pre-check pace.
+
+### Test results
+
+```
+python -m pytest -q
+444 passed
+```
+
+Run 3x in a row: `444 passed` every time, 0 failures. (Prior baseline
+443 + 1 new test = 444.)
+
+### Commits
+
+- `3d0ec90` -- `RETRY-PACING-002: pace the
+  acceptability check right after select too` (implementation + tests
+  + this HANDOFF section, in one commit)
+- Followed by a short "docs: record RETRY-PACING-002 commit hash in
+  handoff" commit recording the real hash.
+
+### Limitations
+
+1. Adds one more `retry_delay_seconds` (1.5s in the shipped example)
+   to every slot select, across every slot, every cycle -- a
+   deliberate, bounded trade-off for a fatal-failure-mode risk.
+2. The kill-progress poll loop's per-slot select+check was NOT paced
+   individually (see Audit above) -- if this turns out to also need
+   it, that's a candidate for a future packet, backed by real evidence
+   rather than assumption.
+3. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the existing fake-runner/recognizer test harness.
+4. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `444 passed`).
+- On a real device: watch specifically for any `recognition_failed`
+  (a fatal, worker-stopping outcome) occurring right after a slot
+  select -- this packet targets exactly that failure mode.
+
+## REFRESH-RESULT-DISMISS-003: dismiss the ack popup after accept_mission_point too
+
+**Trigger**: user reported still being stuck at the exact same
+acknowledgment popup ("자유 토벌작전" / "확률" / one reward icon /
+"닫기") after `REFRESH-RESULT-DISMISS-001`/`002` shipped, with a fresh
+Stop-then-Test-capture screenshot confirming it.
+
+### Status: implemented, tested, regression-verified.
+
+### Root cause
+
+`REFRESH-RESULT-DISMISS-001`/`002` only ever dismissed this popup
+after `refresh_confirm_point` (the renewal-confirm path). But the
+popup appears after **locking in a mission**, not specifically after
+confirming a renewal -- and `accept_mission_point` (tapped whenever a
+mission is accepted, whether already-acceptable on the very first
+check or after a refresh) is the OTHER place a mission gets locked in.
+Neither of `_accept_or_refresh_slot`'s two `accept_mission_point` call
+sites ever dismissed this popup, so it sat there blocking progress in
+exactly the same way the refresh-confirm path did before
+`REFRESH-RESULT-DISMISS-001` -- this was never fully fixed, only
+half-fixed, because the underlying trigger ("locking in a mission")
+is broader than the one path that was patched.
+
+### Fix
+
+`src/ldmanager/bounty_mission.py`: the dismiss logic (pace, check
+`reward_screen_label`, tap `close_result_point` if shown) was
+extracted into a shared `_dismiss_ack_popup_if_shown` helper and is
+now called after all three tap sites that can lock in a mission: the
+`refresh_confirm_point` tap (as before), and both `accept_mission_
+point` tap sites (the fast "already acceptable" path and the
+post-refresh path). Still real, measured assets reused throughout --
+no new template or position.
+
+### Regression tests
+
+- `tests/test_bounty_mission.py` --
+  `test_ack_popup_is_dismissed_after_the_fast_path_accept_too`
+  (dismiss tap follows the fast-path accept tap immediately),
+  `test_ack_popup_is_dismissed_after_the_post_refresh_accept_too`
+  (same for the post-refresh accept path). Updated
+  `test_full_cycle_reaches_completed_state_once`'s tap-count assertion
+  (every accept now also dismisses the ack popup when it's showing).
+
+### Test results
+
+```
+python -m pytest -q
+446 passed
+```
+
+Run 3x in a row: `446 passed` every time, 0 failures. (Prior baseline
+444 + 2 new tests = 446.)
+
+### Commits
+
+- `d6c6b19` -- `REFRESH-RESULT-DISMISS-003: dismiss
+  the ack popup after accept_mission_point too` (implementation +
+  tests + this HANDOFF section, in one commit)
+- Followed by a short "docs: record REFRESH-RESULT-DISMISS-003 commit
+  hash in handoff" commit recording the real hash.
+
+### Limitations
+
+1. This is the third iteration on this exact popup (`001` found it,
+   `002` paced it, `003` widened where it's dismissed) -- if it's
+   still not fully covered, the next most likely gap is a FOURTH tap
+   site this project hasn't identified yet, which would need new real
+   evidence to find rather than further speculation.
+2. No live ADB/LDPlayer/game session was used to verify this fix --
+   verified against the existing fake-runner/recognizer test harness
+   and the real supplied captures (already validated in
+   `REFRESH-RESULT-DISMISS-001`).
+3. All limitations recorded in every prior section of this document
+   remain valid and are not superseded by this packet.
+
+### QA focus points
+
+- Independently verify the exact Code commit hash below.
+- Re-run `pytest -q` (expect `446 passed`).
+- On a real device: confirm the acknowledgment popup no longer blocks
+  progress after EITHER accepting an already-good mission OR
+  confirming a refresh -- both paths now dismiss it.
+
+## v1.0.3-rc.25 — ACK-POPUP-PRECONFIRM-001
+
+- Customer evidence showed `refresh_popup_not_verified` while the odds acknowledgement overlay was visible immediately after the refresh-open touch. The previous close handler ran only after confirm, so it could never clear this pre-confirm overlay.
+- The refresh flow now probes the real confirm dialog first; on a structural miss it dismisses the overlay and requires fresh proof that the overlay is gone and the confirm dialog is present. A bounded failure is isolated to that account as `ack_popup_dismiss_failed`; confirm is not sent.
+- Added regression tests for close-before-confirm and a persistent overlay (bounded fail-closed/no confirm).
+- Verification: `.venv\\Scripts\\python.exe -m pytest -q` — 448 passed. Real customer LDPlayer/game validation remains required.
+## WINDOW-VIEWPORT-EDGE-001 (2026-09-23)
+
+- Implementation: `275890d` (`Fix Windows game viewport at capture edges`). Both matched rectangle edges are converted to native pixels and bounded to the captured LD window before crop. The same alignment function serves every account; unrelated/blank comparison and explicit window confirmation gates remain unchanged.
+- Regression: synthetic 635x374 Windows frame with 595x334 game area starting at y=40 and touching the bottom edge, also testing the right edge. Full suite: 480 passed. `git diff --check` clean.
+- Windows PyInstaller build: succeeded in a new isolated `dist/test-1.0.3-rc.34-20260923-121421/ldmanager` folder. It is a local validation artifact, not the published rc.34 binary.
+- Real customer LDPlayer result: `NEEDS_REAL_TEST`. Existing QA must independently verify exact Code commit before a release or final PASS.
+## COMPLETED-BEFORE-REFRESH-001 (2026-09-23)
+
+- Implementation commit: `4ebd582`. The selected completed target is recognized before a non-match on the initial `0/200` acceptance condition can trigger renewal. The existing guarded completion path still rechecks completed state and target before reward input.
+- Customer rc.35 screenshot, normalized from a 635x374 LD window to 1280x720: `mission_target_phrase` 0.856, `button_complete` 0.900, exact `0/200` 0.673, refresh-popup landmarks absent. This explains `refresh_popup_not_verified` without assuming a capture failure.
+- Regression: the stored real completed-target frame is rendered at a 595x334 Windows viewport and renormalized; no refresh/accept tap is emitted. A completed non-target is stopped without refresh/claim input. Full suite: 482 passed.
+- Customer LDPlayer result: `NEEDS_REAL_TEST`; independent QA is pending.
+## PRESERVE-LOCKED-SLOTS-001 (2026-09-23)
+
+- Implementation commit `0a75d17`: after verified reward close and return to the mission list, only the claimed row is marked `UNKNOWN`. Other `TARGET_LOCKED` slots remain accepted; the next cycle starts with the replacement row.
+- Cause: rc.36 reset all five slots, then evaluated existing N/200 targets with the initial `0/200` acceptance rule. That converted surviving targets into refresh candidates.
+- Regression: slot 3 claim preserves locks on slots 1 and 2. In the next cycle, those slots have N/200 progress and are neither selected nor refreshed. Full suite: 482 passed. Real customer LDPlayer result and independent QA remain pending.

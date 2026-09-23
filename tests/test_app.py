@@ -39,6 +39,7 @@ mission_phrase_roi: {x: 0.0, y: 0.0, width: 0.1, height: 0.1}
 mission_phrase_label: "TARGET_PHRASE"
 mission_quantity_roi: {x: 0.2, y: 0.0, width: 0.1, height: 0.1}
 mission_quantity_label: "200"
+accept_mission_point: {x: 0.55, y: 0.72}
 refresh_button_point: {x: 0.9, y: 0.9}
 refresh_popup_anchor_roi: {x: 0.3, y: 0.0, width: 0.1, height: 0.1}
 refresh_popup_anchor_label: "ANCHOR"
@@ -89,6 +90,54 @@ def test_build_controller_succeeds_with_valid_configs_and_covers_all_accounts(
     # Nothing was started -- construction alone must not touch ADB/GUI.
     for aid in AccountId:
         assert controller.worker(aid).is_running is False
+
+
+# --- REL-UPDATE-003: InputGateAdbRunner wiring (real taps opt-in only) -----
+
+
+def test_build_controller_wires_input_gate_enabling_customer_start_by_default(tmp_path, monkeypatch):
+    """build_controller() previously wired the raw SubprocessAdbRunner
+    directly (a gap found while integrating the v1.0.1 candidate: its
+    InputGateAdbRunner class existed but was never actually used). Fixed
+    as part of REL-UPDATE-003 -- verify the real runner is always the
+    gate, and is live by default after the GUI preflight. """
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("LDMANAGER_LIVE_MODE", raising=False)
+    config_path, bounty_path = _write_configs(tmp_path, _nine_null_mapping_yaml())
+    monkeypatch.setenv("LDMANAGER_CONFIG", str(config_path))
+    monkeypatch.setenv("LDMANAGER_BOUNTY_CONFIG", str(bounty_path))
+
+    controller = build_controller()
+
+    from ldmanager.adb import InputGateAdbRunner
+
+    assert isinstance(controller.adb_runner, InputGateAdbRunner)
+    assert controller.adb_runner.live_enabled is True
+
+
+def test_build_controller_honors_live_mode_env_var(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LDMANAGER_LIVE_MODE", "1")
+    config_path, bounty_path = _write_configs(tmp_path, _nine_null_mapping_yaml())
+    monkeypatch.setenv("LDMANAGER_CONFIG", str(config_path))
+    monkeypatch.setenv("LDMANAGER_BOUNTY_CONFIG", str(bounty_path))
+
+    controller = build_controller()
+
+    assert controller.adb_runner.live_enabled is True
+
+
+def test_build_controller_diagnostic_mode_env_var_requires_exact_zero(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LDMANAGER_LIVE_MODE", "0")
+    config_path, bounty_path = _write_configs(tmp_path, _nine_null_mapping_yaml())
+    monkeypatch.setenv("LDMANAGER_CONFIG", str(config_path))
+    monkeypatch.setenv("LDMANAGER_BOUNTY_CONFIG", str(bounty_path))
+
+    controller = build_controller()
+
+    assert controller.adb_runner.live_enabled is False
 
 
 def test_main_returns_error_code_and_does_not_raise_when_config_missing(

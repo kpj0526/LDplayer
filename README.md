@@ -1,5 +1,109 @@
 # LDplayer
 
+## v1.0.3-rc.38 keep a newly assigned target mission — customer test
+
+Download: [ldmanager-v1.0.3-rc.38-windows-capture-test.zip](https://github.com/kpj0526/LDplayer/releases/download/v1.0.3-rc.38/ldmanager-v1.0.3-rc.38-windows-capture-test.zip)
+
+After a reward claim, a new mission whose objective is `모든 몬스터 처치` is kept even if its count does not exactly match the old `0/200` image. Completed target missions still use the guarded claim path. This is a prerelease for customer LDPlayer verification, not a final QA pass.
+
+## v1.0.3-rc.37 keep existing target missions after reward claim — customer test
+
+Download: [ldmanager-v1.0.3-rc.37-windows-capture-test.zip](https://github.com/kpj0526/LDplayer/releases/download/v1.0.3-rc.37/ldmanager-v1.0.3-rc.37-windows-capture-test.zip)
+
+This prerelease fixes unnecessary renewal of surviving `모든 몬스터 처치` missions after another slot's reward is claimed. Extract into a new folder and repeat the same serial/window `Test capture` workflow. Real customer verification remains pending.
+
+## v1.0.3-rc.36 completed mission recognition — customer test
+
+Download: [ldmanager-v1.0.3-rc.36-windows-capture-test.zip](https://github.com/kpj0526/LDplayer/releases/download/v1.0.3-rc.36/ldmanager-v1.0.3-rc.36-windows-capture-test.zip)
+
+This prerelease fixes `refresh_popup_not_verified` when the selected target mission already shows `완료`. Extract into a new folder, map the matching ADB serial and LD window, run `Test capture`, and confirm the same account before Start. Customer live verification remains pending.
+
+## v1.0.3-rc.35 Windows capture edge fix — customer test
+
+Download: [ldmanager-v1.0.3-rc.35-windows-capture-test.zip](https://github.com/kpj0526/LDplayer/releases/download/v1.0.3-rc.35/ldmanager-v1.0.3-rc.35-windows-capture-test.zip)
+
+This prerelease corrects the rc.34 `Game viewport is outside the captured window` failure when the game area touches the capture's right or bottom edge. Extract the ZIP into a new folder and repeat the rc.34 `Refresh ADB devices` → `Refresh LD windows` → `Test capture` workflow. Verify that the ADB and Windows images show the same account before enabling Start. Real LDPlayer and memory behavior remain customer-test items.
+
+## v1.0.3-rc.34 Windows 캡처·커밋 메모리 시험판 인수인계
+
+시험판 ZIP: [ldmanager-v1.0.3-rc.34-windows-capture-test.zip](https://github.com/kpj0526/LDplayer/releases/download/v1.0.3-rc.34/ldmanager-v1.0.3-rc.34-windows-capture-test.zip)
+
+### 해결하려는 문제
+
+고객 PC에서 LDPlayer 다계정을 운용하면 Windows 커밋 사용량이 한도에 도달해
+약 1시간 뒤 종료되는 현상이 있었다. 관찰상 `adb exec-out screencap` 호출 때
+LDPlayer의 메모리 증가가 함께 나타났고, 진행 대기 폴링은 초당 수십~100회대
+ADB 호출을 만들 수 있었다.
+
+rc.34는 이 가설을 시험한다. 최초 화면 확인에서만 ADB 스크린샷을 한 번 받고,
+그 뒤 운용 중 화면 인식은 Windows Graphics Capture로 직접 LDPlayer 창을 읽는다.
+따라서 운용 중 `adb_runtime_captures`는 0이어야 한다. 이것이 커밋 증가를 줄이는지
+실측하기 위한 버전이며, 개선을 보장하는 최종 버전은 아니다.
+
+기존 [v1.0.3-rc.33](https://github.com/kpj0526/LDplayer/releases/tag/v1.0.3-rc.33)은
+그대로 보존된다. rc.34 ZIP은 반드시 새 폴더에 압축 해제하며 rc.33을 덮어쓰지 않는다.
+
+### 고객 PC에서 할 일
+
+1. 기존 ldmanager를 완전히 종료하고 LDPlayer 한 개를 연다. 게임 해상도는 1280×720이어야 한다.
+2. rc.34 ZIP을 새 폴더에 전부 풀고 `ldmanager.exe`를 실행한다.
+3. `Refresh ADB devices` → 해당 LD의 serial 선택 → `Save` → 다시 `Refresh ADB devices`를 누른다.
+4. `Refresh LD windows`를 누르고, 해당 패널에서 정확한 LDPlayer 창을 선택한다. 창 제목에 LD1 등이 없어도 된다.
+5. 게임을 미션/지역 목록 화면에 둔 뒤 `Test capture`를 누른다.
+6. 뜨는 비교 창에서 ADB 이미지와 Windows 이미지가 **같은 계정의 같은 LD**인지 직접 확인하고 승인한다.
+7. `Windows capture verified`가 보이면 그 LD만 Start한다. 이후 1개 → 3개 → 5개 → 9개 순서로 늘린다.
+
+창을 최소화·종료·크기 변경하거나 Windows 캡처가 실패·지연되면 그 계정은 중단된다.
+rc.34는 ADB 스크린샷으로 자동 폴백하지 않는다. 이는 테스트 중 ADB 캡처가 몰래
+되살아나 측정 결과를 오염시키지 않게 하기 위한 동작이다.
+
+### 확인할 파일과 합격 기준
+
+실행 시작부터 30초마다 `diagnostics/memory/<실행별 폴더>/`에 CSV가 저장된다.
+
+- `summary.csv`: 전체 Commit/Commit Limit, 커널 풀, LDPlayer·ldmanager 메모리, 누적 ADB·Windows 캡처·탭 호출 수
+- `processes.csv`: PID별 Private Bytes와 Working Set
+- `accounts.csv`: serial별 Windows 캡처 검증 상태, HWND, 마지막 오류
+- `diagnostics/captures/<LD>/`: ADB 기준 이미지, 원본 Windows 이미지, 정규화된 게임 영역 이미지
+
+시험 중 가장 먼저 볼 값은 `summary.csv`의 `adb_runtime_captures`다. 정상 Windows
+경로에서는 0이어야 하며, `adb_preflight_captures`는 Test capture를 할 때만 증가한다.
+같은 게임 상태·LDPlayer 설정·인스턴스 수에서 Commit 증가 기울기를 비교한다.
+한도까지 기다리지 말고, 30분~1시간의 안정화 후 추세로 판단한다.
+
+### 다음 AI/개발자가 결과를 보고 결정할 일
+
+| 관찰 결과 | 결론 | 다음 작업 |
+| --- | --- | --- |
+| Windows 검증이 안 됨 | 창 연결, 해상도, GPU/캡처 API 또는 템플릿 문제 | `captures/<LD>/`와 GUI 오류를 기준으로 HWND 탐색·뷰포트 정렬·템플릿을 수정한다. ADB 폴백을 켜서 시험을 통과 처리하면 안 된다. |
+| `adb_runtime_captures`가 0인데 Commit 증가가 크게 낮아짐 | ADB 스크린샷 경로가 주된 촉발 요인 | Windows 캡처를 안정화한 뒤 정식 릴리즈 후보를 만들고 9계정 장시간 측정을 한다. |
+| `adb_runtime_captures`가 0인데 Commit이 같은 속도로 증가 | LDPlayer·게임·드라이버 또는 다른 프로세스가 원인 | `processes.csv`의 LDPlayer Private Bytes, 전체 Commit, 커널 풀의 기울기를 분리 분석한다. Windows 캡처를 더 복잡하게 만들기보다 LDPlayer 설정·드라이버·페이지 파일·인스턴스 메모리로 조사 방향을 옮긴다. |
+| LDPlayer는 안정적인데 ldmanager Private Bytes만 증가 | Python/OpenCV/캡처 객체 누수 가능성 | `processes.csv`의 PID·생성 시각을 확인하고, 장시간 프로파일/힙 비교로 누수 위치를 찾는다. |
+| Windows 캡처가 안정적이지만 CPU가 높음 | 프레임 인코딩·템플릿 매칭 비용 | 폴링 간격과 완료 예상 시각을 조정하고, 한 프레임에서 필요한 판정을 모두 수행하도록 최적화한다. |
+
+Commit은 Windows 전체의 약속된 가상 메모리이고, 프로세스 Private Bytes와 항상 일치하지 않는다.
+페이지 파일을 키우면 Commit Limit는 늘릴 수 있지만, 증가 원인을 제거했다는 증거는 아니다.
+시험 결과를 다음 AI에 전달할 때는 실행 폴더 전체가 아니라 위 CSV 폴더와 필요한 캡처,
+GUI 오류 문구, 사용한 LD 개수·시간·해상도·LDPlayer 설정만 전달한다.
+
+상세한 사용법과 필드 정의는 [docs/WINDOWS_CAPTURE_TEST.md](docs/WINDOWS_CAPTURE_TEST.md)에 있다.
+
+## 고객 최초 실행
+
+고객은 코드나 템플릿 좌표를 수정하지 않습니다. `ldmanager.exe` 실행 후
+LDPlayer를 켜고 각 계정에 ADB serial을 저장한 뒤 **Test capture**를 한 번
+누릅니다. 프로그램이 내장 템플릿과 자동 비교해 현재 게임 화면을 확인하면
+그 계정의 Start가 활성화됩니다. 일치하지 않으면 저장된 캡처 파일만 지원팀에
+전달하면 되며, 고객은 Template calibration을 사용할 필요가 없습니다. 각 LD의
+`Test capture`가 화면을 자동 검사하고, 통과한 LD만 Start가 활성화됩니다.
+
+### 화면 확인 실패 시
+
+Start를 누르지 말고 GUI가 표시한 Test capture PNG만 전달합니다. 개발자는
+그 PNG로 템플릿을 보완하고 새 배포본을 만듭니다. 고객은 ROI·좌표·임계값을
+수정하지 않습니다. 실제 고객 PC에서는 ADB serial 연결, 화면 확인 성공,
+LD1 단일 흐름, 이후 LD1~LD9 동시 실행을 순서대로 확인합니다.
+
 `ldmanager` — LDPlayer 다중 계정(LD1~LD9) 관리 도구.
 
 > **현재 단계: MVP-001-CV — 실행 가능한 MVP + 무료 지역 현상금

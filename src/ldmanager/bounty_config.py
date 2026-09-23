@@ -14,9 +14,9 @@ flow.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Mapping, Optional
 
 import yaml
 
@@ -28,6 +28,28 @@ from .coordinates import (
     ScreenSize,
 )
 from .screenshot import DEFAULT_CAPTURE_ARGS
+
+#: Default whole-button refresh/reroll variants treated as a
+#: CURRENCY_ACTION signal by ``ldmanager.screen_classification`` (each is
+#: a full button image, never a parsed cost number -- see GAME-CAL-001).
+DEFAULT_CURRENCY_ACTION_LABELS: tuple[str, ...] = (
+    "button_refresh_4400", "button_refresh_6600", "button_refresh_9900", "button_refresh_14900",
+)
+
+
+@dataclass(frozen=True)
+class AnchorSpec:
+    """One static-UI-chrome anchor: a ROI + the template label expected
+    there. Used by ``ldmanager.screen_classification`` only for
+    screen-layout confirmation (Mission tab / Region tab / mission-list-
+    or-detail panel frame) -- never for reward/progress sub-state
+    classification. Defined here (not in ``screen_classification.py``)
+    so both that module and this one can depend on it without an import
+    cycle: ``screen_classification`` already needs ``BountyMissionConfig``
+    from this module."""
+
+    roi: RelativeRegion
+    label: str
 
 BOUNTY_CONFIG_PATH_ENV_VAR = "LDMANAGER_BOUNTY_CONFIG"
 DEFAULT_BOUNTY_CONFIG_RELPATH = Path("configs") / "bounty.yaml"
@@ -57,6 +79,13 @@ class BountyMissionConfig:
     mission_phrase_label: str
     mission_quantity_roi: RelativeRegion
     mission_quantity_label: str
+    # ACCEPT-CONFIRM-001: real, measured center of the "확인" button on
+    # the mission-detail popup that opens after selecting a slot -- must
+    # be tapped whenever the target phrase/quantity is already matched
+    # (with or without a preceding refresh), or that popup is left open
+    # and blocks all further progress. Never a template search (see
+    # bounty_mission.py's ACCEPT-CONFIRM-001 comment for why).
+    accept_mission_point: RelativeCoordinate
 
     # Refresh (reroll) flow.
     refresh_button_point: RelativeCoordinate
@@ -73,6 +102,11 @@ class BountyMissionConfig:
     complete_state_label: str
 
     # Complete -> reward -> claim -> result -> close -> mission list.
+    # COMPLETE-SLOT-TRACKING-001: select_complete_point is no longer
+    # consulted by run_one_cycle's live completion path -- it now
+    # re-selects whichever slot_select_points[i] was actually verified
+    # eligible (never a fixed "always row 1" point). Kept as a required
+    # field for config-schema/backward-compat stability only.
     select_complete_point: RelativeCoordinate
     complete_button_point: RelativeCoordinate
     reward_screen_roi: RelativeRegion
@@ -92,11 +126,47 @@ class BountyMissionConfig:
     max_refresh_attempts: int = 5
     max_popup_verify_attempts: int = 3
     max_kill_progress_poll_attempts: int = 10
+    # COMPLETE-RETRY-001: if the complete tap doesn't confidently land
+    # (e.g. the eligible slot's detail view isn't actually showing on
+    # this fresh capture), re-select that same slot and try again,
+    # bounded, instead of failing on the first miss.
+    max_complete_verify_attempts: int = 3
     max_reward_verify_attempts: int = 3
     max_result_verify_attempts: int = 3
     max_mission_list_verify_attempts: int = 3
     retry_delay_seconds: float = 0.0
+    ui_settle_delay_seconds: float = 0.0
+    ack_popup_delay_seconds: float = 0.0
+    result_close_delay_seconds: float = 0.0
+    # Delay requested after one incomplete progress poll.  This is separate
+    # from retry_delay_seconds, which remains for short UI transitions.
+    kill_progress_poll_interval_seconds: float = 1.0
     capture_args: tuple[str, ...] = DEFAULT_CAPTURE_ARGS
+    # Optional for backwards-compatible construction in focused state-machine
+    # tests; production config supplies this from ``template_map``.
+    template_map: Mapping[str, str] = field(default_factory=dict)
+
+    # --- GAME-CAL-001: screen classification (all optional, backward
+    # compatible -- an empty/unset value simply skips that check rather
+    # than ever fabricating a stricter or looser result). ---
+    #
+    # Stable, static screen-layout anchors (Mission tab / Region tab /
+    # mission-list-or-detail panel chrome) -- never a reward amount or a
+    # dynamic progress counter. Empty tuple = layout gate skipped
+    # entirely (legacy/minimal config).
+    stable_screen_anchors: tuple[AnchorSpec, ...] = field(default_factory=tuple)
+    # How many of ``stable_screen_anchors`` must match; ``None`` (default)
+    # means "all of them".
+    min_stable_anchor_matches: Optional[int] = None
+    # Whole-button refresh/reroll variants (OR-matched) treated as a
+    # CURRENCY_ACTION signal -- e.g. the customer's "6600" refresh
+    # button. Never a parsed cost number.
+    currency_action_labels: tuple[str, ...] = DEFAULT_CURRENCY_ACTION_LABELS
+    # One generic, non-digit-specific "mission in progress" indicator
+    # (e.g. a progress-bar frame graphic) -- deliberately never a fixed
+    # "x/y" digit template tied to one specific target quantity.
+    in_progress_roi: Optional[RelativeRegion] = None
+    in_progress_label: Optional[str] = None
 
     @property
     def slot_count(self) -> int:
@@ -160,6 +230,67 @@ def _positive_int(raw: dict, key: str, default: int, path: Path) -> int:
     return value
 
 
+def _template_map(raw: dict, path: Path) -> dict[str, str]:
+    value = raw.get("template_map", {})
+    if not isinstance(value, dict):
+        raise BountyConfigError(f"'template_map' in {path} must be a mapping of label to PNG filename.")
+    result: dict[str, str] = {}
+    for label, filename in value.items():
+        if not isinstance(label, str) or not label.strip() or not isinstance(filename, str) or not filename.strip():
+            raise BountyConfigError(f"'template_map' in {path} contains an invalid label or filename.")
+        candidate = Path(filename)
+        if candidate.is_absolute() or ".." in candidate.parts:
+            raise BountyConfigError(f"Template filename must stay under templates_dir: {filename!r}.")
+        result[label] = filename
+    return result
+
+
+def _stable_screen_anchors(raw: dict, path: Path) -> tuple[AnchorSpec, ...]:
+    value = raw.get("stable_screen_anchors", [])
+    if not isinstance(value, list):
+        raise BountyConfigError(f"'stable_screen_anchors' in {path} must be a list.")
+    anchors: list[AnchorSpec] = []
+    for i, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise BountyConfigError(f"'stable_screen_anchors[{i}]' in {path} must be a mapping with roi/label.")
+        roi = _region(item, "roi", path) if "roi" in item else None
+        if roi is None:
+            raise BountyConfigError(f"'stable_screen_anchors[{i}]' in {path} is missing 'roi'.")
+        label = _label(item, "label", path)
+        anchors.append(AnchorSpec(roi=roi, label=label))
+    return tuple(anchors)
+
+
+def _optional_positive_int(raw: dict, key: str, path: Path) -> Optional[int]:
+    if key not in raw or raw[key] is None:
+        return None
+    value = raw[key]
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise BountyConfigError(f"'{key}' in {path} must be a positive integer or omitted, got {value!r}.")
+    return value
+
+
+def _string_tuple(raw: dict, key: str, default: tuple[str, ...], path: Path) -> tuple[str, ...]:
+    if key not in raw:
+        return default
+    value = raw[key]
+    if not isinstance(value, list) or not all(isinstance(v, str) and v.strip() for v in value):
+        raise BountyConfigError(f"'{key}' in {path} must be a list of non-empty strings.")
+    return tuple(value)
+
+
+def _optional_region(raw: dict, key: str, path: Path) -> Optional[RelativeRegion]:
+    if key not in raw or raw[key] is None:
+        return None
+    return _region(raw, key, path)
+
+
+def _optional_label(raw: dict, key: str, path: Path) -> Optional[str]:
+    if key not in raw or raw[key] is None:
+        return None
+    return _label(raw, key, path)
+
+
 def load_bounty_config(explicit_path: Optional[Path] = None) -> BountyMissionConfig:
     """Load and validate a :class:`BountyMissionConfig` from YAML.
 
@@ -211,12 +342,29 @@ def load_bounty_config(explicit_path: Optional[Path] = None) -> BountyMissionCon
     if not isinstance(retry_delay_seconds, (int, float)) or isinstance(retry_delay_seconds, bool) or retry_delay_seconds < 0:
         raise BountyConfigError(f"'retry_delay_seconds' in {path} must be a non-negative number.")
 
+    def _timing(key: str, default: float) -> float:
+        value = raw.get(key, default)
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+            raise BountyConfigError(f"'{key}' in {path} must be a non-negative number.")
+        return float(value)
+
+    ui_settle_delay_seconds = _timing("ui_settle_delay_seconds", float(retry_delay_seconds))
+    ack_popup_delay_seconds = _timing("ack_popup_delay_seconds", float(retry_delay_seconds))
+    result_close_delay_seconds = _timing("result_close_delay_seconds", float(retry_delay_seconds))
+    kill_progress_poll_interval_seconds = _timing("kill_progress_poll_interval_seconds", 1.0)
+
+    if ("in_progress_roi" in raw) != ("in_progress_label" in raw):
+        raise BountyConfigError(
+            f"'in_progress_roi' and 'in_progress_label' in {path} must both be set together, or both omitted."
+        )
+
     return BountyMissionConfig(
         slot_select_points=slot_select_points,
         mission_phrase_roi=_region(raw, "mission_phrase_roi", path),
         mission_phrase_label=_label(raw, "mission_phrase_label", path),
         mission_quantity_roi=_region(raw, "mission_quantity_roi", path),
         mission_quantity_label=_label(raw, "mission_quantity_label", path),
+        accept_mission_point=_point(raw, "accept_mission_point", path),
         refresh_button_point=_point(raw, "refresh_button_point", path),
         refresh_popup_anchor_roi=_region(raw, "refresh_popup_anchor_roi", path),
         refresh_popup_anchor_label=_label(raw, "refresh_popup_anchor_label", path),
@@ -239,15 +387,26 @@ def load_bounty_config(explicit_path: Optional[Path] = None) -> BountyMissionCon
         mission_list_label=_label(raw, "mission_list_label", path),
         screen_size=screen_size,
         templates_dir=Path(templates_dir_raw),
+        template_map=_template_map(raw, path),
         threshold=float(threshold),
         max_capture_attempts=_positive_int(raw, "max_capture_attempts", 3, path),
         max_refresh_attempts=_positive_int(raw, "max_refresh_attempts", 5, path),
         max_popup_verify_attempts=_positive_int(raw, "max_popup_verify_attempts", 3, path),
         max_kill_progress_poll_attempts=_positive_int(raw, "max_kill_progress_poll_attempts", 10, path),
+        max_complete_verify_attempts=_positive_int(raw, "max_complete_verify_attempts", 3, path),
         max_reward_verify_attempts=_positive_int(raw, "max_reward_verify_attempts", 3, path),
         max_result_verify_attempts=_positive_int(raw, "max_result_verify_attempts", 3, path),
         max_mission_list_verify_attempts=_positive_int(raw, "max_mission_list_verify_attempts", 3, path),
         retry_delay_seconds=float(retry_delay_seconds),
+        ui_settle_delay_seconds=ui_settle_delay_seconds,
+        ack_popup_delay_seconds=ack_popup_delay_seconds,
+        result_close_delay_seconds=result_close_delay_seconds,
+        kill_progress_poll_interval_seconds=kill_progress_poll_interval_seconds,
+        stable_screen_anchors=_stable_screen_anchors(raw, path),
+        min_stable_anchor_matches=_optional_positive_int(raw, "min_stable_anchor_matches", path),
+        currency_action_labels=_string_tuple(raw, "currency_action_labels", DEFAULT_CURRENCY_ACTION_LABELS, path),
+        in_progress_roi=_optional_region(raw, "in_progress_roi", path),
+        in_progress_label=_optional_label(raw, "in_progress_label", path),
     )
 
 

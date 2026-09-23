@@ -11,8 +11,7 @@ still not game automation. Every action follows the same contract:
 States implemented, in order:
 
 1. For each of 5 slots: select the slot, capture+check whether its
-   current mission already satisfies BOTH acceptance conditions
-   (target phrase AND quantity == 200). If not, open the refresh
+   current mission has the calibrated target objective phrase. If not, open the refresh
    confirmation popup, verify it **structurally** (two independent,
    cost-INDEPENDENT landmarks — never the displayed refresh cost, which
    varies), confirm only if verified, inspect the new mission, and
@@ -20,13 +19,23 @@ States implemented, in order:
    acceptance.
 2. After all 5 slots: poll (bounded) for kill-progress completion —
    either the "200/200" counter or an explicit complete-state badge.
-   **0-199/200 never taps select/complete/claim** — this function
-   simply reports "not yet" and returns; it is the caller's job to try
-   again later (real kill progress advances from real gameplay, not
-   from anything this code does).
-3. Only once eligible: select the completed mission, tap complete,
-   verify the reward screen, claim, verify the result screen, close
-   it, verify the mission list is showing again.
+   COMPLETE-SLOT-TRACKING-001: since a slot's own completion state is
+   only visible in *that slot's own opened detail view* (confirmed
+   against real captures — the mission-list rows themselves carry no
+   per-row completion indicator), each poll attempt visits every
+   still-candidate locked slot in turn (a plain select/navigation tap)
+   to check it individually, remembering exactly which `slot_index`
+   qualifies. **0-199/200 never taps complete/claim** — a select tap
+   during this polling is only ever navigation to *look*, never a
+   completion/claim action, and this function still simply reports
+   "not yet" and returns when nothing qualifies; it is the caller's job
+   to try again later (real kill progress advances from real gameplay,
+   not from anything this code does).
+3. Only once a *specific* slot is verified eligible: re-select that
+   SAME slot (never a different, possibly still-incomplete one — the
+   real customer bug this replaced: a fixed "always row 1" point),
+   tap complete, verify the reward screen, claim, verify the result
+   screen, close it, verify the mission list is showing again.
 4. Re-refresh + re-accept each slot (reusing step 1's per-slot helper)
    so the caller can repeat the whole cycle.
 
@@ -42,22 +51,45 @@ and no login/reconnect logic exists here — see
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Optional
 
 from .adb import AdbRunner
 from .bounty_config import BountyMissionConfig
-from .coordinates import build_tap_args
+from .coordinates import RelativeCoordinate, RelativeRegion, build_tap_args
 from .models import AccountId
 from .recognition import Recognizer, RecognitionResult
+from .screen_classification import MissionAssessment, assess_mission_target
 from .screenshot import capture_screenshot
+from .runtime import AccountMissionRuntime, SlotState
 
 ShouldStop = Callable[[], bool]
+SleepFn = Callable[[float], None]
+_FULL_SCREEN = RelativeRegion(x=0.0, y=0.0, width=1.0, height=1.0)
 
 
 def _default_should_stop() -> bool:
     return False
+
+
+_MAX_STDERR_DETAIL_CHARS = 200
+
+
+def _short(stderr: str) -> str:
+    """Trim a raw ADB stderr string for inclusion in a one-line failure
+    detail (DIAGNOSTIC-DETAIL-001-adjacent). Never raises on empty/None.
+    Not a secret-redaction step itself -- this text still passes
+    through the per-account logger's existing
+    SensitiveDataRedactionFilter (logs.py) once controller.py logs it;
+    an ADB tap's stderr is not expected to ever contain credential-
+    shaped text, but that filter remains the actual safety net."""
+
+    text = (stderr or "").strip().replace("\n", " ")
+    if len(text) > _MAX_STDERR_DETAIL_CHARS:
+        text = text[:_MAX_STDERR_DETAIL_CHARS] + "..."
+    return text or "(empty)"
 
 
 class BountyOutcome(str, Enum):
@@ -66,11 +98,13 @@ class BountyOutcome(str, Enum):
     CAPTURE_UNAVAILABLE = "capture_unavailable"
     SLOT_ACCEPT_FAILED = "slot_accept_failed"  # bounded refresh exhausted without a both-conditions match
     REFRESH_POPUP_NOT_VERIFIED = "refresh_popup_not_verified"  # structural check never confirmed -> never confirmed blindly
+    ACK_POPUP_DISMISS_FAILED = "ack_popup_dismiss_failed"  # acknowledgement overlay stayed up; no downstream action is safe
     KILL_PROGRESS_NOT_COMPLETE = "kill_progress_not_complete"  # 0-199/200: informational, not an error
     REWARD_VERIFY_FAILED = "reward_verify_failed"
     RESULT_VERIFY_FAILED = "result_verify_failed"
     MISSION_LIST_VERIFY_FAILED = "mission_list_verify_failed"
     RE_ACCEPT_FAILED = "re_accept_failed"
+    RECOGNITION_FAILED = "recognition_failed"
 
 
 @dataclass(frozen=True)
@@ -86,6 +120,10 @@ class BountyCycleResult:
     outcome: BountyOutcome
     slots: tuple[SlotOutcome, ...]
     detail: str
+    # Controller-owned pause after a non-action waiting result.  Keeping it
+    # in the result avoids a blocking sleep inside the state machine and
+    # allows Stop to be observed before another touch is sent.
+    recommended_delay_seconds: float = 0.0
 
     @property
     def ok(self) -> bool:
@@ -102,20 +140,83 @@ def _recognize(runner, serial, config, recognizer, roi, label) -> Optional[Recog
     return recognizer.recognize(capture.image_bytes, roi, label, config.threshold)
 
 
-def _mission_is_acceptable(runner, serial, config, recognizer) -> Optional[bool]:
-    """Both the phrase AND the quantity must independently match.
+def _tap_template(
+    runner: AdbRunner, serial: str, config: BountyMissionConfig, recognizer: Recognizer, label: str,
+) -> Optional[bool]:
+    """Find one configured button in the current ADB frame and tap its
+    matched rectangle center on this same serial.
 
-    Returns ``None`` on capture failure (distinct from ``False``, which
-    means "captured fine, but not both conditions held").
+    ``None`` is an unavailable template/capture, ``False`` is a valid frame
+    with no confident match, and ``True`` means the real ADB tap succeeded.
+    Fixed config points are retained only for legacy fake-test configs that
+    have an empty template map; production config must provide this key.
+    """
+    if label not in config.template_map:
+        # A populated production map must never silently fall back to a
+        # fixed coordinate for an asset it does not contain.  Empty maps are
+        # retained exclusively for legacy fixture tests.
+        return False if config.template_map else None
+    match = _recognize(runner, serial, config, recognizer, _FULL_SCREEN, label)
+    if match is None or not match.matched or match.match_center is None:
+        return False
+    x, y = match.match_center
+    result = runner.run(
+        serial,
+        build_tap_args(config.screen_size, RelativeCoordinate(x=x, y=y)),
+    )
+    return result.ok
+
+
+def _tap_visible_currency_action(
+    runner: AdbRunner, serial: str, config: BountyMissionConfig, recognizer: Recognizer,
+) -> bool:
+    """Tap a *currently visible* configured reroll/currency button.
+
+    Some mission types open the accept popup on row selection; others
+    (the real dungeon mission supplied by the customer) remain on the
+    plain detail view, where the only interactive refresh control is the
+    persistent currency-action button at a different position.  This
+    helper never guesses that position: it taps only a confident current
+    whole-button template match, on the same explicit serial.
     """
 
-    phrase = _recognize(runner, serial, config, recognizer, config.mission_phrase_roi, config.mission_phrase_label)
-    if phrase is None:
-        return None
-    quantity = _recognize(runner, serial, config, recognizer, config.mission_quantity_roi, config.mission_quantity_label)
-    if quantity is None:
-        return None
-    return phrase.matched and quantity.matched
+    for label in config.currency_action_labels:
+        tapped = _tap_template(runner, serial, config, recognizer, label)
+        if tapped:
+            return True
+    return False
+
+
+def _cyclic_slot_order(slot_count: int, start_slot_index: int) -> tuple[int, ...]:
+    """Return one downward pass beginning at ``start_slot_index``.
+
+    The only wrap is after the bottom row, so a verified close can resume
+    naturally below the completed row rather than visibly jumping to the
+    top on every new cycle.
+    """
+
+    if not 1 <= start_slot_index <= slot_count:
+        start_slot_index = 1
+    return tuple(range(start_slot_index, slot_count + 1)) + tuple(range(1, start_slot_index))
+
+
+def _mission_is_acceptable(runner, serial, config, recognizer) -> MissionAssessment:
+    """Is the currently-selected mission the configured target objective?
+
+    GAME-CAL-001: this is now a thin wrapper around the shared
+    :func:`ldmanager.screen_classification.assess_mission_target` --
+    moved there so mission-title/OCR classification has exactly one
+    implementation, shared with
+    :func:`ldmanager.screen_classification.complete_mission_if_verified`'s
+    own completion-target guard, rather than two copies that could
+    silently drift apart. The calibrated production phrase can confirm a
+    target even when its numeric progress differs; a confidently
+    non-matching mission title (e.g. any
+    title other than "모든 몬스터 처치") is ``NON_TARGET_CONFIRMED`` --
+    never treated as a screen/layout problem, see
+    ``ldmanager.screen_classification``'s module docstring."""
+
+    return assess_mission_target(runner, serial, config, recognizer, require_initial_zero=True)
 
 
 def _verify_refresh_popup(runner, serial, config, recognizer) -> Optional[bool]:
@@ -137,9 +238,115 @@ def _verify_refresh_popup(runner, serial, config, recognizer) -> Optional[bool]:
     return anchor.matched and title.matched
 
 
+def _dismiss_ack_popup_if_shown(
+    *, slot_index: int, serial: str, runner: AdbRunner, recognizer: Recognizer,
+    config: BountyMissionConfig, should_stop: ShouldStop, sleep_fn: SleepFn,
+    expected_after_dismiss: Optional[Callable[[], Optional[bool]]] = None,
+    wait_before_check: bool = True,
+) -> Optional[BountyCycleResult]:
+    """REFRESH-RESULT-DISMISS-001/002/003: real customer reports --
+    locking in a mission (tapping accept_mission_point, whether the
+    fast "already acceptable" path or after a refresh) can show one
+    more brief acknowledgment popup for that mission (title + "확률"
+    odds + a single reward icon + "닫기") before the screen settles.
+    REFRESH-RESULT-DISMISS-003: the first two versions of this fix
+    only handled it after refresh_confirm_point -- but a real customer
+    capture proved it just as reliably appears after accept_mission_
+    point too (both are "lock this mission in" actions from the
+    game's perspective), and neither accept_mission_point call site
+    had ever dismissed it -- the popup sat there blocking every
+    subsequent step in the SAME way "refresh popup never verified"
+    did before REFRESH-RESULT-DISMISS-001. Structurally identical to
+    reward_screen (same real "확률" anchor, 1.0 confidence on real
+    captures) and its close button sits at the exact same real,
+    already-measured position as close_result_point/claim_point --
+    both already-calibrated assets are reused, no new template or
+    position needed. A single retry_delay_seconds pause before one
+    best-effort check (not a multi-attempt loop, to avoid adding
+    several seconds of dead time to every accept/refresh round-trip
+    including the likely-more-common case where it never shows).
+    Returns ``None`` on success (dismissed, or never shown -- both
+    fine), or a terminal :class:`BountyCycleResult` on a real failure.
+    """
+
+    if should_stop():
+        return BountyCycleResult(
+            BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (before acknowledgment check)."
+        )
+
+    if wait_before_check:
+        sleep_fn(config.ack_popup_delay_seconds)
+    ack_popup = _recognize(runner, serial, config, recognizer, config.reward_screen_roi, config.reward_screen_label)
+    if ack_popup is None:
+        return BountyCycleResult(
+            BountyOutcome.CAPTURE_UNAVAILABLE, (),
+            f"Slot {slot_index}: capture failed while checking acknowledgment popup.",
+        )
+    if ack_popup.matched:
+        if should_stop():
+            return BountyCycleResult(
+                BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (before acknowledgment dismiss)."
+            )
+        dismiss = runner.run(serial, build_tap_args(config.screen_size, config.close_result_point))
+        if not dismiss.ok:
+            return BountyCycleResult(
+                BountyOutcome.CAPTURE_UNAVAILABLE, (),
+                f"Slot {slot_index}: acknowledgment-dismiss tap failed "
+                f"(rc={dismiss.returncode}, stderr={_short(dismiss.stderr)}).",
+            )
+        if should_stop():
+            return BountyCycleResult(
+                BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (after acknowledgment dismiss)."
+            )
+        if expected_after_dismiss is None:
+            return None
+
+        # A successful ADB touch is not proof that the game consumed it.
+        # For the refresh-open route, require a fresh capture showing both
+        # the acknowledgment overlay gone and the real confirm dialog.
+        for attempt in range(1, config.max_popup_verify_attempts + 1):
+            sleep_fn(config.retry_delay_seconds)
+            still_visible = _recognize(
+                runner, serial, config, recognizer, config.reward_screen_roi, config.reward_screen_label,
+            )
+            if still_visible is None:
+                return BountyCycleResult(
+                    BountyOutcome.CAPTURE_UNAVAILABLE, (),
+                    f"Slot {slot_index}: capture failed while verifying acknowledgment dismissal.",
+                )
+            next_verified = expected_after_dismiss()
+            if next_verified is None:
+                return BountyCycleResult(
+                    BountyOutcome.CAPTURE_UNAVAILABLE, (),
+                    f"Slot {slot_index}: capture failed while verifying post-acknowledgment dialog.",
+                )
+            if not still_visible.matched and next_verified:
+                return None
+            if should_stop():
+                return BountyCycleResult(
+                    BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (acknowledgment verification)."
+                )
+            if attempt < config.max_popup_verify_attempts:
+                # Retry is deliberately bounded, and only after a fresh
+                # negative postcondition check.
+                dismiss = runner.run(serial, build_tap_args(config.screen_size, config.close_result_point))
+                if not dismiss.ok:
+                    return BountyCycleResult(
+                        BountyOutcome.CAPTURE_UNAVAILABLE, (),
+                        f"Slot {slot_index}: acknowledgment-dismiss retry failed "
+                        f"(rc={dismiss.returncode}, stderr={_short(dismiss.stderr)}).",
+                    )
+        return BountyCycleResult(
+            BountyOutcome.ACK_POPUP_DISMISS_FAILED, (),
+            f"Slot {slot_index}: acknowledgment popup did not transition to the verified refresh dialog "
+            f"within {config.max_popup_verify_attempts} attempt(s); confirm not sent.",
+        )
+    return None
+
+
 def _accept_or_refresh_slot(
     *, slot_index: int, serial: str, runner: AdbRunner, recognizer: Recognizer,
-    config: BountyMissionConfig, should_stop: ShouldStop,
+    config: BountyMissionConfig, should_stop: ShouldStop, sleep_fn: SleepFn,
 ) -> "tuple[SlotOutcome | None, BountyCycleResult | None]":
     """Select+check one slot; refresh (bounded) until an acceptable
     mission is found. Returns ``(SlotOutcome, None)`` on a definitive
@@ -152,11 +359,24 @@ def _accept_or_refresh_slot(
             BountyOutcome.STOPPED, (), f"Stopped before slot {slot_index}."
         )
 
-    select = runner.run(serial, build_tap_args(config.screen_size, config.slot_select_points[slot_index - 1]))
-    if not select.ok:
+    # SLOT-SELECT-CALIBRATION-001: always position-based, never a
+    # _tap_template() image search. A real customer capture proved two
+    # structural problems with matching a "mission_slot_unselected"
+    # template here: (1) that crop bakes in the literal mission-title
+    # text, the exact anti-pattern GAME-CAL-001 fixed elsewhere; (2)
+    # even a perfect crop cannot tell slot 1 apart from slot 3 when both
+    # show identical unselected styling -- a single whole-frame search
+    # has no notion of "the Nth matching row". Position-based tapping is
+    # the actually-correct mechanism for "select the Nth row of a list",
+    # so this step no longer attempts template matching at all -- see
+    # docs/HANDOFF_CODE.md's TAP-FALLBACK-CRASH-001/
+    # SLOT-SELECT-CALIBRATION-001 sections.
+    select_result = runner.run(serial, build_tap_args(config.screen_size, config.slot_select_points[slot_index - 1]))
+    if not select_result.ok:
         return None, BountyCycleResult(
             BountyOutcome.CAPTURE_UNAVAILABLE, (),
-            f"Slot {slot_index}: select tap failed (rc={select.returncode}).",
+            f"Slot {slot_index}: select tap failed (rc={select_result.returncode}, "
+            f"stderr={_short(select_result.stderr)}).",
         )
 
     if should_stop():
@@ -164,26 +384,118 @@ def _accept_or_refresh_slot(
             BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (after select)."
         )
 
+    # RETRY-PACING-002: same reasoning as REFRESH-RESULT-DISMISS-002 --
+    # selecting a slot opens its detail popup (ACCEPT-CONFIRM-001), and
+    # this acceptability check is a single read with no retry loop of
+    # its own. A zero-delay read right after the select tap can catch
+    # the screen mid-transition -- best case a false NON_TARGET_
+    # CONFIRMED (sends an already-good mission through a needless
+    # refresh), worst case RECOGNITION_FAILED, which is FATAL and
+    # stops the whole worker outright. One pause here is cheap
+    # insurance against a much more expensive failure mode.
+    sleep_fn(config.ui_settle_delay_seconds)
     already_ok = _mission_is_acceptable(runner, serial, config, recognizer)
-    if already_ok is None:
+    if already_ok is MissionAssessment.CAPTURE_UNAVAILABLE:
         return None, BountyCycleResult(
             BountyOutcome.CAPTURE_UNAVAILABLE, (), f"Slot {slot_index}: capture failed while checking mission."
         )
-    if already_ok:
+    if already_ok is MissionAssessment.RECOGNITION_FAILED:
+        return None, BountyCycleResult(
+            BountyOutcome.RECOGNITION_FAILED, (), f"Slot {slot_index}: target recognition is uncertain; no refresh sent."
+        )
+    if already_ok is MissionAssessment.NON_TARGET_CONFIRMED or (
+        already_ok is MissionAssessment.TARGET_CONFIRMED and "mission_target_phrase" in config.template_map
+    ):
+        # A completed target can match the digit-free objective template.
+        # Detect its explicit Complete button before either accepting or
+        # refreshing; neither action is valid on a completed detail screen.
+        if "button_complete" in config.template_map:
+            complete = _recognize(runner, serial, config, recognizer, _FULL_SCREEN, "button_complete")
+        else:
+            complete = _recognize(
+                runner, serial, config, recognizer, config.complete_state_roi, config.complete_state_label,
+            )
+        if complete is None:
+            return None, BountyCycleResult(
+                BountyOutcome.CAPTURE_UNAVAILABLE, (), f"Slot {slot_index}: capture failed while checking completion."
+            )
+        if complete.matched:
+            completed_target = assess_mission_target(runner, serial, config, recognizer)
+            if completed_target is MissionAssessment.CAPTURE_UNAVAILABLE:
+                return None, BountyCycleResult(
+                    BountyOutcome.CAPTURE_UNAVAILABLE, (),
+                    f"Slot {slot_index}: capture failed while checking completed mission target.",
+                )
+            if completed_target is MissionAssessment.TARGET_CONFIRMED:
+                return SlotOutcome(slot_index, True, 0, "Completed target; proceed to guarded claim."), None
+            return None, BountyCycleResult(
+                BountyOutcome.RECOGNITION_FAILED, (),
+                f"Slot {slot_index}: completed mission target not verified; no refresh or claim sent.",
+            )
+    if already_ok is MissionAssessment.TARGET_CONFIRMED:
+        # ACCEPT-CONFIRM-001: a real customer live run got stuck here --
+        # this fast path (target already matched, no refresh needed)
+        # previously returned without ever tapping the mission-detail
+        # popup's "확인" button, leaving it open on screen and blocking
+        # every subsequent slot's select tap. Always taps
+        # accept_mission_point directly (real, measured; never a
+        # template search -- see docs/HANDOFF_CODE.md's
+        # ACCEPT-CONFIRM-001 section for why).
+        accept = runner.run(serial, build_tap_args(config.screen_size, config.accept_mission_point))
+        if not accept.ok:
+            return None, BountyCycleResult(
+                BountyOutcome.CAPTURE_UNAVAILABLE, (),
+                f"Slot {slot_index}: accept-mission tap failed "
+                f"(rc={accept.returncode}, stderr={_short(accept.stderr)}).",
+            )
+        # REFRESH-RESULT-DISMISS-003: locking in a mission via
+        # accept_mission_point can show the same brief "확률"
+        # acknowledgment popup the refresh path already dismisses --
+        # see _dismiss_ack_popup_if_shown's docstring.
+        ack_failure = _dismiss_ack_popup_if_shown(
+            slot_index=slot_index, serial=serial, runner=runner, recognizer=recognizer,
+            config=config, should_stop=should_stop, sleep_fn=sleep_fn,
+        )
+        if ack_failure is not None:
+            return None, ack_failure
         return SlotOutcome(slot_index, True, 0, "Already acceptable; no refresh needed."), None
 
     detail = ""
-    for attempt in range(1, config.max_refresh_attempts + 1):
+    # Customer production mode does not impose an arbitrary currency/reroll
+    # count.  A non-target is retried until target, Stop, or a real error.
+    # The finite legacy branch exists only for the older empty-template test
+    # fixtures, which cannot exercise production image recognition.
+    attempt = 0
+    production_templates = bool(config.template_map)
+    while production_templates or attempt < config.max_refresh_attempts:
+        attempt += 1
         if should_stop():
             return None, BountyCycleResult(
                 BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (refresh attempt {attempt})."
             )
 
+        # REFRESH-CALIBRATION-001 / REFRESH-TRIGGER-CORRECTION-001:
+        # always position-based, never a _tap_any_template() image
+        # search. A real customer capture proved button_refresh_4400/
+        # 6600/9900/14900 (pre-GAME-CAL-001 placeholder assets, never
+        # real crops) never confidently match -- and because
+        # template_map being non-empty overall makes
+        # _tap_any_template() return a hard False (not None), this
+        # silently blocked the fixed-point fallback from ever running
+        # (the same TAP-FALLBACK-CRASH-001/SLOT-SELECT-CALIBRATION-001
+        # gotcha). refresh_button_point taps the accept popup's OWN
+        # embedded price/counter box (the popup is already open by
+        # this point -- select immediately shows it) -- positionally
+        # fixed regardless of its currently displayed price -- so this
+        # step no longer attempts template matching at all -- see
+        # docs/HANDOFF_CODE.md's REFRESH-CALIBRATION-001 and
+        # REFRESH-TRIGGER-CORRECTION-001 sections.
         open_popup = runner.run(serial, build_tap_args(config.screen_size, config.refresh_button_point))
         if not open_popup.ok:
             return None, BountyCycleResult(
                 BountyOutcome.CAPTURE_UNAVAILABLE, (),
-                f"Slot {slot_index}: refresh-open tap failed (rc={open_popup.returncode}).",
+                f"Slot {slot_index}: refresh-open tap failed "
+                f"(rc={open_popup.returncode}, stderr={_short(open_popup.stderr)}).",
             )
 
         if should_stop():
@@ -191,7 +503,50 @@ def _accept_or_refresh_slot(
                 BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (popup open)."
             )
 
-        popup_verified = None
+        # ACK-POPUP-PRECONFIRM-001: the live rc.24 customer trace shows
+        # that refresh-open can land on the same odds/acknowledgment overlay
+        # before the structural refresh-confirm dialog appears.  Previous
+        # releases only dismissed that overlay *after* confirm, which made
+        # every confirm-dialog probe fail and safely (but permanently)
+        # stopped at REFRESH_POPUP_NOT_VERIFIED.  Clear it first and require
+        # a fresh structural transition; never send confirm through an
+        # overlay or an unverified screen.
+        # First read the expected confirm dialog.  This keeps the normal
+        # path free of an unrelated acknowledgement probe; only an actual
+        # structural miss can enter the pre-confirm overlay recovery path.
+        popup_verified = _verify_refresh_popup(runner, serial, config, recognizer)
+        if not popup_verified:
+            ack_failure = _dismiss_ack_popup_if_shown(
+                slot_index=slot_index, serial=serial, runner=runner, recognizer=recognizer,
+                config=config, should_stop=should_stop, sleep_fn=sleep_fn,
+                expected_after_dismiss=lambda: _verify_refresh_popup(runner, serial, config, recognizer),
+                wait_before_check=False,
+            )
+            if ack_failure is not None:
+                return None, ack_failure
+
+            # REFRESH-PLAIN-DETAIL-001: selecting a dungeon-type mission
+            # can leave the plain detail view open (the live capture shows
+            # its 4400 currency-action button at the bottom), rather than
+            # opening the accept popup whose embedded price box the fixed
+            # point above targets.  Re-read the structural popup after any
+            # acknowledgement handling, then use a confident, currently
+            # visible whole-button match as the *only* alternate trigger.
+            # This keeps popup-type missions on their measured fixed point
+            # and prevents a blind tap on an unknown screen.
+            popup_verified = _verify_refresh_popup(runner, serial, config, recognizer)
+            if not popup_verified and should_stop():
+                return None, BountyCycleResult(
+                    BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (before plain-detail refresh open)."
+                )
+            if not popup_verified and _tap_visible_currency_action(runner, serial, config, recognizer):
+                if should_stop():
+                    return None, BountyCycleResult(
+                        BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (plain-detail refresh open)."
+                    )
+                sleep_fn(config.retry_delay_seconds)
+                popup_verified = _verify_refresh_popup(runner, serial, config, recognizer)
+
         for popup_attempt in range(1, config.max_popup_verify_attempts + 1):
             if should_stop():
                 return None, BountyCycleResult(
@@ -200,8 +555,16 @@ def _accept_or_refresh_slot(
             popup_verified = _verify_refresh_popup(runner, serial, config, recognizer)
             if popup_verified:
                 break
+            # RETRY-PACING-001: a real customer report traced back to
+            # this -- retry_delay_seconds was configured but never
+            # actually applied anywhere in this module, so every
+            # bounded verify loop fired its captures back-to-back with
+            # no pause for the game's own UI transition/animation to
+            # finish, spuriously reporting "never verified" even with a
+            # correct tap. Only pace BETWEEN attempts, never after the
+            # last one (about to give up either way).
             if popup_attempt < config.max_popup_verify_attempts:
-                continue
+                sleep_fn(config.retry_delay_seconds)
 
         if not popup_verified:
             # Never confirm blindly: structural verification failed --
@@ -217,11 +580,16 @@ def _accept_or_refresh_slot(
                 BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (before confirm)."
             )
 
+        # REFRESH-CALIBRATION-001: same reasoning as the refresh-open tap
+        # above -- always the real, measured refresh_confirm_point, safe
+        # because the structural popup_verified check just above already
+        # confirmed the real renewal-confirm dialog is actually showing.
         confirm = runner.run(serial, build_tap_args(config.screen_size, config.refresh_confirm_point))
         if not confirm.ok:
             return None, BountyCycleResult(
                 BountyOutcome.CAPTURE_UNAVAILABLE, (),
-                f"Slot {slot_index}: refresh-confirm tap failed (rc={confirm.returncode}).",
+                f"Slot {slot_index}: refresh-confirm tap failed "
+                f"(rc={confirm.returncode}, stderr={_short(confirm.stderr)}).",
             )
 
         if should_stop():
@@ -229,17 +597,49 @@ def _accept_or_refresh_slot(
                 BountyOutcome.STOPPED, (), f"Stopped mid-slot {slot_index} (after confirm)."
             )
 
+        ack_failure = _dismiss_ack_popup_if_shown(
+            slot_index=slot_index, serial=serial, runner=runner, recognizer=recognizer,
+            config=config, should_stop=should_stop, sleep_fn=sleep_fn,
+        )
+        if ack_failure is not None:
+            return None, ack_failure
+
         acceptable = _mission_is_acceptable(runner, serial, config, recognizer)
-        if acceptable is None:
+        if acceptable is MissionAssessment.CAPTURE_UNAVAILABLE:
             return None, BountyCycleResult(
                 BountyOutcome.CAPTURE_UNAVAILABLE, (),
                 f"Slot {slot_index}: capture failed while inspecting refreshed mission.",
             )
-        if acceptable:
+        if acceptable is MissionAssessment.RECOGNITION_FAILED:
+            return None, BountyCycleResult(
+                BountyOutcome.RECOGNITION_FAILED, (),
+                f"Slot {slot_index}: refreshed mission recognition is uncertain; no further refresh sent.",
+            )
+        if acceptable is MissionAssessment.TARGET_CONFIRMED:
+            # ACCEPT-CONFIRM-001: same fix as the fast path above --
+            # always accept_mission_point directly, never a template
+            # search (button_accept_mission is the same kind of stale,
+            # pre-GAME-CAL-001 placeholder asset already fixed for the
+            # refresh buttons in REFRESH-CALIBRATION-001).
+            accept = runner.run(serial, build_tap_args(config.screen_size, config.accept_mission_point))
+            if not accept.ok:
+                return None, BountyCycleResult(
+                    BountyOutcome.CAPTURE_UNAVAILABLE, (),
+                    f"Slot {slot_index}: accept-mission tap failed "
+                    f"(rc={accept.returncode}, stderr={_short(accept.stderr)}).",
+                )
+            # REFRESH-RESULT-DISMISS-003: same as the fast path above --
+            # see _dismiss_ack_popup_if_shown's docstring.
+            ack_failure = _dismiss_ack_popup_if_shown(
+                slot_index=slot_index, serial=serial, runner=runner, recognizer=recognizer,
+                config=config, should_stop=should_stop, sleep_fn=sleep_fn,
+            )
+            if ack_failure is not None:
+                return None, ack_failure
             return SlotOutcome(slot_index, True, attempt, "Accepted after refresh."), None
-        detail = f"attempt {attempt}: phrase/quantity not both matched"
+        detail = f"attempt {attempt}: target objective not confirmed"
 
-    return SlotOutcome(slot_index, False, config.max_refresh_attempts, detail), None
+    return SlotOutcome(slot_index, False, attempt, detail), None
 
 
 def run_one_cycle(
@@ -251,6 +651,8 @@ def run_one_cycle(
     config: BountyMissionConfig,
     should_stop: ShouldStop = _default_should_stop,
     on_phase: Optional[Callable[[str], None]] = None,
+    runtime: Optional[AccountMissionRuntime] = None,
+    sleep_fn: SleepFn = time.sleep,
 ) -> BountyCycleResult:
     """Run exactly one bounty cycle for one account/serial.
 
@@ -261,68 +663,235 @@ def run_one_cycle(
 
     del account_id  # identity carried by the caller; not needed internally
     slot_outcomes: list[SlotOutcome] = []
+    # EARLY-COMPLETE-CHECK-001: if a freshly (re-)accepted slot turns out
+    # to already be complete, remember it here so the dedicated
+    # kill-progress polling loop below can be skipped entirely -- fixes
+    # a real, reported inefficiency: after runtime.reset_after_verified_
+    # return() unlocks all 5 slots for a new round, every slot gets
+    # re-visited to confirm its target phrase (accept_or_refresh_slot
+    # only checks the phrase, never completion) -- an already-complete
+    # slot was previously "accepted" here and then required a WHOLE
+    # SEPARATE pass through every locked slot afterward just to
+    # rediscover what this same view already showed. No extra tap is
+    # needed for this: it reuses the same already-selected slot's
+    # current view.
+    eligible_slot_index: Optional[int] = None
 
-    for slot_index in range(1, config.slot_count + 1):
+    slot_order = _cyclic_slot_order(
+        config.slot_count, runtime.next_slot_index if runtime is not None else 1,
+    )
+    for slot_index in slot_order:
+        if runtime is not None and runtime.slots[slot_index - 1] is SlotState.TARGET_LOCKED:
+            continue
         if on_phase:
             on_phase(f"slot {slot_index}: select/check")
         slot_outcome, abort = _accept_or_refresh_slot(
             slot_index=slot_index, serial=serial, runner=runner, recognizer=recognizer,
-            config=config, should_stop=should_stop,
+            config=config, should_stop=should_stop, sleep_fn=sleep_fn,
         )
         if abort is not None:
             return BountyCycleResult(abort.outcome, tuple(slot_outcomes), abort.detail)
 
         slot_outcomes.append(slot_outcome)
         if not slot_outcome.accepted:
+            if runtime is not None:
+                runtime.slots[slot_index - 1] = SlotState.NON_TARGET
             return BountyCycleResult(
                 BountyOutcome.SLOT_ACCEPT_FAILED, tuple(slot_outcomes),
                 f"Slot {slot_index}: no acceptable target within "
                 f"{config.max_refresh_attempts} refresh(es).",
             )
+        if runtime is not None:
+            runtime.slots[slot_index - 1] = SlotState.TARGET_LOCKED
 
-    # --- Kill-progress: bounded polling, 0-199/200 never touches anything. ---
+        if eligible_slot_index is None:
+            if should_stop():
+                return BountyCycleResult(
+                    BountyOutcome.STOPPED, tuple(slot_outcomes), f"Stopped after accepting slot {slot_index}."
+                )
+            progress = _recognize(runner, serial, config, recognizer, config.kill_progress_roi, config.kill_progress_complete_label)
+            already_complete = progress is not None and progress.matched
+            if not already_complete:
+                if "button_complete" in config.template_map:
+                    complete_badge = _recognize(runner, serial, config, recognizer, _FULL_SCREEN, "button_complete")
+                else:
+                    complete_badge = _recognize(runner, serial, config, recognizer, config.complete_state_roi, config.complete_state_label)
+                already_complete = complete_badge is not None and complete_badge.matched
+            if already_complete:
+                # EARLY-COMPLETE-JUMP-001: stop accepting/refreshing the
+                # remaining slots this pass and go straight to claiming
+                # this one -- real customer question: after finding a
+                # complete slot partway down the list, why keep touring
+                # the rest before acting on it? Any slot not yet visited
+                # this round keeps its existing runtime state (locked
+                # slots stay locked; anything else is picked up again on
+                # the next cycle) -- nothing is lost, just deferred.
+                eligible_slot_index = slot_index
+                break
+
+    if runtime is not None:
+        runtime.phase = "WAITING_KILL_PROGRESS"
+
+    # --- Kill-progress: bounded polling, per LOCKED slot. -----------------
+    # COMPLETE-SLOT-TRACKING-001: a single full-screen check here cannot
+    # tell WHICH of the (up to 5) locked slots became eligible -- the
+    # completion badge/counter is only visible in a slot's OWN opened
+    # detail view (the list rows themselves carry no per-row completion
+    # indicator; confirmed from real customer captures). Each poll
+    # attempt therefore visits every still-candidate LOCKED slot in turn
+    # (a plain select/navigation tap -- never complete/claim) and checks
+    # THAT slot's own detail for completion, remembering exactly which
+    # slot_index qualified. 0-199/200 still never taps complete/claim;
+    # only a real, per-slot-verified completion proceeds past this loop,
+    # and the completion step below acts on that SAME verified slot
+    # (never a different, still-incomplete one -- the real customer bug
+    # this replaces: select_complete_point previously always tapped row
+    # 1 regardless of which slot actually became eligible).
+    #
+    # EARLY-COMPLETE-CHECK-001: entirely skipped if the accept loop above
+    # already found an eligible slot on the same pass -- no redundant
+    # extra round of select/check taps across every locked slot.
+    eligible = eligible_slot_index is not None
+    progress_detail = ""
     if on_phase:
         on_phase("kill progress: observing")
-    if should_stop():
+    if not eligible and should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before kill-progress check.")
 
-    eligible = False
-    progress_detail = ""
-    for _attempt in range(1, config.max_kill_progress_poll_attempts + 1):
+    candidate_slots = [
+        i for i in slot_order
+        if runtime is None or runtime.slots[i - 1] is SlotState.TARGET_LOCKED
+    ]
+    # Production runtime: examine one account-local slot per cycle, then
+    # advance the cursor.  Legacy/stateless paths retain the older complete
+    # pass behavior for compatibility with focused test fixtures.
+    one_slot_poll = runtime is not None and runtime.configured
+    if one_slot_poll and candidate_slots:
+        requested = runtime.next_progress_slot_index
+        candidate_slots = [requested if requested in candidate_slots else candidate_slots[0]]
+
+    poll_attempts = 1 if one_slot_poll else config.max_kill_progress_poll_attempts
+    for _kp_attempt in range(1, poll_attempts + 1):
+        if eligible:
+            break
         if should_stop():
             return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped during kill-progress check.")
-        progress = _recognize(runner, serial, config, recognizer, config.kill_progress_roi, config.kill_progress_complete_label)
-        if progress is not None and progress.matched:
-            eligible = True
+        for slot_index in candidate_slots:
+            if should_stop():
+                return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped during kill-progress check.")
+            select_result = runner.run(serial, build_tap_args(config.screen_size, config.slot_select_points[slot_index - 1]))
+            if not select_result.ok:
+                progress_detail = f"slot {slot_index}: select tap failed (rc={select_result.returncode}, stderr={_short(select_result.stderr)})"
+                continue
+            if should_stop():
+                return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped during kill-progress check.")
+            # One ADB screenshot serves BOTH completion checks.  Previously
+            # _recognize captured once for 200/200 and again for the Complete
+            # button, doubling screenshot subprocesses during the dominant
+            # long-running wait path.
+            frame = capture_screenshot(runner, serial, config.capture_args)
+            if not frame.ok:
+                progress_detail = f"slot {slot_index}: capture failed while checking kill progress"
+                continue
+            progress = recognizer.recognize(
+                frame.image_bytes, config.kill_progress_roi,
+                config.kill_progress_complete_label, config.threshold,
+            )
+            if progress.matched:
+                eligible = True
+                eligible_slot_index = slot_index
+                break
+            # A completed active mission exposes the actual Complete button.
+            # Locate that button by image (not by a fixed coordinate) before
+            # allowing the completion transition.
+            if "button_complete" in config.template_map:
+                complete_badge = recognizer.recognize(frame.image_bytes, _FULL_SCREEN, "button_complete", config.threshold)
+            else:
+                complete_badge = recognizer.recognize(
+                    frame.image_bytes, config.complete_state_roi, config.complete_state_label, config.threshold,
+                )
+            if complete_badge.matched:
+                eligible = True
+                eligible_slot_index = slot_index
+                break
+            progress_detail = f"slot {slot_index}: kill progress not yet complete"
+        if eligible:
             break
-        complete_badge = _recognize(runner, serial, config, recognizer, config.complete_state_roi, config.complete_state_label)
-        if complete_badge is not None and complete_badge.matched:
-            eligible = True
-            break
-        progress_detail = "kill progress not yet complete"
+        # RETRY-PACING-001: real kill progress advances from real
+        # gameplay, not from anything this code does -- pace full
+        # passes over the candidate slots rather than hammering ADB
+        # continuously while waiting for it.
+        if _kp_attempt < poll_attempts:
+            sleep_fn(config.retry_delay_seconds)
 
-    if not eligible:
+    if not eligible or eligible_slot_index is None:
+        if one_slot_poll:
+            runtime.next_progress_slot_index = (candidate_slots[0] % config.slot_count) + 1
         return BountyCycleResult(
             BountyOutcome.KILL_PROGRESS_NOT_COMPLETE, tuple(slot_outcomes),
             f"0-199/200: not eligible yet ({progress_detail}); no complete/reward action taken.",
+            config.kill_progress_poll_interval_seconds if one_slot_poll else 0.0,
         )
 
     # --- Complete -> reward -> claim -> result -> close -> mission list. ---
+    # PHASE-VISIBILITY-001: real customer debugging need -- runtime.phase
+    # (the GUI's "phase:" display) was only ever set once, to
+    # WAITING_KILL_PROGRESS, then never updated again for the rest of
+    # the cycle -- a run stuck anywhere from here through mission-list
+    # verification showed the same stale phase text regardless of how
+    # far it had actually progressed, making a live log hard to read
+    # at a glance during exactly this kind of remote debugging.
+    if runtime is not None:
+        runtime.phase = "COMPLETING"
     if on_phase:
         on_phase("completing: select + complete")
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before completing.")
 
-    select_complete = runner.run(serial, build_tap_args(config.screen_size, config.select_complete_point))
-    if not select_complete.ok:
-        return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), "Select-complete tap failed.")
+    # COMPLETE-RETRY-001: real customer question -- if the complete tap
+    # doesn't confidently land (typically because select_complete_point
+    # is momentarily not showing the eligible mission's detail view),
+    # why give up on the first miss instead of just re-selecting and
+    # trying again? Bounded retry, re-selecting the EXACT slot just
+    # verified eligible above each attempt (never a fixed "always row
+    # 1" point -- COMPLETE-SLOT-TRACKING-001).
+    complete_ok = False
+    complete_detail = ""
+    for _complete_attempt in range(1, config.max_complete_verify_attempts + 1):
+        if should_stop():
+            return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before complete button.")
 
-    if should_stop():
-        return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before complete button.")
+        select_complete = runner.run(serial, build_tap_args(config.screen_size, config.slot_select_points[eligible_slot_index - 1]))
+        if not select_complete.ok:
+            complete_detail = f"select-complete tap failed (rc={select_complete.returncode}, stderr={_short(select_complete.stderr)})"
+            if _complete_attempt < config.max_complete_verify_attempts:
+                sleep_fn(config.retry_delay_seconds)
+            continue
 
-    complete_tap = runner.run(serial, build_tap_args(config.screen_size, config.complete_button_point))
-    if not complete_tap.ok:
-        return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), "Complete tap failed.")
+        if should_stop():
+            return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before complete button.")
+
+        dynamic_complete = _tap_template(runner, serial, config, recognizer, "button_complete")
+        if dynamic_complete is None:
+            complete_tap = runner.run(serial, build_tap_args(config.screen_size, config.complete_button_point))
+            complete_ok = complete_tap.ok
+            complete_detail = f"rc={complete_tap.returncode}, stderr={_short(complete_tap.stderr)}"
+        else:
+            complete_ok = dynamic_complete
+            # STDERR-DETAIL-001-adjacent: no confident "button_complete"
+            # match on THIS fresh capture -- never an ADB failure.
+            complete_detail = "no confident button_complete match on the current screen (select_complete_point may not be showing the eligible mission)"
+        if complete_ok:
+            break
+        # RETRY-PACING-001: see the popup-verify loop's comment above.
+        if _complete_attempt < config.max_complete_verify_attempts:
+            sleep_fn(config.retry_delay_seconds)
+
+    if not complete_ok:
+        return BountyCycleResult(
+            BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes),
+            f"Complete tap failed after {config.max_complete_verify_attempts} attempt(s) ({complete_detail}).",
+        )
 
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before reward verification.")
@@ -335,20 +904,32 @@ def run_one_cycle(
         if reward is not None and reward.matched:
             reward_ok = True
             break
+        # RETRY-PACING-001: see the popup-verify loop's comment above.
+        if attempt < config.max_reward_verify_attempts:
+            sleep_fn(config.retry_delay_seconds)
     if not reward_ok:
         return BountyCycleResult(
             BountyOutcome.REWARD_VERIFY_FAILED, tuple(slot_outcomes),
             f"Reward screen never verified within {config.max_reward_verify_attempts} attempt(s).",
         )
 
+    if runtime is not None:
+        runtime.phase = "CLAIMING"
     if on_phase:
         on_phase("claiming reward")
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before claim.")
 
-    claim = runner.run(serial, build_tap_args(config.screen_size, config.claim_point))
-    if not claim.ok:
-        return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), "Claim tap failed.")
+    dynamic_claim = _tap_template(runner, serial, config, recognizer, "button_claim_reward")
+    if dynamic_claim is None:
+        claim = runner.run(serial, build_tap_args(config.screen_size, config.claim_point))
+        claim_ok = claim.ok
+        claim_detail = f"rc={claim.returncode}, stderr={_short(claim.stderr)}"
+    else:
+        claim_ok = dynamic_claim
+        claim_detail = "no confident button_claim_reward match on the current screen"
+    if not claim_ok:
+        return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), f"Claim tap failed ({claim_detail}).")
 
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before result verification.")
@@ -361,46 +942,116 @@ def run_one_cycle(
         if result is not None and result.matched:
             result_ok = True
             break
+        # RETRY-PACING-001: see the popup-verify loop's comment above.
+        if attempt < config.max_result_verify_attempts:
+            sleep_fn(config.retry_delay_seconds)
     if not result_ok:
         return BountyCycleResult(
             BountyOutcome.RESULT_VERIFY_FAILED, tuple(slot_outcomes),
             f"Result screen never verified within {config.max_result_verify_attempts} attempt(s).",
         )
 
+    if runtime is not None:
+        runtime.phase = "CLOSING_RESULT"
     if on_phase:
         on_phase("closing result, returning to mission list")
     if should_stop():
         return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before closing result.")
 
-    close = runner.run(serial, build_tap_args(config.screen_size, config.close_result_point))
-    if not close.ok:
-        return BountyCycleResult(BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes), "Close-result tap failed.")
-
-    if should_stop():
-        return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before mission-list verification.")
-
+    # RESULT-CLOSE-CALIBRATION-001: always position-based, never a
+    # "button_close_reward" template search. Real measurement (see
+    # docs/HANDOFF_CODE.md) showed the "보상 받기"/"닫기" buttons --
+    # same position, same ornate gold-button frame, only ~2 characters
+    # of text differ -- cannot be reliably told apart by template
+    # matching alone (a tight text-only crop still scored close enough
+    # to risk a false positive against the OTHER button). The real,
+    # measured fixed point is exactly as safe here as
+    # slot_select_points/select_complete_point are for slot selection
+    # (SLOT-SELECT-CALIBRATION-001): the preceding result_screen_label
+    # check already confirmed we're on a real post-complete popup
+    # before this fixed-point tap ever fires.
+    if runtime is not None:
+        runtime.phase = "VERIFYING_MISSION_LIST"
+    # RESULT-CLOSE-POSTCONDITION-001: the real 1280x720 customer capture
+    # confirms close_result_point is correct (641.5, 511.5 lies inside the
+    # visible close button).  The failure is timing: the old code tapped
+    # immediately after the lightweight "odds" marker first appeared,
+    # then only searched for the list.  A touch delivered while the popup
+    # was still becoming interactive can be ignored by the game although
+    # ADB reports success, leaving the popup visible forever.  Pace the
+    # first touch, and retry it only after fresh evidence that the result
+    # popup is still present.  This is bounded and never taps an unknown
+    # screen.
     list_ok = False
+    close_attempts = 0
     for attempt in range(1, config.max_mission_list_verify_attempts + 1):
         if should_stop():
             return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped during mission-list verification.")
+
+        # Let the result popup complete its entrance animation before
+        # touching its measured button.  This is intentionally before the
+        # first close as well as between later attempts.
+        sleep_fn(config.result_close_delay_seconds if attempt == 1 else config.retry_delay_seconds)
+        result_still_shown = _recognize(
+            runner, serial, config, recognizer, config.result_screen_roi, config.result_screen_label,
+        )
+        if result_still_shown is None:
+            return BountyCycleResult(
+                BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes),
+                "Capture failed while checking whether the result popup is still shown.",
+            )
+        if result_still_shown.matched:
+            if should_stop():
+                return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped before closing result.")
+            close = runner.run(serial, build_tap_args(config.screen_size, config.close_result_point))
+            close_attempts += 1
+            if not close.ok:
+                return BountyCycleResult(
+                    BountyOutcome.CAPTURE_UNAVAILABLE, tuple(slot_outcomes),
+                    f"Close-result tap failed (rc={close.returncode}, stderr={_short(close.stderr)}).",
+                )
+            if should_stop():
+                return BountyCycleResult(BountyOutcome.STOPPED, tuple(slot_outcomes), "Stopped after closing result.")
+
+        # Fresh postcondition capture.  Do not assume a successful ADB
+        # input actually dismissed the game popup.
         listing = _recognize(runner, serial, config, recognizer, config.mission_list_roi, config.mission_list_label)
         if listing is not None and listing.matched:
             list_ok = True
             break
+        # RETRY-PACING-001: see the popup-verify loop's comment above.
+        if attempt < config.max_mission_list_verify_attempts:
+            sleep_fn(config.retry_delay_seconds)
     if not list_ok:
         return BountyCycleResult(
             BountyOutcome.MISSION_LIST_VERIFY_FAILED, tuple(slot_outcomes),
-            f"Mission list never verified within {config.max_mission_list_verify_attempts} attempt(s).",
+            f"Mission list never verified within {config.max_mission_list_verify_attempts} attempt(s) "
+            f"after {close_attempts} verified-popup close attempt(s).",
         )
 
-    # --- Re-refresh each slot and accept a new target, ready to repeat. ---
+    # Only after verified close + mission-list return is the claimed row's
+    # replacement ready for configuration. Other locked target missions
+    # remain accepted and may already have N/200 progress, so revisiting
+    # them as fresh 0/200 missions could wrongly refresh valid targets.
+    if runtime is not None:
+        # RECONFIGURE-COMPLETED-SLOT-001: after claiming a completed
+        # mission, the game immediately gives this SAME row a new mission.
+        # Revisit it first so a non-target replacement is refreshed and
+        # locked before moving downward; skipping straight to the next row
+        # left that replacement unconfigured until a later full wrap.
+        runtime.reset_after_verified_return(
+            completed_slot_index=eligible_slot_index,
+        )
+        return BountyCycleResult(BountyOutcome.COMPLETED_CYCLE, tuple(slot_outcomes), "Verified reward cycle complete; claimed slot reset.")
+
+    # --- Legacy stateless re-refresh path. ---
     if on_phase:
         on_phase("re-refreshing slots for new targets")
     re_accepted: list[SlotOutcome] = []
     for slot_index in range(1, config.slot_count + 1):
         slot_outcome, abort = _accept_or_refresh_slot(
             slot_index=slot_index, serial=serial, runner=runner, recognizer=recognizer,
-            config=config, should_stop=should_stop,
+            config=config, should_stop=should_stop, sleep_fn=sleep_fn,
         )
         if abort is not None:
             return BountyCycleResult(abort.outcome, tuple(slot_outcomes) + tuple(re_accepted), abort.detail)

@@ -1,0 +1,32 @@
+{
+  "source_video_resolution": [1300, 746],
+  "runtime_target": {
+    "required_text": "모든 몬스터 처치",
+    "required_denominator": 200,
+    "rule": "Accept only when both target text and /200 are confirmed in the same mission detail state. Otherwise refresh. Recognition failure is not the same as a confirmed non-target result."
+  },
+  "templates": [
+    {"file":"mission_slots_panel.png","role":"detect five mission slots","clickable":false},
+    {"file":"mission_slot_selected.png","role":"detect selected mission slot","clickable":true},
+    {"file":"mission_slot_unselected.png","role":"detect and select an unselected mission slot","clickable":true},
+    {"file":"refresh_confirm_title.png","role":"identify regional quest refresh popup","clickable":false},
+    {"file":"button_refresh_confirm.png","role":"confirm quest refresh","clickable":true},
+    {"file":"button_refresh_cancel.png","role":"cancel quest refresh","clickable":true},
+    {"file":"target_all_monsters_0_of_200.png","role":"positive target condition: target text plus 0/200","clickable":false},
+    {"file":"button_accept_mission.png","role":"accept only a positively confirmed target mission","clickable":true},
+    {"file":"target_all_monsters_active.png","role":"detect active all-monsters mission","clickable":false},
+    {"file":"progress_12_of_200.png","role":"sample progress layout; the numerator must be parsed dynamically","clickable":false},
+    {"file":"button_complete.png","role":"finish a confirmed completed mission","clickable":true},
+    {"file":"button_claim_reward.png","role":"claim reward","clickable":true},
+    {"file":"reward_result_header.png","role":"identify reward result modal","clickable":false},
+    {"file":"button_close_reward.png","role":"close reward result","clickable":true}
+  ],
+  "click_rule": "Locate the allowed template in the current ADB screenshot, compute the matched rectangle center, and tap that center on the same ADB serial. Never use source-video coordinates as fixed runtime tap coordinates.",
+  "non_target_rule": "Do not maintain templates or a name list for non-target missions. If the positive target pair is confidently absent from a valid new-mission detail screen, refresh again.",
+  "needs_customer_pc_calibration": [
+    "cursor-free button templates",
+    "native ADB screenshots",
+    "final matching thresholds",
+    "actual LD1-LD9 ADB mappings"
+  ]
+}

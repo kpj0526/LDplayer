@@ -4,18 +4,24 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ldmanager"
-version = "0.1.0"
+version = "1.0.3rc38"
 description = "LDPlayer multi-account manager (MVP-001: configurable, mock-verified MVP)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Proprietary" }
 dependencies = [
     "PyYAML>=6.0",
+    "psutil>=5.9,<8",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4",
+]
+recognition = [
+    "numpy>=1.24",
+    "opencv-python>=4.8",
+    "windows-capture>=2.0,<3.0; platform_system == 'Windows'",
 ]
 build = [
     "pyinstaller>=6.0",
