@@ -1062,6 +1062,28 @@ def test_completed_slot_is_reconfigured_before_the_next_lower_slot():
 
     assert result.outcome is BountyOutcome.COMPLETED_CYCLE
     assert runtime.next_slot_index == 3
+    assert runtime.slots == [SlotState.TARGET_LOCKED, SlotState.TARGET_LOCKED,
+                             SlotState.UNKNOWN, SlotState.UNKNOWN, SlotState.UNKNOWN]
+
+    class _InProgressSurvivors(_SlotAwareRecognizer):
+        def recognize(self, image_bytes, roi, expected_label, threshold):
+            if expected_label == _QTY and state.get("current_slot") in (1, 2):
+                return RecognitionResult(RecognitionStatus.NO_MATCH, None, 0.0, "N/200, not initial 0/200")
+            return super().recognize(image_bytes, roi, expected_label, threshold)
+
+    # After claim, rows 1 and 2 still contain the accepted target but their
+    # progress is N/200. Revisiting either as a fresh mission would refresh
+    # it. Only the claimed row 3's replacement may be configured.
+    next_recognizer = _InProgressSurvivors(
+        state, eligible_slot=3,
+        always_matching={_PHRASE, _QTY, _REWARD, _RESULT, _MISSION_LIST},
+    )
+    first_cycle_calls = len(runner.calls)
+    _run(runner, next_recognizer, cfg, runtime=runtime)
+    new_calls = runner.calls[first_cycle_calls:]
+    assert (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.slot_select_points[0]))) not in new_calls
+    assert (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.slot_select_points[1]))) not in new_calls
+    assert (_SERIAL, tuple(build_tap_args(cfg.screen_size, cfg.refresh_button_point))) not in new_calls
 
 
 # --- PHASE-VISIBILITY-001: runtime.phase must advance past kill-progress --

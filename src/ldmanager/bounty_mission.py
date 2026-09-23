@@ -1032,8 +1032,10 @@ def run_one_cycle(
             f"after {close_attempts} verified-popup close attempt(s).",
         )
 
-    # Only after verified close + mission-list return is it legal to forget
-    # locked slots and start a new five-slot configuration.
+    # Only after verified close + mission-list return is the claimed row's
+    # replacement ready for configuration. Other locked target missions
+    # remain accepted and may already have N/200 progress, so revisiting
+    # them as fresh 0/200 missions could wrongly refresh valid targets.
     if runtime is not None:
         # RECONFIGURE-COMPLETED-SLOT-001: after claiming a completed
         # mission, the game immediately gives this SAME row a new mission.
@@ -1041,9 +1043,9 @@ def run_one_cycle(
         # locked before moving downward; skipping straight to the next row
         # left that replacement unconfigured until a later full wrap.
         runtime.reset_after_verified_return(
-            next_slot_index=eligible_slot_index,
+            completed_slot_index=eligible_slot_index,
         )
-        return BountyCycleResult(BountyOutcome.COMPLETED_CYCLE, tuple(slot_outcomes), "Verified reward cycle complete; slots reset.")
+        return BountyCycleResult(BountyOutcome.COMPLETED_CYCLE, tuple(slot_outcomes), "Verified reward cycle complete; claimed slot reset.")
 
     # --- Legacy stateless re-refresh path. ---
     if on_phase:

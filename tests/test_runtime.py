@@ -20,11 +20,15 @@ def test_runtime_slots_are_independent_and_reset_only_when_explicit():
     one, two = AccountMissionRuntime(), AccountMissionRuntime()
     one.slots[0] = SlotState.TARGET_LOCKED
     one.slots[1] = SlotState.NON_TARGET
-    assert one.locked_count == 1
+    one.slots[3] = SlotState.TARGET_LOCKED
+    assert one.locked_count == 2
     assert two.locked_count == 0
-    one.reset_after_verified_return(next_slot_index=4)
-    assert one.slots == [SlotState.UNKNOWN] * 5
+    one.reset_after_verified_return(completed_slot_index=4)
+    assert one.slots == [SlotState.TARGET_LOCKED, SlotState.NON_TARGET, SlotState.UNKNOWN,
+                         SlotState.UNKNOWN, SlotState.UNKNOWN]
     assert one.next_slot_index == 4
+    assert one.next_progress_slot_index == 4
+    assert two.slots == [SlotState.UNKNOWN] * 5
 
 
 def test_click_and_verify_requires_expected_template():
