@@ -437,3 +437,8 @@
 - 현재 결과: 필수 관리 문서와 AC별 테스트 계획 작성 완료; 중단 후 상태 재확인 완료. 구현·QA 테스트는 미시작.
 - 차단 요소: 화면 자료·ADB 매핑·기술 선택 미확정, 사용자 구현 승인 대기. Manager 문서는 미커밋 상태.
 - 다음 행동: 사용자에게 중단 후 확인 결과를 보고하고 승인 대기.
+## WINDOW-VIEWPORT-EDGE-001 (2026-09-23)
+
+- Customer rc.34 `Test capture` failed with `Game viewport is outside the captured window` while the game area reached the bottom edge of a Windows capture that also contained LDPlayer chrome.
+- Existing Code worktree implemented bounded native-edge conversion in commit `275890d`; right/bottom-edge regressions and full 480-test suite passed. Isolated Windows build succeeded.
+- Status: `CODE_SUBMITTED_QA_PENDING`; customer LDPlayer test remains `NEEDS_REAL_TEST`. Existing QA must independently verify the exact Code handoff commit before publication or final PASS.

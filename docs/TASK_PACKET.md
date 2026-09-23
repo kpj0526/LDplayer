@@ -220,3 +220,10 @@ AC-01~AC-30을 적용한다. 명세·진행 상태는 `docs/ACCEPTANCE_STATUS.md
 10. **NEXT ACTION**: Send this packet to `code`; send its exact repair hash to `qa` for full Stage 2 re-verification.
 
 code가 1단계 프로젝트 기본 구조를 구현·테스트·커밋·인수인계한 뒤, Manager가 증거를 확인하고 qa에 해당 커밋의 독립 검증을 전달한다.
+## WINDOW-VIEWPORT-EDGE-001 — rc.34 customer capture verification (2026-09-23)
+
+1. **Owner**: existing Code worktree implements; existing QA worktree independently verifies the exact Code commit; Manager coordinates. No new agent or worktree.
+2. **Problem**: customer `Test capture` on rc.34 reports `Game viewport is outside the captured window`. The supplied Windows frame includes top chrome and a right toolbar; the game area reaches the bottom edge. `align_game_viewport` rounds origin and size separately after downscaling, so the crop can overrun by a pixel.
+3. **Change**: map both matched rectangle edges back to native pixels, bound them to the captured image, and reject invalid/empty rectangles. Retain ADB versus Windows similarity and explicit same-instance confirmation gates.
+4. **Acceptance**: a 635×374 frame with a 595×334 game area beginning at y=40 aligns without an out-of-bounds crop; unrelated/blank frames still fail closed; the full automated suite passes. Real customer LDPlayer test remains `NEEDS_REAL_TEST`.
+5. **Handoff**: Code commits implementation/test and records hash; QA records an independent verdict before publication or final PASS.
