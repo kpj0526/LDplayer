@@ -441,4 +441,4 @@
 
 - Customer rc.34 `Test capture` failed with `Game viewport is outside the captured window` while the game area reached the bottom edge of a Windows capture that also contained LDPlayer chrome.
 - Existing Code worktree implemented bounded native-edge conversion in commit `275890d`; right/bottom-edge regressions and full 480-test suite passed. Isolated Windows build succeeded.
-- Status: `CODE_SUBMITTED_QA_PENDING`; customer LDPlayer test remains `NEEDS_REAL_TEST`. Existing QA must independently verify the exact Code handoff commit before publication or final PASS.
+- Status: `CODE_SUBMITTED_QA_PENDING`; customer LDPlayer test remains `NEEDS_REAL_TEST`. Existing QA must independently verify Code handoff commit `e40fe9d` before publication or final PASS. No QA terminal was active in the existing Qa worktree at submission time.
