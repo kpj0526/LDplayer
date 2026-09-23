@@ -240,6 +240,24 @@ def test_game_area_alignment_removes_window_chrome_and_rejects_resize():
         normalize_viewport(native[:-10], viewport)
 
 
+@pytest.mark.parametrize("game_x", [0, 40])
+def test_game_area_touching_capture_edge_stays_inside_capture(game_x):
+    cv2 = pytest.importorskip("cv2")
+    np = pytest.importorskip("numpy")
+    from pathlib import Path
+    reference = cv2.imread(str(Path(__file__).parent / "fixtures/game_cal_001/source/completed_target.png"))
+    assert reference is not None
+    # Customer rc.34 frame: 635x374 including top chrome and right toolbar;
+    # the 595x334 game image starts at y=40 and reaches the bottom edge.
+    native = np.zeros((374, 635, 3), dtype=np.uint8)
+    native[40:374, game_x:game_x + 595] = cv2.resize(reference, (595, 334))
+    viewport, png = align_game_viewport(_encode(reference), _encode(native))
+    assert viewport.x >= 0 and viewport.y >= 0
+    assert viewport.x + viewport.width <= 635
+    assert viewport.y + viewport.height <= 374
+    assert _decode(png).shape == reference.shape
+
+
 def test_blank_and_unrelated_images_cannot_verify():
     np = pytest.importorskip("numpy")
     pytest.importorskip("cv2")

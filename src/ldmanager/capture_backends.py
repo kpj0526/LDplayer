@@ -63,8 +63,17 @@ def align_game_viewport(adb_png, window_png):
         if best is None or score > best[0]:
             best = (score, x, y, w, h)
     score, x, y, w, h = best
-    viewport = Viewport(round(x / factor), round(y / factor), round(w / factor),
-                        round(h / factor), nw, nh, rw, rh, float(score))
+    # Map rectangle edges independently. Rounding the origin and width
+    # separately can put a viewport one pixel beyond a frame when the game
+    # reaches the right or bottom edge of the captured LD window.
+    native_x_scale = nw / small.shape[1]
+    native_y_scale = nh / small.shape[0]
+    left = min(nw - 1, max(0, round(x * native_x_scale)))
+    top = min(nh - 1, max(0, round(y * native_y_scale)))
+    right = min(nw, max(left + 1, round((x + w) * native_x_scale)))
+    bottom = min(nh, max(top + 1, round((y + h) * native_y_scale)))
+    viewport = Viewport(left, top, right - left, bottom - top,
+                        nw, nh, rw, rh, float(score))
     normalized = normalize_viewport(native, viewport)
     error = float(np.mean(cv2.absdiff(
         cv2.resize(reference, (320, 180)), cv2.resize(normalized, (320, 180))))) / 255
